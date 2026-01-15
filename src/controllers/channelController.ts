@@ -7,9 +7,12 @@ const channelService = new ChannelService();
 export class ChannelController {
   async getChannels(req: AuthRequest, res: Response) {
     try {
+      console.log('[ChannelController] 📡 Buscando canais...');
       const channels = await channelService.getChannels();
+      console.log(`[ChannelController] ✅ ${channels.length} canal(is) encontrado(s):`, channels.map(c => ({ id: c.id, name: c.name, status: c.status })));
       res.json(channels);
     } catch (error: any) {
+      console.error('[ChannelController] ❌ Erro ao buscar canais:', error);
       res.status(500).json({ error: error.message });
     }
   }
@@ -101,6 +104,32 @@ export class ChannelController {
       res.json(result);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  }
+
+  async configureWebhook(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const result = await channelService.configureWebhookManually(id);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: result.message,
+          webhookUrl: result.webhookUrl,
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: result.message,
+          webhookUrl: result.webhookUrl,
+        });
+      }
+    } catch (error: any) {
+      res.status(400).json({ 
+        success: false,
+        error: error.message 
+      });
     }
   }
 }

@@ -5,6 +5,10 @@ import Dashboard from './pages/Dashboard';
 import Conversations from './pages/Conversations';
 import ConversationDetail from './pages/ConversationDetail';
 import Channels from './pages/Channels';
+import Integrations from './pages/Integrations';
+import Bots from './pages/Bots';
+import BotFlowBuilder from './pages/BotFlowBuilder';
+import BotFlowBuilderVisual from './pages/BotFlowBuilderVisual';
 import Layout from './components/Layout';
 
 // Componente para proteger rotas
@@ -45,6 +49,10 @@ function App() {
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:id" element={<ConversationDetail />} />
           <Route path="channels" element={<Channels />} />
+          <Route path="integrations" element={<Integrations />} />
+          <Route path="bots" element={<Bots />} />
+          <Route path="bots/:botId/flows" element={<BotFlowBuilder />} />
+          <Route path="bots/:botId/flows/visual" element={<BotFlowBuilderVisual />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

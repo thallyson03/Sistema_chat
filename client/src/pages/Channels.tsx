@@ -80,13 +80,29 @@ export default function Channels() {
 
   const startConnectionCheck = (channelId: string) => {
     setCheckingConnection(true);
+    let checkCount = 0;
+    const maxChecks = 100; // 100 verificações = 5 minutos (100 * 3s = 300s)
+    
     const interval = setInterval(async () => {
+      checkCount++;
       try {
+        console.log(`[Channels] Verificando status (tentativa ${checkCount}/${maxChecks})...`);
         const response = await api.get(`/api/channels/${channelId}/status`);
         const status = response.data.status;
         
-        if (status === 'ACTIVE' || status === 'open' || status === 'connected') {
+        console.log(`[Channels] Status recebido:`, status);
+        
+        // Aceitar múltiplos formatos de status conectado
+        const isConnected = status === 'ACTIVE' || 
+                           status === 'active' || 
+                           status === 'open' || 
+                           status === 'connected' ||
+                           status === 'ready' ||
+                           status === 'authenticated';
+        
+        if (isConnected) {
           // Conexão estabelecida!
+          console.log('[Channels] ✅ Conexão detectada! Fechando modal...');
           clearInterval(interval);
           setCheckingConnection(false);
           setShowQRModal(false);
@@ -96,17 +112,22 @@ export default function Channels() {
           await fetchChannels();
           
           alert('✅ WhatsApp conectado com sucesso!');
+        } else {
+          console.log(`[Channels] Ainda aguardando conexão... Status atual: ${status}`);
         }
-      } catch (error) {
-        console.error('Erro ao verificar status:', error);
+      } catch (error: any) {
+        console.error('[Channels] Erro ao verificar status:', error);
+        console.error('[Channels] Erro detalhado:', error.response?.data);
+      }
+      
+      // Limpar intervalo após maxChecks verificações
+      if (checkCount >= maxChecks) {
+        console.log('[Channels] ⚠️ Timeout: Parando verificação após 5 minutos');
+        clearInterval(interval);
+        setCheckingConnection(false);
+        alert('⏱️ Tempo de espera esgotado. Verifique manualmente o status do canal.');
       }
     }, 3000); // Verificar a cada 3 segundos
-
-    // Limpar intervalo após 5 minutos (300 segundos)
-    setTimeout(() => {
-      clearInterval(interval);
-      setCheckingConnection(false);
-    }, 300000);
   };
 
   const handleDeleteChannel = async (channelId: string, channelName: string) => {
@@ -407,7 +428,15 @@ export default function Channels() {
                 {channel.type === 'WHATSAPP' && (
                   <>
                     <button
-                      onClick={() => handleRefreshStatus(channel.id)}
+                      onClick={async () => {
+                        try {
+                          await handleRefreshStatus(channel.id);
+                          // Forçar atualização da lista após verificar status
+                          setTimeout(() => fetchChannels(), 1000);
+                        } catch (error) {
+                          console.error('Erro ao atualizar status:', error);
+                        }
+                      }}
                       style={{
                         padding: '4px 12px',
                         backgroundColor: '#3b82f6',
@@ -420,20 +449,22 @@ export default function Channels() {
                     >
                       Atualizar Status
                     </button>
-                    <button
-                      onClick={() => handleViewQRCode(channel.id)}
-                      style={{
-                        padding: '4px 12px',
-                        backgroundColor: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                      }}
-                    >
-                      Ver QR Code
-                    </button>
+                    {channel.status !== 'ACTIVE' && (
+                      <button
+                        onClick={() => handleViewQRCode(channel.id)}
+                        style={{
+                          padding: '4px 12px',
+                          backgroundColor: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Ver QR Code
+                      </button>
+                    )}
                   </>
                 )}
               </div>

@@ -82,3 +82,5 @@ Quando tentar criar o canal, **copie TODOS os logs** que aparecerem e me envie!
 
 
 
+
+

@@ -38,6 +38,18 @@ export default function Layout() {
           >
             Canais
           </Link>
+          <Link
+            to="/integrations"
+            style={{ color: 'white', textDecoration: 'none', padding: '10px' }}
+          >
+            Integrações
+          </Link>
+          <Link
+            to="/bots"
+            style={{ color: 'white', textDecoration: 'none', padding: '10px' }}
+          >
+            Chatbots
+          </Link>
         </nav>
         <button
           onClick={handleLogout}

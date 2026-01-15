@@ -18,8 +18,10 @@ class EvolutionApiClient {
     });
   }
 
-  private getHeaders(apiKey?: string) {
-    const key = apiKey || this.apiKey;
+  private getHeaders(apiKeyOrToken?: string) {
+    // Se apiKeyOrToken for fornecido, usar ele (pode ser API key ou token da instância)
+    // Caso contrário, usar a API key padrão
+    const key = apiKeyOrToken || this.apiKey;
     return {
       'apikey': key,
       'Content-Type': 'application/json',
@@ -43,7 +45,7 @@ class EvolutionApiClient {
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || 
-        error.response?.data?.error || 
+                          error.response?.data?.error || 
         'Erro ao criar instância na Evolution API'
       );
     }
@@ -75,41 +77,131 @@ class EvolutionApiClient {
         url: `${this.baseURL}/instance/fetchInstances`,
       });
 
-      const response = await this.client.get(
-        `/instance/fetchInstances`,
-        {
-          headers: this.getHeaders(apiKey),
-        }
-      );
+      // Tentar primeiro o endpoint específico da instância (se disponível)
+      let response;
+      let usedSpecificEndpoint = false;
       
-      console.log('[EvolutionAPI] Resposta fetchInstances:', {
+      try {
+        console.log('[EvolutionAPI] Tentando endpoint específico da instância...');
+        response = await this.client.get(
+          `/instance/fetchInstance/${instanceName}`,
+          {
+            headers: this.getHeaders(apiKey),
+          }
+        );
+        usedSpecificEndpoint = true;
+        console.log('[EvolutionAPI] ✅ Endpoint específico funcionou!');
+      } catch (specificError: any) {
+        // Se o endpoint específico não existir, usar fetchInstances
+        console.log('[EvolutionAPI] Endpoint específico não disponível, usando fetchInstances...');
+        response = await this.client.get(
+          `/instance/fetchInstances`,
+          {
+            headers: this.getHeaders(apiKey),
+          }
+        );
+      }
+      
+      console.log('[EvolutionAPI] Resposta:', {
         status: response.status,
         dataType: Array.isArray(response.data) ? 'array' : typeof response.data,
         dataLength: Array.isArray(response.data) ? response.data.length : 'N/A',
+        usedSpecificEndpoint,
       });
 
-      const instances = response.data || [];
-      console.log('[EvolutionAPI] Total de instâncias encontradas:', instances.length);
+      // Se usou endpoint específico, a resposta pode ser um objeto único
+      let instances: any[] = [];
+      let instance: any;
       
-      const instance = instances.find((inst: any) => {
-        const name = inst.instance?.instanceName || inst.instanceName || inst.name;
-        return name === instanceName;
-      });
+      if (usedSpecificEndpoint && !Array.isArray(response.data)) {
+        // Endpoint específico retorna um objeto único
+        instance = response.data;
+        instances = [response.data]; // Criar array para logs
+        console.log('[EvolutionAPI] ✅ Resposta do endpoint específico (objeto único)');
+      } else {
+        // Endpoint fetchInstances retorna array
+        instances = Array.isArray(response.data) ? response.data : [response.data];
+        console.log('[EvolutionAPI] Total de instâncias encontradas:', instances.length);
+        
+        // Log completo da resposta para debug
+        console.log('[EvolutionAPI] 🔍 Estrutura completa da resposta (primeiras 3 instâncias):');
+        instances.slice(0, 3).forEach((inst: any, idx: number) => {
+          console.log(`[EvolutionAPI] Instância ${idx + 1}:`, JSON.stringify(inst, null, 2).substring(0, 1000));
+        });
+        
+        instance = instances.find((inst: any) => {
+          const name = inst.instance?.instanceName || 
+                      inst.instanceName || 
+                      inst.name ||
+                      inst.instance?.name;
+          const found = name === instanceName;
+          if (found) {
+            console.log('[EvolutionAPI] ✅ Instância encontrada! Nome:', name);
+          }
+          return found;
+        });
+      }
       
       if (!instance) {
-        console.warn('[EvolutionAPI] Instância não encontrada:', instanceName);
-        console.log('[EvolutionAPI] Instâncias disponíveis:', instances.map((inst: any) => 
-          inst.instance?.instanceName || inst.instanceName || inst.name
-        ));
+        console.warn('[EvolutionAPI] ❌ Instância não encontrada:', instanceName);
+        if (instances.length > 0) {
+          console.log('[EvolutionAPI] Instâncias disponíveis:', instances.map((inst: any) => {
+            const name = inst.instance?.instanceName || inst.instanceName || inst.name || inst.instance?.name || 'SEM_NOME';
+            const status = inst.instance?.status || inst.instance?.state || inst.status || inst.state || 'SEM_STATUS';
+            return `${name} (${status})`;
+          }));
+        }
         return { status: 'NOT_FOUND' };
       }
 
-      console.log('[EvolutionAPI] Instância encontrada:', {
-        instanceName: instance.instance?.instanceName || instance.instanceName,
-        status: instance.instance?.status || instance.instance?.state,
-        hasQrcode: !!instance.qrcode,
-        hasQrcodeBase64: !!instance.qrcode?.base64,
-        hasToken: !!instance.instance?.token,
+      // A Evolution API pode retornar o status em diferentes campos e formatos
+      // Vamos verificar TODOS os possíveis campos (connectionStatus é o mais comum)
+      const rawStatus = instance.connectionStatus ||  // Campo mais comum na Evolution API v2
+                       instance.instance?.connectionStatus ||
+                       instance.instance?.status || 
+                       instance.instance?.state || 
+                       instance.status || 
+                       instance.state ||
+                       instance.instance?.connectionState ||
+                       instance.connectionState ||
+                       'UNKNOWN';
+      
+      // Verificar se a instância está conectada baseado em outros indicadores
+      const hasToken = !!(instance.instance?.token || instance.token);
+      const hasQrcode = !!(instance.qrcode?.base64 || instance.qrcode);
+      
+      // Se tem token e não tem QR code, provavelmente está conectada
+      let inferredStatus = rawStatus;
+      if (rawStatus === 'UNKNOWN' || rawStatus === '') {
+        if (hasToken && !hasQrcode) {
+          inferredStatus = 'open'; // Provavelmente conectada
+          console.log('[EvolutionAPI] 🔍 Status inferido como "open" (tem token, sem QR code)');
+        } else if (!hasToken && hasQrcode) {
+          inferredStatus = 'close'; // Provavelmente desconectada (precisa conectar)
+          console.log('[EvolutionAPI] 🔍 Status inferido como "close" (sem token, tem QR code)');
+        } else {
+          console.log('[EvolutionAPI] ⚠️ Não foi possível inferir status. Mantendo UNKNOWN.');
+        }
+      }
+      
+      console.log('[EvolutionAPI] 📊 Análise completa da instância:', {
+        instanceName: instance.instance?.instanceName || instance.instanceName || instance.name,
+        rawStatus,
+        inferredStatus,
+        hasToken,
+        hasQrcode,
+        statusFields: {
+          'instance.status': instance.instance?.status,
+          'instance.state': instance.instance?.state,
+          'instance.connectionState': instance.instance?.connectionState,
+          'status': instance.status,
+          'state': instance.state,
+          'connectionState': instance.connectionState,
+        },
+        tokenPresent: !!instance.instance?.token,
+        qrcodePresent: !!instance.qrcode,
+        fullInstanceKeys: Object.keys(instance),
+        instanceStructure: JSON.stringify(instance, null, 2).substring(0, 1500), // Log mais completo
       });
 
       // A Evolution API pode retornar o QR code em diferentes formatos
@@ -118,9 +210,9 @@ class EvolutionApiClient {
                           (typeof instance.qrcode === 'string' ? instance.qrcode : null);
 
       return {
-        status: instance.instance?.status || instance.instance?.state || 'UNKNOWN',
+        status: inferredStatus, // Usar status inferido se necessário
         qrcode: qrcodeBase64,
-        token: instance.instance?.token || null,
+        token: instance.instance?.token || instance.token || null,
       };
     } catch (error: any) {
       console.error('[EvolutionAPI] ❌ Erro ao verificar status:', {
@@ -142,23 +234,53 @@ class EvolutionApiClient {
 
   async sendMessage(instanceName: string, number: string, text: string, apiKey?: string) {
     try {
+      console.log('[EvolutionAPI] 📤 Enviando mensagem:', {
+        instanceName,
+        number,
+        textLength: text.length,
+        hasApiKey: !!apiKey,
+        endpoint: `/message/sendText/${instanceName}`,
+      });
+
+      // Formato correto: text diretamente no root, não dentro de textMessage
+      const payload = {
+        number,
+        text,
+      };
+
+      console.log('[EvolutionAPI] Payload:', JSON.stringify(payload, null, 2));
+      console.log('[EvolutionAPI] Headers:', JSON.stringify(this.getHeaders(apiKey), null, 2));
+
       const response = await this.client.post(
         `/message/sendText/${instanceName}`,
-        {
-          number,
-          textMessage: {
-            text,
-          },
-        },
+        payload,
         {
           headers: this.getHeaders(apiKey),
         }
       );
+
+      console.log('[EvolutionAPI] ✅ Mensagem enviada com sucesso:', {
+        status: response.status,
+        data: JSON.stringify(response.data, null, 2).substring(0, 500),
+      });
+
       return response.data;
     } catch (error: any) {
+      console.error('[EvolutionAPI] ❌ Erro ao enviar mensagem:', {
+        instanceName,
+        number,
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data ? JSON.stringify(error.response.data, null, 2) : 'N/A',
+        url: error.config?.url,
+        method: error.config?.method,
+        payload: error.config?.data ? JSON.stringify(JSON.parse(error.config.data), null, 2) : 'N/A',
+      });
       throw new Error(
         error.response?.data?.message || 
         error.response?.data?.error || 
+        error.message ||
         'Erro ao enviar mensagem'
       );
     }
@@ -166,12 +288,20 @@ class EvolutionApiClient {
 
   async setWebhook(instanceName: string, webhookUrl: string, apiKey?: string) {
     try {
-      const response = await this.client.post(
-        `/webhook/set/${instanceName}`,
-        {
+      console.log('[EvolutionAPI] 📡 Configurando webhook:', {
+        instanceName,
+        webhookUrl,
+        hasApiKey: !!apiKey,
+        endpoint: `/webhook/set/${instanceName}`,
+      });
+
+      // Formato correto conforme teste direto - a API requer "instance" e "webhook" no payload
+      const webhookConfig = {
+        instance: instanceName,
+        webhook: {
+          enabled: true,
           url: webhookUrl,
-          webhook_by_events: false,
-          webhook_base64: false,
+          webhookByEvents: false, // Se true, cada evento vai para um sub-caminho da URL
           events: [
             'MESSAGES_UPSERT',
             'MESSAGES_UPDATE',
@@ -180,16 +310,92 @@ class EvolutionApiClient {
             'QRCODE_UPDATED',
           ],
         },
+      };
+
+      console.log('[EvolutionAPI] Configuração do webhook:', JSON.stringify(webhookConfig, null, 2));
+      console.log('[EvolutionAPI] Endpoint completo:', `${this.baseURL}/webhook/set/${instanceName}`);
+      console.log('[EvolutionAPI] Headers:', JSON.stringify(this.getHeaders(apiKey), null, 2));
+
+      const response = await this.client.post(
+        `/webhook/set/${instanceName}`,
+        webhookConfig,
         {
           headers: this.getHeaders(apiKey),
         }
       );
+
+      console.log('[EvolutionAPI] ✅ Webhook configurado com sucesso:', {
+        status: response.status,
+        data: JSON.stringify(response.data, null, 2).substring(0, 500),
+      });
+
       return response.data;
     } catch (error: any) {
+      console.error('[EvolutionAPI] ❌ Erro ao configurar webhook:', {
+        instanceName,
+        webhookUrl,
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data ? JSON.stringify(error.response.data, null, 2) : 'N/A',
+        url: error.config?.url,
+        method: error.config?.method,
+        requestData: error.config?.data ? JSON.stringify(JSON.parse(error.config.data), null, 2) : 'N/A',
+        headers: error.config?.headers ? JSON.stringify(error.config.headers, null, 2) : 'N/A',
+      });
+      
+      // Log detalhado do erro completo
+      if (error.response?.data) {
+        console.error('[EvolutionAPI] 📋 Detalhes completos do erro da API:', JSON.stringify(error.response.data, null, 2));
+      }
+      
       throw new Error(
         error.response?.data?.message || 
         error.response?.data?.error || 
+        error.message ||
         'Erro ao configurar webhook'
+      );
+    }
+  }
+
+  async getWebhook(instanceName: string, apiKey?: string) {
+    try {
+      console.log('[EvolutionAPI] 🔍 Verificando webhook configurado:', {
+        instanceName,
+        hasApiKey: !!apiKey,
+        endpoint: `/webhook/find/${instanceName}`,
+      });
+
+      const response = await this.client.get(
+        `/webhook/find/${instanceName}`,
+        {
+          headers: this.getHeaders(apiKey),
+        }
+      );
+
+      console.log('[EvolutionAPI] Webhook atual:', {
+        status: response.status,
+        data: JSON.stringify(response.data, null, 2).substring(0, 500),
+      });
+
+      return response.data;
+    } catch (error: any) {
+      // Se o endpoint não existir, retornar null (não é erro crítico)
+      if (error.response?.status === 404) {
+        console.log('[EvolutionAPI] ℹ️ Endpoint de verificação de webhook não disponível');
+        return null;
+      }
+      console.error('[EvolutionAPI] ❌ Erro ao verificar webhook:', {
+        instanceName,
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data ? JSON.stringify(error.response.data, null, 2) : 'N/A',
+      });
+      throw new Error(
+        error.response?.data?.message || 
+        error.response?.data?.error || 
+        error.message ||
+        'Erro ao verificar webhook'
       );
     }
   }

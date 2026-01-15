@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { io, Socket } from 'socket.io-client';
 import api from '../utils/api';
 
 interface Conversation {
@@ -27,6 +28,36 @@ export default function Conversations() {
 
   useEffect(() => {
     fetchConversations();
+
+    // Conectar ao Socket.IO para atualizações em tempo real
+    const socket: Socket = io('http://localhost:3007', {
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('connect', () => {
+      console.log('✅ Conectado ao Socket.IO');
+    });
+
+    socket.on('new_message', async (data: { conversationId: string; channelId: string }) => {
+      console.log('📨 Nova mensagem recebida via Socket.IO:', data);
+      // Atualizar lista de conversas quando uma nova mensagem chegar
+      await fetchConversations();
+    });
+
+    socket.on('conversation_updated', async () => {
+      console.log('🔄 Conversa atualizada via Socket.IO');
+      // Atualizar lista de conversas
+      await fetchConversations();
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ Desconectado do Socket.IO');
+    });
+
+    // Limpar conexão ao desmontar componente
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   const fetchConversations = async () => {

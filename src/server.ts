@@ -11,6 +11,9 @@ import conversationRoutes from './routes/conversationRoutes';
 import messageRoutes from './routes/messageRoutes';
 import webhookRoutes, { setSocketIO } from './routes/webhookRoutes';
 import mediaRoutes from './routes/mediaRoutes';
+import n8nWebhookRoutes from './routes/n8nWebhookRoutes';
+import botRoutes from './routes/botRoutes';
+import { setSocketIO as setMessageSocketIO } from './controllers/messageController';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -50,8 +53,9 @@ io.on('connection', (socket) => {
   });
 });
 
-// Configurar io no webhookRoutes antes de usar as rotas
+// Configurar io nos módulos que precisam
 setSocketIO(io);
+setMessageSocketIO(io);
 
 // Rotas da API
 app.use('/api/auth', authRoutes);
@@ -62,6 +66,9 @@ app.use('/api/media', mediaRoutes);
 app.use('/webhooks', webhookRoutes);
 // Rota alternativa para compatibilidade com webhooks antigos
 app.use('/api/whatsapp', webhookRoutes);
+// Rotas para n8n e bots
+app.use('/api/webhooks/n8n', n8nWebhookRoutes);
+app.use('/api/bots', botRoutes);
 
 // Exportar io para uso em outros módulos
 export { io };

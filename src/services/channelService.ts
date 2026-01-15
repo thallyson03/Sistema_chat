@@ -1,6 +1,6 @@
 import prisma from '../config/database';
 import { Channel, ChannelType, ChannelStatus } from '@prisma/client';
-import evolutionApi from '../config/evolutionApi';
+import { evolutionApi } from '../config/evolutionApi';
 
 export interface CreateChannelData {
   name: string;
@@ -26,28 +26,115 @@ export class ChannelService {
   /**
    * Configura o webhook na Evolution API para uma instância
    */
-  private async configureWebhook(instanceId: string, apiKey: string): Promise<void> {
+  private async configureWebhook(instanceId: string, instanceToken: string): Promise<void> {
     const webhookUrl = this.getWebhookUrl();
     if (!webhookUrl) {
       console.warn('[ChannelService] ⚠️ NGROK_URL ou APP_URL não configurado. Webhook não será configurado.');
+      console.warn('[ChannelService] Configure NGROK_URL no .env para ambiente de desenvolvimento');
       return;
     }
 
     try {
-      console.log('[ChannelService] Configurando webhook:', {
-        instanceId,
-        webhookUrl,
-        usingNgrok: !!process.env.NGROK_URL,
-      });
-      await evolutionApi.setWebhook(instanceId, webhookUrl, apiKey);
-      console.log('[ChannelService] ✅ Webhook configurado com sucesso');
-    } catch (error: any) {
-      console.error('[ChannelService] ❌ Erro ao configurar webhook:', error.message);
-      if (error.response) {
-        console.error('[ChannelService] Status:', error.response.status);
-        console.error('[ChannelService] Data:', JSON.stringify(error.response.data, null, 2));
+      console.log('[ChannelService] ============================================');
+      console.log('[ChannelService] 📡 CONFIGURANDO WEBHOOK');
+      console.log('[ChannelService] Instância:', instanceId);
+      console.log('[ChannelService] Token da Instância:', instanceToken ? `${instanceToken.substring(0, 10)}...` : 'NÃO ENCONTRADO');
+      console.log('[ChannelService] URL do Webhook:', webhookUrl);
+      console.log('[ChannelService] Usando ngrok:', !!process.env.NGROK_URL);
+      console.log('[ChannelService] ============================================');
+
+      if (!instanceToken) {
+        throw new Error('Token da instância não encontrado. Aguarde a instância conectar primeiro.');
       }
+
+      // Verificar webhook atual (se possível)
+      try {
+        const currentWebhook = await evolutionApi.getWebhook(instanceId, instanceToken);
+        if (currentWebhook) {
+          console.log('[ChannelService] ℹ️ Webhook atual encontrado:', JSON.stringify(currentWebhook, null, 2).substring(0, 500));
+        }
+      } catch (checkError) {
+        console.log('[ChannelService] ℹ️ Não foi possível verificar webhook atual (normal se endpoint não existir)');
+      }
+
+      // Configurar novo webhook - usar token da instância ao invés da API key
+      const result = await evolutionApi.setWebhook(instanceId, webhookUrl, instanceToken);
+      
+      console.log('[ChannelService] ============================================');
+      console.log('[ChannelService] ✅ WEBHOOK CONFIGURADO COM SUCESSO!');
+      console.log('[ChannelService] Resposta:', JSON.stringify(result, null, 2).substring(0, 500));
+      console.log('[ChannelService] ============================================');
+    } catch (error: any) {
+      console.error('[ChannelService] ============================================');
+      console.error('[ChannelService] ❌ ERRO AO CONFIGURAR WEBHOOK');
+      console.error('[ChannelService] Instância:', instanceId);
+      console.error('[ChannelService] URL do Webhook:', webhookUrl);
+      console.error('[ChannelService] Erro:', error.message);
+      if (error.response) {
+        console.error('[ChannelService] Status HTTP:', error.response.status);
+        console.error('[ChannelService] Status Text:', error.response.statusText);
+        console.error('[ChannelService] Dados do erro:', JSON.stringify(error.response.data, null, 2));
+        console.error('[ChannelService] Headers da resposta:', JSON.stringify(error.response.headers, null, 2));
+      }
+      if (error.config) {
+        console.error('[ChannelService] URL da requisição:', error.config.url);
+        console.error('[ChannelService] Método:', error.config.method);
+        console.error('[ChannelService] Payload enviado:', error.config.data ? JSON.stringify(JSON.parse(error.config.data), null, 2) : 'N/A');
+        console.error('[ChannelService] Headers enviados:', JSON.stringify(error.config.headers, null, 2));
+      }
+      console.error('[ChannelService] Stack trace:', error.stack);
+      console.error('[ChannelService] ============================================');
       throw error;
+    }
+  }
+
+  /**
+   * Configura o webhook manualmente (método público)
+   */
+  async configureWebhookManually(channelId: string): Promise<{ success: boolean; message: string; webhookUrl?: string }> {
+    const channel = await this.getChannelById(channelId);
+    
+    if (!channel) {
+      throw new Error('Canal não encontrado');
+    }
+
+    if (channel.type !== ChannelType.WHATSAPP) {
+      throw new Error('Webhook disponível apenas para canais WhatsApp');
+    }
+
+    if (!channel.evolutionInstanceId || !channel.evolutionApiKey) {
+      throw new Error('Canal não configurado com Evolution API');
+    }
+
+    const webhookUrl = this.getWebhookUrl();
+    if (!webhookUrl) {
+      return {
+        success: false,
+        message: 'NGROK_URL ou APP_URL não configurado no .env',
+      };
+    }
+
+    if (!channel.evolutionInstanceToken) {
+      return {
+        success: false,
+        message: 'Token da instância não encontrado. Aguarde a instância conectar primeiro.',
+        webhookUrl,
+      };
+    }
+
+    try {
+      await this.configureWebhook(channel.evolutionInstanceId!, channel.evolutionInstanceToken);
+      return {
+        success: true,
+        message: 'Webhook configurado com sucesso',
+        webhookUrl,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.message || 'Erro ao configurar webhook',
+        webhookUrl,
+      };
     }
   }
 
@@ -109,14 +196,8 @@ export class ChannelService {
         });
 
         // Configurar webhook na criação (tentativa inicial)
-        if (instanceId) {
-          try {
-            await this.configureWebhook(instanceId, apiKey);
-          } catch (webhookError: any) {
-            console.error('[ChannelService] ⚠️ Erro ao configurar webhook na criação:', webhookError.message);
-            // Não bloqueia a criação do canal se o webhook falhar
-          }
-        }
+        // Nota: O webhook será configurado automaticamente quando a instância conectar
+        // pois precisamos do token da instância, que só é gerado após a conexão
       } catch (error: any) {
         console.error('Erro ao criar instância na Evolution API:', error.message);
         // Continua criando o canal mesmo se falhar a criação da instância
@@ -403,26 +484,56 @@ export class ChannelService {
         console.log('[ChannelService] ✅ Token atualizado com sucesso');
       }
 
+      // Normalizar status - Evolution API pode retornar em diferentes formatos
+      const normalizedStatus = (evolutionStatus.status || '').toLowerCase();
+      const isConnected = normalizedStatus === 'open' || 
+                         normalizedStatus === 'connected' || 
+                         normalizedStatus === 'ready' ||
+                         normalizedStatus === 'authenticated';
+      const isDisconnected = normalizedStatus === 'close' || 
+                            normalizedStatus === 'closed' || 
+                            normalizedStatus === 'disconnected' ||
+                            normalizedStatus === 'logout';
+
+      console.log('[ChannelService] Status da instância:', {
+        rawStatus: evolutionStatus.status,
+        normalizedStatus,
+        isConnected,
+        isDisconnected,
+        currentChannelStatus: channel.status,
+      });
+
       // Atualizar status no banco se mudou
-      if (evolutionStatus.status === 'open' && channel.status !== ChannelStatus.ACTIVE) {
+      if (isConnected && channel.status !== ChannelStatus.ACTIVE) {
+        console.log('[ChannelService] ✅ Detectada conexão! Atualizando status para ACTIVE...');
         await this.updateChannelStatus(channelId, ChannelStatus.ACTIVE);
         
         // Configurar webhook quando o canal é conectado
         console.log('[ChannelService] Canal conectado! Configurando webhook...');
-        try {
-          await this.configureWebhook(channel.evolutionInstanceId!, channel.evolutionApiKey!);
-        } catch (webhookError: any) {
-          console.error('[ChannelService] ⚠️ Erro ao configurar webhook após conexão:', webhookError.message);
-          // Não bloqueia a atualização de status se o webhook falhar
+        if (channel.evolutionInstanceToken) {
+          try {
+            await this.configureWebhook(channel.evolutionInstanceId!, channel.evolutionInstanceToken);
+          } catch (webhookError: any) {
+            console.error('[ChannelService] ⚠️ Erro ao configurar webhook após conexão:', webhookError.message);
+            // Não bloqueia a atualização de status se o webhook falhar
+          }
+        } else {
+          console.warn('[ChannelService] ⚠️ Token da instância não encontrado. Webhook não será configurado.');
         }
         
         return { status: 'ACTIVE' };
       }
 
-      if (evolutionStatus.status === 'close' && channel.status !== ChannelStatus.INACTIVE) {
+      if (isDisconnected && channel.status !== ChannelStatus.INACTIVE) {
+        console.log('[ChannelService] ⚠️ Detectada desconexão! Atualizando status para INACTIVE...');
         await this.updateChannelStatus(channelId, ChannelStatus.INACTIVE);
         return { status: 'INACTIVE' };
       }
+
+      console.log('[ChannelService] Status não mudou:', {
+        evolutionStatus: evolutionStatus.status,
+        channelStatus: channel.status,
+      });
 
       return { status: channel.status };
     } catch (error: any) {

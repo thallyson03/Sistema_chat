@@ -4,6 +4,13 @@ import { MessageService } from '../services/messageService';
 
 const messageService = new MessageService();
 
+// io será injetado via função (similar ao webhookRoutes)
+let io: any = null;
+
+export function setSocketIO(socketIO: any) {
+  io = socketIO;
+}
+
 export class MessageController {
   async sendMessage(req: AuthRequest, res: Response) {
     try {
@@ -32,6 +39,23 @@ export class MessageController {
       });
 
       console.log('[MessageController] Mensagem criada com sucesso:', message.id);
+      
+      // Emitir evento via Socket.IO para atualizar em tempo real
+      if (io) {
+        try {
+          io.emit('new_message', {
+            conversationId: conversationId,
+            messageId: message.id,
+          });
+          io.emit('conversation_updated', {
+            conversationId: conversationId,
+          });
+          console.log('[MessageController] 📢 Eventos Socket.IO emitidos para conversa:', conversationId);
+        } catch (socketError) {
+          console.error('[MessageController] Erro ao emitir evento Socket.IO:', socketError);
+        }
+      }
+      
       res.status(201).json(message);
     } catch (error: any) {
       console.error('[MessageController] Erro ao enviar mensagem:', error.message);

@@ -54,16 +54,42 @@ export class MessageService {
         console.log('Número formatado:', whatsappNumber);
         console.log('Conteúdo:', data.content.substring(0, 50));
         
+        // Usar API key master (não o token da instância para envio de mensagens)
+        // O token da instância é usado apenas para webhook, não para envio
+        const apiKey = conversation.channel.evolutionApiKey || process.env.EVOLUTION_API_KEY;
+        
+        if (!apiKey) {
+          throw new Error('API key não encontrada. Configure EVOLUTION_API_KEY no .env ou no canal.');
+        }
+        
+        console.log('📤 [MessageService] Enviando via Evolution API:', {
+          instanceId: conversation.channel.evolutionInstanceId,
+          number: whatsappNumber,
+          contentLength: data.content.length,
+          usingApiKey: !!apiKey,
+          hasInstanceToken: !!conversation.channel.evolutionInstanceToken,
+        });
+        
         const evolutionResponse = await evolutionApi.sendMessage(
           conversation.channel.evolutionInstanceId,
           whatsappNumber,
           data.content,
-          conversation.channel.evolutionApiKey
+          apiKey
         );
 
-        console.log('✅ Mensagem enviada com sucesso:', evolutionResponse);
+        console.log('✅ [MessageService] Mensagem enviada com sucesso:', {
+          response: JSON.stringify(evolutionResponse, null, 2).substring(0, 500),
+          hasKey: !!evolutionResponse.key,
+          hasId: !!evolutionResponse.id,
+        });
+        
         externalId = evolutionResponse.key?.id || evolutionResponse.id || null;
         status = MessageStatus.SENT;
+        
+        console.log('✅ [MessageService] Status da mensagem:', {
+          status,
+          externalId,
+        });
       } catch (error: any) {
         console.error('❌ Erro ao enviar mensagem via Evolution API:', error.message);
         console.error('Stack:', error.stack?.substring(0, 500));
@@ -112,6 +138,12 @@ export class MessageService {
       data: {
         lastMessageAt: new Date(),
       },
+    });
+
+    console.log('✅ [MessageService] Mensagem salva e conversa atualizada:', {
+      messageId: message.id,
+      conversationId: data.conversationId,
+      status: message.status,
     });
 
     return message;

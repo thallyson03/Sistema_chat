@@ -98,6 +98,8 @@ model Channel {
 
   contacts      Contact[]
   conversations Conversation[]
+  webhooks      WebhookConfig[]
+  bots          Bot[]
 }
 
 model Contact {
@@ -136,6 +138,7 @@ model Conversation {
   messages     Message[]
   tags         ConversationTag[]
   ticket       Ticket?
+  botSession   BotSession?
 }
 
 model Message {
@@ -197,4 +200,235 @@ model Ticket {
 
   @@index([assignedToId])
   @@index([status])
+}
+
+// ============================================
+// MODELOS PARA INTEGRAÇÃO N8N
+// ============================================
+
+model WebhookConfig {
+  id          String   @id @default(cuid())
+  name        String
+  url         String   // URL do webhook do n8n
+  events      String[] // Eventos que devem ser enviados: ["message.received", "conversation.updated"]
+  isActive    Boolean  @default(true)
+  secret      String?  // Secret para validação de webhooks recebidos
+  channelId   String?  // Opcional: apenas para um canal específico
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  channel     Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  executions  WebhookExecution[]
+
+  @@index([isActive])
+  @@index([channelId])
+}
+
+model WebhookExecution {
+  id          String   @id @default(cuid())
+  webhookId   String
+  event       String
+  status      String   // SUCCESS, FAILED, PENDING
+  requestBody Json?
+  responseBody Json?
+  error       String?
+  executedAt  DateTime @default(now())
+
+  webhook     WebhookConfig @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([executedAt])
+  @@index([status])
+}
+
+model Automation {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  trigger     Json     // Configuração do trigger
+  actions     Json     // Configuração das ações
+  isActive    Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  executions  AutomationExecution[]
+
+  @@index([isActive])
+}
+
+model AutomationExecution {
+  id           String   @id @default(cuid())
+  automationId String
+  status       String   // SUCCESS, FAILED, RUNNING
+  inputData    Json?
+  outputData   Json?
+  error        String?
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@index([startedAt])
+}
+
+// ============================================
+// MODELOS PARA SISTEMA DE CHATBOT
+// ============================================
+
+model Bot {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  avatar          String?
+  channelId       String
+  language        String   @default("pt-BR")
+  isActive        Boolean  @default(true)
+  welcomeMessage  String?
+  fallbackMessage String?  // Mensagem quando não entende
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  channel     Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  intents     Intent[]
+  flows       Flow[]
+  sessions    BotSession[]
+  variables   BotVariable[]
+
+  @@index([channelId])
+  @@index([isActive])
+}
+
+model Intent {
+  id          String   @id @default(cuid())
+  botId       String
+  name        String
+  keywords    String[] // Palavras-chave que ativam esta intenção
+  patterns    String[] // Regex patterns
+  priority    Int      @default(0) // Prioridade de matching (maior = mais prioritário)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  responses   Response[]
+  flowSteps   FlowStep[]
+
+  @@index([botId])
+}
+
+model Response {
+  id          String   @id @default(cuid())
+  intentId   String?
+  flowStepId String?  @unique // Um FlowStep pode ter apenas uma Response
+  type       String   // TEXT, IMAGE, BUTTONS, LIST, QUICK_REPLIES
+  content    String   // Conteúdo da resposta
+  buttons    Json?    // Botões (se type = BUTTONS)
+  mediaUrl   String?  // URL da mídia (se type = IMAGE/VIDEO)
+  metadata   Json?    // Dados adicionais
+  order      Int      @default(0) // Ordem de exibição
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  intent     Intent?  @relation(fields: [intentId], references: [id], onDelete: Cascade)
+  flowStep   FlowStep? @relation(fields: [flowStepId], references: [id], onDelete: Cascade)
+
+  @@index([intentId])
+  @@index([flowStepId])
+}
+
+model Flow {
+  id          String   @id @default(cuid())
+  botId       String
+  name        String
+  description String?
+  trigger     String   // Como o fluxo é ativado: "intent", "keyword", "always", "api"
+  triggerValue String? // Valor do trigger (nome do intent, keyword, etc.)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  steps       FlowStep[]
+
+  @@index([botId])
+  @@index([isActive])
+}
+
+model FlowStep {
+  id          String   @id @default(cuid())
+  flowId      String
+  intentId    String?  // Intent que ativa este passo
+  type        String   // MESSAGE, CONDITION, API_CALL, HTTP_REQUEST, HANDOFF, DELAY, SET_VARIABLE, INPUT
+  order       Int      // Ordem no fluxo
+  config      Json     // Configuração específica do tipo
+  nextStepId  String?  // Próximo passo (se não for condicional)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  flow        Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  intent      Intent?  @relation(fields: [intentId], references: [id], onDelete: SetNull)
+  response    Response?
+  conditions  FlowCondition[]
+
+  @@index([flowId])
+  @@index([intentId])
+}
+
+model FlowCondition {
+  id          String   @id @default(cuid())
+  stepId      String
+  condition   String   // Campo a verificar (ex: "message.content", "context.variable")
+  operator    String   // EQUALS, CONTAINS, GREATER_THAN, LESS_THAN, REGEX
+  value       String   // Valor a comparar
+  trueStepId  String?  // Próximo passo se verdadeiro
+  falseStepId String?  // Próximo passo se falso
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  step        FlowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([stepId])
+}
+
+model BotSession {
+  id            String   @id @default(cuid())
+  botId         String
+  conversationId String   @unique
+  currentFlowId String?
+  currentStepId String?
+  context       Json?    // Contexto da conversa (variáveis armazenadas)
+  isActive      Boolean  @default(true)
+  handoffToUserId String? // Se foi transferido para humano
+  handoffAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversation  Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([isActive])
+  @@index([conversationId])
+}
+
+// ============================================
+// VARIÁVEIS DO BOT
+// ============================================
+
+model BotVariable {
+  id          String   @id @default(cuid())
+  botId       String
+  name        String   // Nome da variável (ex: "firstName")
+  type        String   // STRING, NUMBER, BOOLEAN, DATE, JSON
+  defaultValue String? // Valor padrão
+  isGlobal    Boolean  @default(false) // Variável global ou de sessão
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, name])
+  @@index([botId])
 }

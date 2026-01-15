@@ -14,6 +14,7 @@ router.get('/:id', channelController.getChannelById.bind(channelController));
 router.get('/:id/qrcode', channelController.getQRCode.bind(channelController));
 router.get('/:id/status', channelController.getStatus.bind(channelController));
 router.post('/', channelController.createChannel.bind(channelController));
+router.post('/:id/webhook', channelController.configureWebhook.bind(channelController));
 router.put('/:id', channelController.updateChannel.bind(channelController));
 router.delete('/:id', channelController.deleteChannel.bind(channelController));
 
