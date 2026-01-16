@@ -351,3 +351,4 @@ O que falta são principalmente:
 
 **Status Geral: ~60% completo** (funcionalidades core implementadas, features complementares faltando)
 
+

@@ -298,10 +298,80 @@ export class BotController {
         return res.status(404).json({ error: 'Bot não encontrado' });
       }
 
-      res.json(bot.flows);
+      // Garantir que flows existe e é um array
+      const flows = bot.flows || [];
+      
+      // Serializar flows de forma segura
+      const serializedFlows = flows.map((flow: any) => {
+        try {
+          return {
+            id: flow.id,
+            name: flow.name,
+            description: flow.description,
+            trigger: flow.trigger,
+            triggerValue: flow.triggerValue,
+            botId: flow.botId,
+            createdAt: flow.createdAt,
+            updatedAt: flow.updatedAt,
+            steps: (flow.steps || []).map((step: any) => {
+              try {
+                // Garantir que config é um objeto válido
+                let config = {};
+                if (step.config) {
+                  if (typeof step.config === 'string') {
+                    try {
+                      config = JSON.parse(step.config);
+                    } catch {
+                      config = {};
+                    }
+                  } else if (typeof step.config === 'object') {
+                    config = step.config;
+                  }
+                }
+                
+                return {
+                  id: step.id,
+                  type: step.type,
+                  order: step.order,
+                  config: config,
+                  position: step.position || null,
+                  nextStepId: step.nextStepId,
+                  responseId: step.responseId,
+                  intentId: step.intentId,
+                  response: step.response,
+                  conditions: step.conditions || [],
+                  createdAt: step.createdAt,
+                  updatedAt: step.updatedAt,
+                };
+              } catch (stepError: any) {
+                console.error('[BotController] Erro ao serializar step:', stepError);
+                return {
+                  id: step.id,
+                  type: step.type,
+                  order: step.order,
+                  config: {},
+                  position: null,
+                  error: 'Erro ao serializar step',
+                };
+              }
+            }),
+          };
+        } catch (flowError: any) {
+          console.error('[BotController] Erro ao serializar flow:', flowError);
+          return {
+            id: flow.id,
+            name: flow.name || 'Erro ao carregar',
+            steps: [],
+            error: 'Erro ao serializar flow',
+          };
+        }
+      });
+
+      res.json(serializedFlows);
     } catch (error: any) {
       console.error('[BotController] Erro ao listar fluxos:', error);
-      res.status(500).json({ error: error.message });
+      console.error('[BotController] Stack trace:', error.stack);
+      res.status(500).json({ error: error.message || 'Erro interno do servidor' });
     }
   }
 
@@ -413,10 +483,69 @@ export class BotController {
         return res.status(404).json({ error: 'Fluxo não encontrado' });
       }
 
-      res.json(flow);
+      // Serializar flow de forma segura
+      try {
+        const serializedFlow = {
+          id: flow.id,
+          name: flow.name,
+          description: flow.description,
+          trigger: flow.trigger,
+          triggerValue: flow.triggerValue,
+          botId: flow.botId,
+          createdAt: flow.createdAt,
+          updatedAt: flow.updatedAt,
+          steps: (flow.steps || []).map((step: any) => {
+            try {
+              let stepConfig = {};
+              if (step.config) {
+                if (typeof step.config === 'string') {
+                  try {
+                    stepConfig = JSON.parse(step.config);
+                  } catch {
+                    stepConfig = {};
+                  }
+                } else if (typeof step.config === 'object') {
+                  stepConfig = step.config;
+                }
+              }
+              
+              return {
+                id: step.id,
+                type: step.type,
+                order: step.order,
+                config: stepConfig,
+                position: step.position || null,
+                nextStepId: step.nextStepId,
+                responseId: step.responseId,
+                intentId: step.intentId,
+                response: step.response,
+                conditions: step.conditions || [],
+                createdAt: step.createdAt,
+                updatedAt: step.updatedAt,
+              };
+            } catch (stepError: any) {
+              console.error('[BotController] Erro ao serializar step:', stepError);
+              return {
+                id: step.id,
+                type: step.type,
+                order: step.order,
+                config: {},
+                position: null,
+                error: 'Erro ao serializar step',
+              };
+            }
+          }),
+        };
+
+        res.json(serializedFlow);
+      } catch (error: any) {
+        console.error('[BotController] Erro ao serializar flow completo:', error);
+        throw error;
+      }
     } catch (error: any) {
       console.error('[BotController] Erro ao obter fluxo:', error);
-      res.status(500).json({ error: error.message });
+      console.error('[BotController] Stack trace:', error.stack);
+      res.status(500).json({ error: error.message || 'Erro interno do servidor' });
     }
   }
 

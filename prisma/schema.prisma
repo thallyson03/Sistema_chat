@@ -321,11 +321,11 @@ model Response {
   id          String   @id @default(cuid())
   intentId   String?
   flowStepId String?  @unique // Um FlowStep pode ter apenas uma Response
-  type       String   // TEXT, IMAGE, BUTTONS, LIST, QUICK_REPLIES
+  type       String   // TEXT, IMAGE, VIDEO, AUDIO, BUTTONS, LIST, QUICK_REPLIES, EMBED
   content    String   // Conteúdo da resposta
   buttons    Json?    // Botões (se type = BUTTONS)
-  mediaUrl   String?  // URL da mídia (se type = IMAGE/VIDEO)
-  metadata   Json?    // Dados adicionais
+  mediaUrl   String?  // URL da mídia (se type = IMAGE/VIDEO/AUDIO)
+  metadata   Json?    // Dados adicionais (alt text, tamanho, autoplay, etc.)
   order      Int      @default(0) // Ordem de exibição
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -359,7 +359,10 @@ model FlowStep {
   id          String   @id @default(cuid())
   flowId      String
   intentId    String?  // Intent que ativa este passo
-  type        String   // MESSAGE, CONDITION, API_CALL, HTTP_REQUEST, HANDOFF, DELAY, SET_VARIABLE, INPUT
+  // Tipos de blocos: MESSAGE, CONDITION, HTTP_REQUEST, HANDOFF, DELAY, SET_VARIABLE, INPUT,
+  // IMAGE, VIDEO, AUDIO, EMBED, EMAIL_INPUT, NUMBER_INPUT, PHONE_INPUT, DATE_INPUT,
+  // FILE_UPLOAD, PICTURE_CHOICE, REDIRECT, SCRIPT, WAIT, TYPEBOT_LINK, AB_TEST, JUMP
+  type        String   // Tipo do bloco
   order       Int      // Ordem no fluxo
   config      Json     // Configuração específica do tipo
   nextStepId  String?  // Próximo passo (se não for condicional)

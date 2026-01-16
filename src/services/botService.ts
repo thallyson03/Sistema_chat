@@ -541,6 +541,218 @@ export class BotService {
           });
         }
         break;
+
+      case 'IMAGE':
+        // Enviar imagem
+        const imageUrl = this.parseVariables(currentStep.config?.imageUrl || '', (session.context as Record<string, any>) || {});
+        await this.sendBotResponse(session.conversationId, {
+          type: 'IMAGE',
+          content: currentStep.config?.altText || '',
+          mediaUrl: imageUrl,
+        } as any, session.botId, (session.context as Record<string, any>) || {});
+        
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'VIDEO':
+        // Enviar vídeo
+        const videoUrl = this.parseVariables(currentStep.config?.videoUrl || '', (session.context as Record<string, any>) || {});
+        await this.sendBotResponse(session.conversationId, {
+          type: 'VIDEO',
+          content: '',
+          mediaUrl: videoUrl,
+        } as any, session.botId, (session.context as Record<string, any>) || {});
+        
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'AUDIO':
+        // Enviar áudio
+        const audioUrl = this.parseVariables(currentStep.config?.audioUrl || '', (session.context as Record<string, any>) || {});
+        await this.sendBotResponse(session.conversationId, {
+          type: 'AUDIO',
+          content: '',
+          mediaUrl: audioUrl,
+        } as any, session.botId, (session.context as Record<string, any>) || {});
+        
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'EMBED':
+        // Enviar embed (como mensagem de texto com URL)
+        const embedUrl = this.parseVariables(currentStep.config?.embedUrl || '', (session.context as Record<string, any>) || {});
+        await this.sendBotResponse(session.conversationId, {
+          type: 'TEXT',
+          content: `Embed: ${embedUrl}`,
+        } as any, session.botId, (session.context as Record<string, any>) || {});
+        
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'EMAIL_INPUT':
+      case 'NUMBER_INPUT':
+      case 'PHONE_INPUT':
+      case 'DATE_INPUT':
+      case 'FILE_UPLOAD':
+        // Tratar como INPUT genérico com validação específica
+        const inputType = currentStep.type.replace('_INPUT', '');
+        const isValidInput = await this.validateInput({ ...currentStep, config: { ...currentStep.config, inputType } }, input);
+        const inputContext = (session.context as Record<string, any>) || {};
+        
+        if (isValidInput) {
+          const inputVariableName = currentStep.config?.variableName;
+          if (inputVariableName) {
+            const updatedInputContext = this.variableService.setVariableValue(inputContext, inputVariableName, input);
+            await prisma.botSession.update({
+              where: { id: session.id },
+              data: { context: updatedInputContext },
+            });
+          }
+          
+          if (currentStep.nextStepId) {
+            await prisma.botSession.update({
+              where: { id: session.id },
+              data: { currentStepId: currentStep.nextStepId },
+            });
+          }
+        } else {
+          const errorMsg = currentStep.config?.errorMessage || 'Resposta inválida. Por favor, tente novamente.';
+          await this.sendBotResponse(session.conversationId, {
+            type: 'TEXT',
+            content: errorMsg,
+          } as any, session.botId, inputContext);
+        }
+        break;
+
+      case 'PICTURE_CHOICE':
+        // Aguardar escolha de imagem
+        const choiceContext = (session.context as Record<string, any>) || {};
+        const choiceVariableName = currentStep.config?.variableName;
+        if (choiceVariableName && input) {
+          const updatedChoiceContext = this.variableService.setVariableValue(choiceContext, choiceVariableName, input);
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { context: updatedChoiceContext },
+          });
+        }
+        
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'REDIRECT':
+        // Redirecionamento é tratado no frontend/cliente
+        // Aqui apenas avançamos o fluxo
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'SCRIPT':
+        // Executar script JavaScript (em ambiente seguro)
+        // Por segurança, scripts são executados apenas no frontend
+        // Aqui apenas avançamos o fluxo
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'WAIT':
+        // Aguardar evento específico (implementação depende do tipo de wait)
+        // Por enquanto, apenas avançamos após delay
+        const waitTime = currentStep.config?.waitTime || 1000;
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'TYPEBOT_LINK':
+        // Link para outro bot (sub-bot)
+        // Por enquanto, apenas avançamos o fluxo
+        // Implementação completa requereria gerenciamento de múltiplos bots
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'AB_TEST':
+        // Teste A/B - escolher variante baseado em percentual
+        const splitPercent = currentStep.config?.splitPercent || 50;
+        const variants = currentStep.config?.variants || [];
+        const random = Math.random() * 100;
+        const selectedVariant = random < splitPercent ? variants[0] : variants[1];
+        
+        if (selectedVariant?.blockId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: selectedVariant.blockId },
+          });
+        } else if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
+
+      case 'JUMP':
+        // Pular para step específico
+        const targetStepId = currentStep.config?.targetStepId;
+        if (targetStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: targetStepId },
+          });
+        }
+        break;
+
+      default:
+        // Tipo desconhecido - apenas avançar se houver próximo step
+        if (currentStep.nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: currentStep.nextStepId },
+          });
+        }
+        break;
     }
   }
 
@@ -972,18 +1184,38 @@ export class BotService {
     trueStepId?: string;
     falseStepId?: string;
   }) {
-    const condition = await prisma.flowCondition.create({
-      data: {
-        stepId,
-        condition: data.condition,
-        operator: data.operator,
-        value: data.value,
-        trueStepId: data.trueStepId,
-        falseStepId: data.falseStepId,
-      },
+    // Verificar se já existe uma condição para este step
+    const existingCondition = await prisma.flowCondition.findFirst({
+      where: { stepId },
     });
 
-    return condition;
+    if (existingCondition) {
+      // Atualizar condição existente
+      const condition = await prisma.flowCondition.update({
+        where: { id: existingCondition.id },
+        data: {
+          condition: data.condition,
+          operator: data.operator,
+          value: data.value,
+          trueStepId: data.trueStepId !== undefined ? data.trueStepId : existingCondition.trueStepId,
+          falseStepId: data.falseStepId !== undefined ? data.falseStepId : existingCondition.falseStepId,
+        },
+      });
+      return condition;
+    } else {
+      // Criar nova condição
+      const condition = await prisma.flowCondition.create({
+        data: {
+          stepId,
+          condition: data.condition,
+          operator: data.operator,
+          value: data.value,
+          trueStepId: data.trueStepId,
+          falseStepId: data.falseStepId,
+        },
+      });
+      return condition;
+    }
   }
 
   /**

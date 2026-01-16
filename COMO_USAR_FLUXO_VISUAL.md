@@ -94,3 +94,4 @@
 3. **Condições** avaliam a mensagem do usuário e seguem para "Sim" ou "Não"
 4. O fluxo continua até chegar ao nó "Fim" ou a um handoff
 
+

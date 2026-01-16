@@ -70,6 +70,25 @@ app.use('/api/whatsapp', webhookRoutes);
 app.use('/api/webhooks/n8n', n8nWebhookRoutes);
 app.use('/api/bots', botRoutes);
 
+// Middleware de tratamento de erros global
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('[Server] Erro não tratado:', err);
+  console.error('[Server] Stack trace:', err.stack);
+  console.error('[Server] Request URL:', req.url);
+  console.error('[Server] Request Method:', req.method);
+  console.error('[Server] Request Body:', req.body);
+  
+  res.status(err.status || 500).json({
+    error: err.message || 'Erro interno do servidor',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+  });
+});
+
+// Middleware para rotas não encontradas
+app.use((req: express.Request, res: express.Response) => {
+  res.status(404).json({ error: 'Rota não encontrada' });
+});
+
 // Exportar io para uso em outros módulos
 export { io };
 
