@@ -95,3 +95,4 @@
 4. O fluxo continua até chegar ao nó "Fim" ou a um handoff
 
 
+

@@ -18,24 +18,34 @@ export class MessageController {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
 
-      const { conversationId, content, type } = req.body;
+      const { conversationId, content, type, mediaUrl, fileName, caption } = req.body;
 
-      if (!conversationId || !content) {
-        return res.status(400).json({ error: 'Conversa e conteúdo são obrigatórios' });
+      if (!conversationId) {
+        return res.status(400).json({ error: 'Conversa é obrigatória' });
+      }
+
+      // Para mídias, content pode ser vazio (será usado como caption)
+      if (!content && !mediaUrl) {
+        return res.status(400).json({ error: 'Conteúdo ou mídia são obrigatórios' });
       }
 
       console.log('[MessageController] Enviando mensagem:', {
         conversationId,
         userId: req.user.id,
-        contentLength: content.length,
+        contentLength: content?.length || 0,
         type,
+        hasMediaUrl: !!mediaUrl,
+        fileName,
       });
 
       const message = await messageService.sendMessage({
         conversationId,
         userId: req.user.id,
-        content,
+        content: content || caption || '',
         type,
+        mediaUrl,
+        fileName,
+        caption,
       });
 
       console.log('[MessageController] Mensagem criada com sucesso:', message.id);

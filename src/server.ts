@@ -13,6 +13,9 @@ import webhookRoutes, { setSocketIO } from './routes/webhookRoutes';
 import mediaRoutes from './routes/mediaRoutes';
 import n8nWebhookRoutes from './routes/n8nWebhookRoutes';
 import botRoutes from './routes/botRoutes';
+import quickReplyRoutes from './routes/quickReplyRoutes';
+import sectorRoutes from './routes/sectorRoutes';
+import userRoutes from './routes/userRoutes';
 import { setSocketIO as setMessageSocketIO } from './controllers/messageController';
 
 // Carregar variáveis de ambiente
@@ -35,6 +38,10 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Servir arquivos de upload
+import path from 'path';
+app.use('/api/media/file', express.static(path.join(__dirname, '../uploads')));
 
 // Rota de health check
 app.get('/health', (req, res) => {
@@ -63,6 +70,9 @@ app.use('/api/channels', channelRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/api/quick-replies', quickReplyRoutes);
+app.use('/api/sectors', sectorRoutes);
+app.use('/api/users', userRoutes);
 app.use('/webhooks', webhookRoutes);
 // Rota alternativa para compatibilidade com webhooks antigos
 app.use('/api/whatsapp', webhookRoutes);

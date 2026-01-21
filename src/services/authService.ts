@@ -13,6 +13,7 @@ export interface RegisterData {
   password: string;
   name: string;
   role?: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+  sectorIds?: string[];
 }
 
 export class AuthService {
@@ -33,10 +34,25 @@ export class AuthService {
         password: hashedPassword,
         name: data.name,
         role: data.role || 'AGENT',
+        sectors: data.sectorIds && data.sectorIds.length > 0
+          ? {
+              create: data.sectorIds.map((sectorId) => ({
+                sectorId,
+              })),
+            }
+          : undefined,
+      },
+      include: {
+        sectors: {
+          include: {
+            sector: true,
+          },
+        },
       },
     });
 
-    return user;
+    const { password: _, sectors, ...userWithoutSensitive } = user;
+    return userWithoutSensitive as User;
   }
 
   async login(credentials: LoginCredentials): Promise<{ user: User; token: string }> {
@@ -77,6 +93,25 @@ export class AuthService {
       } as jwt.SignOptions
     );
 
+    // Atualizar lastActiveAt ao fazer login
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastActiveAt: new Date(),
+      },
+    });
+
+    // Tentar redistribuir conversas não atribuídas quando um usuário faz login
+    // Isso garante que conversas que ficaram sem usuário (todos offline) sejam distribuídas
+    try {
+      const { ConversationDistributionService } = await import('./conversationDistributionService');
+      const distributionService = new ConversationDistributionService();
+      await distributionService.redistributeUnassignedConversations();
+    } catch (error) {
+      console.error('[AuthService] Erro ao redistribuir conversas no login:', error);
+      // Não bloquear o login se a redistribuição falhar
+    }
+
     // Remove password do retorno
     const { password, ...userWithoutPassword } = user;
 
@@ -86,22 +121,22 @@ export class AuthService {
     };
   }
 
-  async getCurrentUser(userId: string): Promise<User | null> {
+  async getCurrentUser(userId: string): Promise<any> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        avatar: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
+        sectors: {
+          include: {
+            sector: true,
+          },
+        },
       },
     });
 
-    return user as User | null;
+    if (!user) return null;
+
+    const { password: _, ...userWithoutPassword } = user;
+    return userWithoutPassword;
   }
 }
 

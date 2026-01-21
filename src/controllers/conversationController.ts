@@ -17,10 +17,23 @@ export class ConversationController {
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
 
+      console.log('[ConversationController] Buscando conversas:', {
+        filters,
+        limit,
+        offset,
+        userId: req.user?.id,
+      });
+
       const result = await conversationService.getConversations(filters, limit, offset);
+
+      console.log('[ConversationController] Conversas encontradas:', {
+        total: result.total,
+        count: result.conversations.length,
+      });
 
       res.json(result);
     } catch (error: any) {
+      console.error('[ConversationController] Erro ao buscar conversas:', error);
       res.status(500).json({ error: error.message });
     }
   }
@@ -92,6 +105,7 @@ export class ConversationController {
     }
   }
 }
+
 
 
 

@@ -34,7 +34,7 @@ export class ChannelController {
 
   async createChannel(req: AuthRequest, res: Response) {
     try {
-      const { name, type, config, evolutionApiKey, evolutionInstanceId, evolutionInstanceToken } = req.body;
+      const { name, type, config, evolutionApiKey, evolutionInstanceId, evolutionInstanceToken, sectorId } = req.body;
 
       if (!name || !type) {
         return res.status(400).json({ error: 'Nome e tipo são obrigatórios' });
@@ -48,6 +48,7 @@ export class ChannelController {
         type,
         config,
         evolutionApiKey: apiKey,
+        sectorId,
         evolutionInstanceId,
         evolutionInstanceToken,
       });
@@ -61,7 +62,7 @@ export class ChannelController {
   async updateChannel(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const { name, config, evolutionApiKey, evolutionInstanceId, evolutionInstanceToken } = req.body;
+      const { name, config, evolutionApiKey, evolutionInstanceId, evolutionInstanceToken, sectorId } = req.body;
 
       const channel = await channelService.updateChannel(id, {
         name,
@@ -69,6 +70,7 @@ export class ChannelController {
         evolutionApiKey,
         evolutionInstanceId,
         evolutionInstanceToken,
+        sectorId,
       });
 
       res.json(channel);

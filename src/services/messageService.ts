@@ -7,6 +7,9 @@ export interface SendMessageData {
   userId: string;
   content: string;
   type?: string;
+  mediaUrl?: string;
+  fileName?: string;
+  caption?: string;
 }
 
 export class MessageService {
@@ -66,16 +69,76 @@ export class MessageService {
           instanceId: conversation.channel.evolutionInstanceId,
           number: whatsappNumber,
           contentLength: data.content.length,
+          type: data.type,
+          hasMediaUrl: !!data.mediaUrl,
           usingApiKey: !!apiKey,
           hasInstanceToken: !!conversation.channel.evolutionInstanceToken,
         });
         
-        const evolutionResponse = await evolutionApi.sendMessage(
-          conversation.channel.evolutionInstanceId,
-          whatsappNumber,
-          data.content,
-          apiKey
-        );
+        let evolutionResponse: any;
+        const messageType = (data.type as MessageType) || MessageType.TEXT;
+
+        // Enviar mídia se houver URL
+        if (data.mediaUrl && messageType !== MessageType.TEXT) {
+          const baseUrl = process.env.API_BASE_URL || 'http://localhost:3007';
+          const fullMediaUrl = data.mediaUrl.startsWith('http') 
+            ? data.mediaUrl 
+            : `${baseUrl}${data.mediaUrl}`;
+
+          switch (messageType) {
+            case MessageType.IMAGE:
+              evolutionResponse = await evolutionApi.sendImage(
+                conversation.channel.evolutionInstanceId,
+                whatsappNumber,
+                fullMediaUrl,
+                data.caption || data.content,
+                apiKey
+              );
+              break;
+            case MessageType.VIDEO:
+              evolutionResponse = await evolutionApi.sendVideo(
+                conversation.channel.evolutionInstanceId,
+                whatsappNumber,
+                fullMediaUrl,
+                data.caption || data.content,
+                apiKey
+              );
+              break;
+            case MessageType.AUDIO:
+              evolutionResponse = await evolutionApi.sendAudio(
+                conversation.channel.evolutionInstanceId,
+                whatsappNumber,
+                fullMediaUrl,
+                apiKey
+              );
+              break;
+            case MessageType.DOCUMENT:
+              evolutionResponse = await evolutionApi.sendDocument(
+                conversation.channel.evolutionInstanceId,
+                whatsappNumber,
+                fullMediaUrl,
+                data.fileName || 'document',
+                data.caption || data.content,
+                apiKey
+              );
+              break;
+            default:
+              evolutionResponse = await evolutionApi.sendMessage(
+                conversation.channel.evolutionInstanceId,
+                whatsappNumber,
+                data.content,
+                apiKey
+              );
+          }
+        } else {
+          // Enviar mensagem de texto
+          evolutionResponse = await evolutionApi.sendMessage(
+            conversation.channel.evolutionInstanceId,
+            whatsappNumber,
+            data.content,
+            apiKey
+          );
+        }
 
         console.log('✅ [MessageService] Mensagem enviada com sucesso:', {
           response: JSON.stringify(evolutionResponse, null, 2).substring(0, 500),
@@ -112,6 +175,18 @@ export class MessageService {
       console.log('ℹ️ Mensagem não será enviada via Evolution API:', reasons.join(', '));
     }
 
+    // Preparar metadata para mídias
+    const metadata: any = {};
+    if (data.mediaUrl) {
+      metadata.mediaUrl = data.mediaUrl;
+      if (data.fileName) {
+        metadata.fileName = data.fileName;
+      }
+      if (data.caption) {
+        metadata.caption = data.caption;
+      }
+    }
+
     const message = await prisma.message.create({
       data: {
         conversationId: data.conversationId,
@@ -120,6 +195,7 @@ export class MessageService {
         type: (data.type as MessageType) || MessageType.TEXT,
         status: status,
         externalId: externalId,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       },
       include: {
         user: {
@@ -133,11 +209,18 @@ export class MessageService {
     });
 
     // Atualizar última mensagem da conversa
+    // Se a mensagem foi enviada por um usuário (agente), atualizar lastAgentMessageAt
+    const updateData: any = {
+      lastMessageAt: new Date(),
+    };
+
+    if (data.userId) {
+      updateData.lastAgentMessageAt = new Date();
+    }
+
     await prisma.conversation.update({
       where: { id: data.conversationId },
-      data: {
-        lastMessageAt: new Date(),
-      },
+      data: updateData,
     });
 
     console.log('✅ [MessageService] Mensagem salva e conversa atualizada:', {

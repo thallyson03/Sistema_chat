@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import prisma from '../config/database';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -42,6 +43,21 @@ export const authenticateToken = (
     };
     console.log('[Auth] Token válido para usuário:', decoded.email, 'Role:', decoded.role);
     req.user = decoded;
+    
+    // Atualizar lastActiveAt do usuário (em background, não bloquear requisição)
+    if (req.user?.id) {
+      prisma.user
+        .update({
+          where: { id: req.user.id },
+          data: {
+            lastActiveAt: new Date(),
+          },
+        })
+        .catch((error) => {
+          console.error('[Auth] Erro ao atualizar lastActiveAt:', error);
+        });
+    }
+    
     next();
   } catch (error: any) {
     // Token inválido ou expirado

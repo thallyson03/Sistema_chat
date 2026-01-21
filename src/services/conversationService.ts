@@ -94,6 +94,8 @@ export class ConversationService {
       conversations: conversations.map((conv) => ({
         ...conv,
         lastMessage: conv.messages[0]?.content || '',
+        lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
+        lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
       })),
       total,
     };
@@ -132,8 +134,43 @@ export class ConversationService {
 
   async updateConversation(
     id: string,
-    data: { assignedToId?: string; status?: string; priority?: string }
+    data: { assignedToId?: string; status?: string; priority?: string },
+    validateSector: boolean = true
   ) {
+    // Se está transferindo para outro usuário, validar setor
+    if (data.assignedToId !== undefined && data.assignedToId && validateSector) {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id },
+        include: {
+          channel: {
+            include: {
+              sector: true,
+            },
+          },
+        },
+      });
+
+      if (!conversation) {
+        throw new Error('Conversa não encontrada');
+      }
+
+      // Se o canal tem setor, verificar se o usuário pode atender esse setor
+      if (conversation.channel.sectorId) {
+        const userSector = await prisma.userSector.findFirst({
+          where: {
+            userId: data.assignedToId,
+            sectorId: conversation.channel.sectorId,
+          },
+        });
+
+        if (!userSector) {
+          throw new Error(
+            `Usuário não está autorizado a atender o setor "${conversation.channel.sector?.name || 'sem setor'}". O canal pertence ao setor "${conversation.channel.sector?.name}" e o usuário não possui permissão para atendê-lo.`
+          );
+        }
+      }
+    }
+
     const updateData: any = {};
 
     if (data.assignedToId !== undefined) {
@@ -165,7 +202,41 @@ export class ConversationService {
     });
   }
 
-  async assignConversation(id: string, userId: string) {
+  async assignConversation(id: string, userId: string, validateSector: boolean = true) {
+    // Se validateSector, verificar se o usuário pode atender o setor do canal
+    if (validateSector) {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id },
+        include: {
+          channel: {
+            include: {
+              sector: true,
+            },
+          },
+        },
+      });
+
+      if (!conversation) {
+        throw new Error('Conversa não encontrada');
+      }
+
+      // Se o canal tem setor, verificar se o usuário pode atender esse setor
+      if (conversation.channel.sectorId) {
+        const userSector = await prisma.userSector.findFirst({
+          where: {
+            userId,
+            sectorId: conversation.channel.sectorId,
+          },
+        });
+
+        if (!userSector) {
+          throw new Error(
+            `Usuário não está autorizado a atender o setor "${conversation.channel.sector?.name || 'sem setor'}". O canal pertence ao setor "${conversation.channel.sector?.name}" e o usuário não possui permissão para atendê-lo.`
+          );
+        }
+      }
+    }
+
     return await prisma.conversation.update({
       where: { id },
       data: {

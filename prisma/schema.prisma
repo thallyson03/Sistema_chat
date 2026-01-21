@@ -23,6 +23,11 @@ enum ChannelType {
   WEBCHAT
 }
 
+enum ChannelProvider {
+  EVOLUTION
+  META
+}
+
 enum ChannelStatus {
   ACTIVE
   INACTIVE
@@ -76,12 +81,19 @@ model User {
   role      UserRole @default(AGENT)
   avatar    String?
   isActive  Boolean  @default(true)
+  isPaused  Boolean  @default(false)
+  pausedAt  DateTime?
+  pausedUntil DateTime?
+  pauseReason String?
+  lastActiveAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   assignedConversations Conversation[] @relation("AssignedConversations")
   assignedTickets       Ticket[]       @relation("AssignedTickets")
   messages              Message[]
+  quickReplies          QuickReply[]
+  sectors               UserSector[]
 }
 
 model Channel {
@@ -93,9 +105,11 @@ model Channel {
   evolutionApiKey         String?
   evolutionInstanceId     String?
   evolutionInstanceToken  String?
+  sectorId                String?
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
 
+  sector        Sector?            @relation(fields: [sectorId], references: [id], onDelete: SetNull)
   contacts      Contact[]
   conversations Conversation[]
   webhooks      WebhookConfig[]
@@ -129,6 +143,8 @@ model Conversation {
   priority     Priority           @default(MEDIUM)
   unreadCount  Int                @default(0)
   lastMessageAt DateTime?
+  lastCustomerMessageAt DateTime?
+  lastAgentMessageAt DateTime?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
@@ -434,4 +450,57 @@ model BotVariable {
 
   @@unique([botId, name])
   @@index([botId])
+}
+
+// RESPOSTAS RÁPIDAS (QUICK REPLIES)
+// ============================================
+
+model QuickReply {
+  id          String   @id @default(cuid())
+  name        String   // Nome do template (ex: "Boas-vindas")
+  shortcut    String?  // Atalho (ex: "/boasvindas")
+  content     String   // Conteúdo da mensagem
+  type        MessageType @default(TEXT) // TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT
+  mediaUrl    String?  // URL da mídia se type não for TEXT
+  category    String?  // Categoria para organização
+  userId      String?  // null = global, String = pessoal do usuário
+  isGlobal    Boolean  @default(false) // Resposta global ou pessoal
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isGlobal])
+  @@index([category])
+}
+
+// SETORES
+// ============================================
+
+model Sector {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  color       String   @default("#3B82F6")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  channels  Channel[]
+  users     UserSector[]
+}
+
+model UserSector {
+  id        String   @id @default(cuid())
+  userId    String
+  sectorId  String
+  createdAt DateTime @default(now())
+
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sector  Sector @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sectorId])
+  @@index([userId])
+  @@index([sectorId])
 }

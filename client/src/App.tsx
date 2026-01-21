@@ -9,6 +9,9 @@ import Integrations from './pages/Integrations';
 import Bots from './pages/Bots';
 import BotFlowBuilder from './pages/BotFlowBuilder';
 import BotFlowBuilderVisual from './pages/BotFlowBuilderVisual';
+import QuickReplies from './pages/QuickReplies';
+import Sectors from './pages/Sectors';
+import Users from './pages/Users';
 import Layout from './components/Layout';
 
 // Componente para proteger rotas
@@ -50,6 +53,9 @@ function App() {
           <Route path="conversations/:id" element={<ConversationDetail />} />
           <Route path="channels" element={<Channels />} />
           <Route path="integrations" element={<Integrations />} />
+          <Route path="quick-replies" element={<QuickReplies />} />
+          <Route path="sectors" element={<Sectors />} />
+          <Route path="users" element={<Users />} />
           <Route path="bots" element={<Bots />} />
           <Route path="bots/:botId/flows" element={<BotFlowBuilder />} />
           <Route path="bots/:botId/flows/visual" element={<BotFlowBuilderVisual />} />

@@ -8,6 +8,12 @@ interface Channel {
   status: string;
   evolutionApiKey?: string;
   evolutionInstanceId?: string;
+  sectorId?: string;
+  sector?: {
+    id: string;
+    name: string;
+    color: string;
+  };
 }
 
 export default function Channels() {
@@ -17,15 +23,27 @@ export default function Channels() {
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [checkingConnection, setCheckingConnection] = useState(false);
+  const [sectors, setSectors] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     type: 'WHATSAPP',
+    sectorId: '',
   });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchChannels();
+    fetchSectors();
   }, []);
+
+  const fetchSectors = async () => {
+    try {
+      const response = await api.get('/api/sectors');
+      setSectors(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar setores:', error);
+    }
+  };
 
   const fetchChannels = async () => {
     try {
@@ -45,7 +63,7 @@ export default function Channels() {
     try {
       await api.post('/api/channels', formData);
       setShowModal(false);
-      setFormData({ name: '', type: 'WHATSAPP' });
+      setFormData({ name: '', type: 'WHATSAPP', sectorId: '' });
       fetchChannels();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Erro ao criar canal');
@@ -217,6 +235,29 @@ export default function Channels() {
                     borderRadius: '5px',
                   }}
                 />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Setor (opcional)
+                </label>
+                <select
+                  value={formData.sectorId}
+                  onChange={(e) => setFormData({ ...formData, sectorId: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                  }}
+                >
+                  <option value="">Nenhum setor</option>
+                  {sectors.map((sector) => (
+                    <option key={sector.id} value={sector.id}>
+                      {sector.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div style={{ marginBottom: '15px' }}>
@@ -411,6 +452,34 @@ export default function Channels() {
               <p style={{ color: '#6b7280', marginTop: '5px' }}>
                 Tipo: {channel.type}
               </p>
+              {channel.sector && (
+                <p style={{ color: '#6b7280', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  Setor: 
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: `${channel.sector.color}20`,
+                      color: channel.sector.color,
+                      fontSize: '12px',
+                      fontWeight: '600',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: channel.sector.color,
+                      }}
+                    />
+                    {channel.sector.name}
+                  </span>
+                </p>
+              )}
               <div style={{ marginTop: '10px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span
                   style={{

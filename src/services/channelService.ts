@@ -9,6 +9,7 @@ export interface CreateChannelData {
   evolutionApiKey?: string;
   evolutionInstanceId?: string;
   evolutionInstanceToken?: string;
+  sectorId?: string;
 }
 
 export class ChannelService {
@@ -140,6 +141,15 @@ export class ChannelService {
 
   async getChannels(): Promise<Channel[]> {
     return await prisma.channel.findMany({
+      include: {
+        sector: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+          },
+        },
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -149,6 +159,16 @@ export class ChannelService {
   async getChannelById(id: string): Promise<Channel | null> {
     return await prisma.channel.findUnique({
       where: { id },
+      include: {
+        sector: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            description: true,
+          },
+        },
+      },
     });
   }
 
@@ -213,6 +233,7 @@ export class ChannelService {
         evolutionApiKey: apiKey,
         evolutionInstanceId: instanceId,
         evolutionInstanceToken: instanceToken,
+        sectorId: data.sectorId,
       },
     });
   }
@@ -226,6 +247,7 @@ export class ChannelService {
         ...(data.evolutionApiKey && { evolutionApiKey: data.evolutionApiKey }),
         ...(data.evolutionInstanceId && { evolutionInstanceId: data.evolutionInstanceId }),
         ...(data.evolutionInstanceToken && { evolutionInstanceToken: data.evolutionInstanceToken }),
+        ...(data.sectorId !== undefined && { sectorId: data.sectorId }),
       },
     });
   }

@@ -286,6 +286,118 @@ class EvolutionApiClient {
     }
   }
 
+  async sendImage(instanceName: string, number: string, imageUrl: string, caption?: string, apiKey?: string) {
+    try {
+      const payload = {
+        number,
+        mediatype: 'image',
+        media: imageUrl,
+        caption: caption || '',
+      };
+
+      const response = await this.client.post(
+        `/message/sendMedia/${instanceName}`,
+        payload,
+        {
+          headers: this.getHeaders(apiKey),
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || 
+        error.response?.data?.error || 
+        error.message ||
+        'Erro ao enviar imagem'
+      );
+    }
+  }
+
+  async sendVideo(instanceName: string, number: string, videoUrl: string, caption?: string, apiKey?: string) {
+    try {
+      const payload = {
+        number,
+        mediatype: 'video',
+        media: videoUrl,
+        caption: caption || '',
+      };
+
+      const response = await this.client.post(
+        `/message/sendMedia/${instanceName}`,
+        payload,
+        {
+          headers: this.getHeaders(apiKey),
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || 
+        error.response?.data?.error || 
+        error.message ||
+        'Erro ao enviar vídeo'
+      );
+    }
+  }
+
+  async sendAudio(instanceName: string, number: string, audioUrl: string, apiKey?: string) {
+    try {
+      const payload = {
+        number,
+        mediatype: 'audio',
+        media: audioUrl,
+      };
+
+      const response = await this.client.post(
+        `/message/sendMedia/${instanceName}`,
+        payload,
+        {
+          headers: this.getHeaders(apiKey),
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || 
+        error.response?.data?.error || 
+        error.message ||
+        'Erro ao enviar áudio'
+      );
+    }
+  }
+
+  async sendDocument(instanceName: string, number: string, documentUrl: string, fileName: string, caption?: string, apiKey?: string) {
+    try {
+      const payload = {
+        number,
+        mediatype: 'document',
+        media: documentUrl,
+        fileName: fileName,
+        caption: caption || '',
+      };
+
+      const response = await this.client.post(
+        `/message/sendMedia/${instanceName}`,
+        payload,
+        {
+          headers: this.getHeaders(apiKey),
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || 
+        error.response?.data?.error || 
+        error.message ||
+        'Erro ao enviar documento'
+      );
+    }
+  }
+
   async setWebhook(instanceName: string, webhookUrl: string, apiKey?: string) {
     try {
       console.log('[EvolutionAPI] 📡 Configurando webhook:', {

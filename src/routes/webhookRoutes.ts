@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/database';
 import { WebhookService } from '../services/webhookService';
 import { BotService } from '../services/botService';
+import { ConversationDistributionService } from '../services/conversationDistributionService';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -213,11 +214,26 @@ async function handleNewMessage(data: any) {
       }
     }
 
+    // Buscar canal com setor
+    const channelWithSector = await prisma.channel.findUnique({
+      where: { id: channel.id },
+      include: {
+        sector: true,
+      },
+    });
+
     // Buscar ou criar conversa
     let conversation = await prisma.conversation.findFirst({
       where: {
         channelId: channel.id,
         contactId: contact.id,
+      },
+      include: {
+        channel: {
+          include: {
+            sector: true,
+          },
+        },
       },
     });
 
@@ -229,17 +245,76 @@ async function handleNewMessage(data: any) {
           status: 'OPEN',
           unreadCount: 1,
           lastMessageAt: new Date(),
+          lastCustomerMessageAt: new Date(),
+        },
+        include: {
+          channel: {
+            include: {
+              sector: true,
+            },
+          },
         },
       });
+
+      // Distribuir conversa automaticamente para um usuário disponível
+      try {
+        const distributionService = new ConversationDistributionService();
+        const assignedUserId = await distributionService.distributeConversation(conversation.id, {
+          channelId: channel.id,
+          sectorId: channelWithSector?.sectorId || undefined,
+        });
+
+        if (assignedUserId) {
+          console.log(`✅ [handleNewMessage] Conversa ${conversation.id} atribuída automaticamente ao usuário ${assignedUserId}`);
+          
+          // Atualizar a conversa com o usuário atribuído
+          conversation = await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              assignedToId: assignedUserId,
+            },
+            include: {
+              channel: {
+                include: {
+                  sector: true,
+                },
+              },
+            },
+          });
+        } else {
+          console.log(`⚠️ [handleNewMessage] Nenhum usuário disponível para atribuir a conversa ${conversation.id}`);
+        }
+      } catch (error: any) {
+        console.error(`❌ [handleNewMessage] Erro ao distribuir conversa ${conversation.id}:`, error.message);
+        // Não bloquear o processamento da mensagem se a distribuição falhar
+      }
     } else {
-      // Incrementar contador de não lidas
+      // Incrementar contador de não lidas e atualizar timestamp da última mensagem do cliente
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
           unreadCount: { increment: 1 },
           lastMessageAt: new Date(),
+          lastCustomerMessageAt: new Date(),
         },
       });
+
+      // Se a conversa não tem usuário atribuído, tentar distribuir
+      if (!conversation.assignedToId) {
+        try {
+          const distributionService = new ConversationDistributionService();
+          const assignedUserId = await distributionService.distributeConversation(conversation.id, {
+            channelId: channel.id,
+            sectorId: channelWithSector?.sectorId || undefined,
+          });
+
+          if (assignedUserId) {
+            console.log(`✅ [handleNewMessage] Conversa ${conversation.id} atribuída automaticamente ao usuário ${assignedUserId}`);
+          }
+        } catch (error: any) {
+          console.error(`❌ [handleNewMessage] Erro ao redistribuir conversa ${conversation.id}:`, error.message);
+        }
+      }
     }
 
     // Extrair conteúdo e tipo da mensagem
