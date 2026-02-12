@@ -548,7 +548,7 @@ export default function ConversationDetail() {
                               }
                               console.log('🔄 Tentando URL alternativa:', target.src);
                             } else {
-                              target.style.display = 'none';
+                            target.style.display = 'none';
                             }
                           }}
                         />

@@ -149,57 +149,69 @@ export class MessageService {
               break;
             case MessageType.AUDIO:
               // Determinar mimetype baseado no arquivo ou usar padrão
-              // IMPORTANTE: WhatsApp não aceita WEBM como PTT, então sempre usar OGG para PTT
-              let audioMimetype = 'audio/ogg; codecs=opus'; // Padrão recomendado para PTT
+              // IMPORTANTE: Para audioMessage, usar apenas "audio/ogg" ou "audio/mpeg" (sem codecs=opus)
+              let audioMimetype = 'audio/ogg'; // Padrão recomendado para PTT
               if (data.mimetype) {
                 // Se for WEBM, forçar OGG para compatibilidade com PTT no WhatsApp
                 if (data.mimetype.includes('webm')) {
                   // WEBM e OGG usam o mesmo codec (Opus), então podemos "enganar" o WhatsApp
                   // mudando o mimetype para OGG mesmo sendo WEBM
-                  audioMimetype = 'audio/ogg; codecs=opus';
+                  audioMimetype = 'audio/ogg';
                   console.log('⚠️ [MessageService] Arquivo WEBM detectado, usando mimetype OGG para compatibilidade com PTT');
-                } else if (data.mimetype.includes('ogg')) {
-                  audioMimetype = 'audio/ogg; codecs=opus';
+                } else if (data.mimetype.includes('ogg') || data.mimetype.includes('opus')) {
+                  audioMimetype = 'audio/ogg';
                 } else if (data.mimetype.includes('mp3') || data.mimetype.includes('mpeg')) {
                   audioMimetype = 'audio/mpeg';
                 } else {
-                  audioMimetype = data.mimetype;
+                  // Tentar normalizar outros mimetypes
+                  if (data.mimetype.includes('audio/')) {
+                    audioMimetype = data.mimetype.split(';')[0]; // Remover codecs se houver
+                  } else {
+                    audioMimetype = 'audio/ogg'; // Fallback para OGG
+                  }
                 }
               } else if (fullMediaUrl.includes('.webm')) {
                 // Arquivo WEBM, usar mimetype OGG para PTT
-                audioMimetype = 'audio/ogg; codecs=opus';
+                audioMimetype = 'audio/ogg';
                 console.log('⚠️ [MessageService] Arquivo WEBM detectado pela URL, usando mimetype OGG para compatibilidade com PTT');
               } else if (fullMediaUrl.includes('.ogg')) {
-                audioMimetype = 'audio/ogg; codecs=opus';
+                audioMimetype = 'audio/ogg';
+              } else if (fullMediaUrl.includes('.mp3')) {
+                audioMimetype = 'audio/mpeg';
               }
               
               // Converter áudio local para base64 antes de enviar para Evolution (solução solicitada)
               let audioMedia = fullMediaUrl;
               try {
+                // IMPORTANTE: Sempre converter arquivos locais para base64
+                // Isso garante que o WhatsApp hospede o áudio e ele nunca "some"
                 // Detectar se é um arquivo local servido pelo próprio backend
-                const isLocalFile =
-                  fullMediaUrl.startsWith('/api/media/file/') ||
-                  fullMediaUrl.includes('/api/media/file/') ||
-                  fullMediaUrl.includes('localhost');
+                // Verificar se a URL contém /api/media/file/ (indicando arquivo local)
+                const isLocalFile = fullMediaUrl.includes('/api/media/file/');
+
+                console.log('🔍 [MessageService] Verificando se é arquivo local para conversão base64:', {
+                  fullMediaUrl,
+                  isLocalFile,
+                  containsApiMediaFile: fullMediaUrl.includes('/api/media/file/'),
+                });
 
                 if (isLocalFile) {
                   let filename: string | null = null;
 
                   try {
-                    // Caso URL completa (http://.../api/media/file/xxx.ogg)
-                    if (fullMediaUrl.startsWith('http://') || fullMediaUrl.startsWith('https://')) {
-                      const url = new URL(fullMediaUrl);
-                      const parts = url.pathname.split('/api/media/file/');
+                    // Extrair nome do arquivo da URL (funciona tanto para URLs completas quanto relativas)
+                    // Exemplo: https://ngrok.com/api/media/file/audio.ogg ou /api/media/file/audio.ogg
+                    if (fullMediaUrl.includes('/api/media/file/')) {
+                      const parts = fullMediaUrl.split('/api/media/file/');
                       if (parts.length > 1) {
-                        filename = parts[1];
+                        filename = parts[1].split('?')[0]; // Remover query params se houver
                       }
-                    } else if (fullMediaUrl.includes('/api/media/file/')) {
-                      // Caminho relativo /api/media/file/xxx.ogg
-                      filename = fullMediaUrl.split('/api/media/file/')[1];
                     }
                   } catch (parseError: any) {
                     console.warn('⚠️ [MessageService] Erro ao analisar URL de mídia para base64:', parseError.message);
                   }
+
+                  console.log('🔍 [MessageService] Nome do arquivo extraído:', { filename });
 
                   if (filename) {
                     const uploadDir = path.join(__dirname, '../../uploads');
@@ -209,6 +221,8 @@ export class MessageService {
                       filename,
                       filePath,
                       audioMimetype,
+                      uploadDir,
+                      fileExists: fs.existsSync(filePath),
                     });
 
                     if (fs.existsSync(filePath)) {
@@ -221,20 +235,33 @@ export class MessageService {
                         originalUrl: fullMediaUrl,
                         base64Length: base64.length,
                         fileSize: fileBuffer.length,
+                        base64Preview: base64.substring(0, 50) + '...',
                       });
                     } else {
                       console.warn('⚠️ [MessageService] Arquivo de áudio não encontrado para conversão base64:', {
                         filePath,
+                        uploadDir,
+                        dirExists: fs.existsSync(uploadDir),
                       });
+                      throw new Error(`Arquivo de áudio não encontrado: ${filePath}`);
                     }
                   } else {
                     console.warn('⚠️ [MessageService] Não foi possível extrair o nome do arquivo de áudio para base64 a partir da URL:', {
                       fullMediaUrl,
                     });
+                    throw new Error(`Não foi possível extrair o nome do arquivo da URL: ${fullMediaUrl}`);
                   }
+                } else {
+                  // Se não for arquivo local, não podemos converter para base64
+                  // Isso não deveria acontecer para áudios, pois sempre devem ser locais
+                  console.error('❌ [MessageService] Áudio não é arquivo local! URL:', fullMediaUrl);
+                  throw new Error('Áudio deve ser um arquivo local para conversão em base64. URLs externas não são suportadas.');
                 }
               } catch (base64Error: any) {
-                console.error('❌ [MessageService] Erro ao converter áudio local para base64:', base64Error.message);
+                console.error('❌ [MessageService] Erro ao converter áudio local para base64:', {
+                  error: base64Error.message,
+                  stack: base64Error.stack?.substring(0, 500),
+                });
               }
 
               console.log('📤 [MessageService] Enviando áudio com mimetype e mídia:', {

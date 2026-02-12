@@ -1,0 +1,871 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  SUPERVISOR
+  AGENT
+}
+
+enum ChannelType {
+  WHATSAPP
+  TELEGRAM
+  EMAIL
+  WEBCHAT
+}
+
+enum ChannelProvider {
+  EVOLUTION
+  META
+}
+
+enum ChannelStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+enum ConversationStatus {
+  OPEN
+  WAITING
+  CLOSED
+  ARCHIVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  LOCATION
+  CONTACT
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+// Status da campanha
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+// Tipo de campanha
+enum CampaignType {
+  BROADCAST    // Envio único
+  SEQUENTIAL   // Sequência de mensagens (futuro)
+}
+
+// Status do destinatário da campanha
+enum CampaignRecipientStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+// ============================================
+// JOURNEYS (AUTOMAÇÕES)
+// ============================================
+
+enum JourneyStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum JourneyNodeType {
+  TRIGGER
+  ACTION
+  CONDITION
+  CONTROL
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(AGENT)
+  avatar    String?
+  isActive  Boolean  @default(true)
+  isPaused  Boolean  @default(false)
+  pausedAt  DateTime?
+  pausedUntil DateTime?
+  pauseReason String?
+  lastActiveAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedConversations Conversation[] @relation("AssignedConversations")
+  assignedTickets       Ticket[]       @relation("AssignedTickets")
+  assignedDeals         Deal[]         @relation("AssignedDeals")
+  dealActivities        DealActivity[] @relation("DealActivities")
+  messages              Message[]
+  quickReplies          QuickReply[]
+  sectors               UserSector[]
+  // Campanhas e automações
+  campaigns             Campaign[]        @relation("UserCampaigns")
+}
+
+model Channel {
+  id                      String         @id @default(cuid())
+  name                    String
+  type                    ChannelType
+  status                  ChannelStatus  @default(INACTIVE)
+  config                  Json
+  evolutionApiKey         String?
+  evolutionInstanceId     String?
+  evolutionInstanceToken  String?
+  sectorId                String?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  sector        Sector?            @relation(fields: [sectorId], references: [id], onDelete: SetNull)
+  contacts      Contact[]
+  conversations Conversation[]
+  webhooks      WebhookConfig[]
+  bots          Bot[]
+  campaigns     Campaign[]
+}
+
+model Contact {
+  id               String   @id @default(cuid())
+  name             String
+  phone            String?
+  email            String?
+  profilePicture   String?  // URL da foto de perfil do WhatsApp
+  channelId        String
+  channelIdentifier String
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  conversations Conversation[]
+  deals         Deal[]
+  // Relacionamento com campanhas
+  campaignRecipients CampaignRecipient[]
+  // Relacionamento com listas
+  listMembers   ContactListMember[]
+  // Relacionamento com jornadas
+  journeyExecutions JourneyExecution[]
+
+  @@unique([channelId, channelIdentifier])
+  @@index([channelId])
+}
+
+model Conversation {
+  id           String             @id @default(cuid())
+  channelId    String
+  contactId    String
+  assignedToId String?
+  status       ConversationStatus @default(OPEN)
+  priority     Priority           @default(MEDIUM)
+  unreadCount  Int                @default(0)
+  lastMessageAt DateTime?
+  lastCustomerMessageAt DateTime?
+  lastAgentMessageAt DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  channel      Channel            @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  contact      Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  assignedTo   User?              @relation("AssignedConversations", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages     Message[]
+  tags         ConversationTag[]
+  ticket       Ticket?
+  botSession   BotSession?
+  deal         Deal?
+  // Relacionamento com campanhas
+  campaignRecipients CampaignRecipient[]
+}
+
+model Message {
+  id            String        @id @default(cuid())
+  conversationId String
+  userId        String?
+  content       String
+  type          MessageType   @default(TEXT)
+  status        MessageStatus @default(PENDING)
+  externalId    String?
+  metadata      Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+/// Campanhas de envio em massa
+model Campaign {
+  id              String          @id @default(cuid())
+  name            String
+  description     String?
+  type            CampaignType    @default(BROADCAST)
+  status          CampaignStatus  @default(DRAFT)
+  channelId       String
+  userId          String
+
+  // Conteúdo
+  content         String
+  messageType     MessageType     @default(TEXT)
+  mediaUrl        String?
+  fileName        String?
+  caption         String?
+
+  // Agendamento
+  scheduledFor    DateTime?
+  timezone        String          @default("America/Sao_Paulo")
+
+  // Estatísticas básicas
+  totalRecipients Int             @default(0)
+  sentCount       Int             @default(0)
+  deliveredCount  Int             @default(0)
+  readCount       Int             @default(0)
+  failedCount     Int             @default(0)
+
+  // Timestamps de execução
+  startedAt       DateTime?
+  completedAt      DateTime?
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relações
+  channel         Channel         @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  user            User            @relation("UserCampaigns", fields: [userId], references: [id], onDelete: Restrict)
+  recipients      CampaignRecipient[]
+
+  @@index([channelId])
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledFor])
+}
+
+/// Destinatários da campanha (1 registro por contato)
+model CampaignRecipient {
+  id              String                   @id @default(cuid())
+  campaignId      String
+  contactId       String
+  conversationId  String?
+
+  status          CampaignRecipientStatus  @default(PENDING)
+  errorMessage    String?
+
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  failedAt        DateTime?
+
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  campaign        Campaign                 @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact         Contact                  @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  conversation    Conversation?            @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([status])
+}
+
+model Tag {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  color       String   @default("#3B82F6")
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  conversations ConversationTag[]
+}
+
+model ConversationTag {
+  conversationId String
+  tagId          String
+  addedAt        DateTime @default(now())
+  addedById      String?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  tag          Tag         @relation(fields: [tagId], references: [id], onDelete: Restrict)
+
+  @@id([conversationId, tagId])
+}
+
+model Journey {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      JourneyStatus @default(DRAFT)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  nodes       JourneyNode[]
+  edges       JourneyEdge[]
+  executions  JourneyExecution[]
+}
+
+model JourneyNode {
+  id        String          @id @default(cuid())
+  journeyId String
+
+  type      JourneyNodeType
+  label     String
+  config    Json?
+
+  // Posição no canvas
+  positionX Float
+  positionY Float
+
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  journey   Journey         @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  // Relações para edges
+  outgoingEdges JourneyEdge[] @relation("JourneyNodeSource")
+  incomingEdges JourneyEdge[] @relation("JourneyNodeTarget")
+
+  @@index([journeyId])
+}
+
+model JourneyEdge {
+  id           String   @id @default(cuid())
+  journeyId    String
+  sourceNodeId String
+  targetNodeId String
+
+  label        String?
+  condition    Json?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  journey      Journey     @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  sourceNode   JourneyNode @relation("JourneyNodeSource", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode   JourneyNode @relation("JourneyNodeTarget", fields: [targetNodeId], references: [id], onDelete: Cascade)
+
+  @@index([journeyId])
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
+}
+
+// Rastreamento de execuções de jornadas
+model JourneyExecution {
+  id          String   @id @default(cuid())
+  journeyId   String
+  contactId   String
+  
+  // Status da execução
+  status      String   @default("PENDING") // PENDING, COMPLETED, FAILED, SKIPPED
+  currentNodeId String? // Nó atual na execução
+  
+  // Estatísticas
+  messagesSent Int     @default(0)
+  errors       Json?   // Erros ocorridos durante a execução
+  
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+  
+  journey      Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  contact      Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([journeyId])
+  @@index([contactId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+/// Listas de contatos para segmentação e jornadas
+model ContactList {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String   @default("#3B82F6") // Cor para identificação visual
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     ContactListMember[]
+
+  @@index([name])
+}
+
+/// Membros de uma lista (relacionamento many-to-many)
+model ContactListMember {
+  id          String   @id @default(cuid())
+  listId      String
+  contactId   String
+  addedAt     DateTime @default(now())
+  addedById   String?  // Usuário que adicionou (opcional)
+
+  list        ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact     Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, contactId]) // Um contato só pode estar uma vez em cada lista
+  @@index([listId])
+  @@index([contactId])
+}
+
+model Ticket {
+  id            String       @id @default(cuid())
+  conversationId String       @unique
+  assignedToId  String?
+  title         String
+  description   String?
+  status        TicketStatus  @default(OPEN)
+  priority      Priority      @default(MEDIUM)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  closedAt      DateTime?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  assignedTo   User?        @relation("AssignedTickets", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([assignedToId])
+  @@index([status])
+}
+
+// ============================================
+// MODELOS PARA INTEGRAÇÃO N8N
+// ============================================
+
+model WebhookConfig {
+  id          String   @id @default(cuid())
+  name        String
+  url         String   // URL do webhook do n8n
+  events      String[] // Eventos que devem ser enviados: ["message.received", "conversation.updated"]
+  isActive    Boolean  @default(true)
+  secret      String?  // Secret para validação de webhooks recebidos
+  channelId   String?  // Opcional: apenas para um canal específico
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  channel     Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  executions  WebhookExecution[]
+
+  @@index([isActive])
+  @@index([channelId])
+}
+
+model WebhookExecution {
+  id          String   @id @default(cuid())
+  webhookId   String
+  event       String
+  status      String   // SUCCESS, FAILED, PENDING
+  requestBody Json?
+  responseBody Json?
+  error       String?
+  executedAt  DateTime @default(now())
+
+  webhook     WebhookConfig @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([executedAt])
+  @@index([status])
+}
+
+model Automation {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  trigger     Json     // Configuração do trigger
+  actions     Json     // Configuração das ações
+  isActive    Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  executions  AutomationExecution[]
+
+  @@index([isActive])
+}
+
+model AutomationExecution {
+  id           String   @id @default(cuid())
+  automationId String
+  status       String   // SUCCESS, FAILED, RUNNING
+  inputData    Json?
+  outputData   Json?
+  error        String?
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@index([startedAt])
+}
+
+// ============================================
+// MODELOS PARA SISTEMA DE CHATBOT
+// ============================================
+
+model Bot {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  avatar          String?
+  channelId       String
+  language        String   @default("pt-BR")
+  isActive        Boolean  @default(true)
+  welcomeMessage  String?
+  fallbackMessage String?  // Mensagem quando não entende
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  channel     Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  intents     Intent[]
+  flows       Flow[]
+  sessions    BotSession[]
+  variables   BotVariable[]
+
+  @@index([channelId])
+  @@index([isActive])
+}
+
+model Intent {
+  id          String   @id @default(cuid())
+  botId       String
+  name        String
+  keywords    String[] // Palavras-chave que ativam esta intenção
+  patterns    String[] // Regex patterns
+  priority    Int      @default(0) // Prioridade de matching (maior = mais prioritário)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  responses   Response[]
+  flowSteps   FlowStep[]
+
+  @@index([botId])
+}
+
+model Response {
+  id          String   @id @default(cuid())
+  intentId   String?
+  flowStepId String?  @unique // Um FlowStep pode ter apenas uma Response
+  type       String   // TEXT, IMAGE, VIDEO, AUDIO, BUTTONS, LIST, QUICK_REPLIES, EMBED
+  content    String   // Conteúdo da resposta
+  buttons    Json?    // Botões (se type = BUTTONS)
+  mediaUrl   String?  // URL da mídia (se type = IMAGE/VIDEO/AUDIO)
+  metadata   Json?    // Dados adicionais (alt text, tamanho, autoplay, etc.)
+  order      Int      @default(0) // Ordem de exibição
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  intent     Intent?  @relation(fields: [intentId], references: [id], onDelete: Cascade)
+  flowStep   FlowStep? @relation(fields: [flowStepId], references: [id], onDelete: Cascade)
+
+  @@index([intentId])
+  @@index([flowStepId])
+}
+
+model Flow {
+  id          String   @id @default(cuid())
+  botId       String
+  name        String
+  description String?
+  trigger     String   // Como o fluxo é ativado: "intent", "keyword", "always", "api"
+  triggerValue String? // Valor do trigger (nome do intent, keyword, etc.)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  steps       FlowStep[]
+
+  @@index([botId])
+  @@index([isActive])
+}
+
+model FlowStep {
+  id          String   @id @default(cuid())
+  flowId      String
+  intentId    String?  // Intent que ativa este passo
+  // Tipos de blocos: MESSAGE, CONDITION, HTTP_REQUEST, HANDOFF, DELAY, SET_VARIABLE, INPUT,
+  // IMAGE, VIDEO, AUDIO, EMBED, EMAIL_INPUT, NUMBER_INPUT, PHONE_INPUT, DATE_INPUT,
+  // FILE_UPLOAD, PICTURE_CHOICE, REDIRECT, SCRIPT, WAIT, TYPEBOT_LINK, AB_TEST, JUMP
+  type        String   // Tipo do bloco
+  order       Int      // Ordem no fluxo
+  config      Json     // Configuração específica do tipo
+  nextStepId  String?  // Próximo passo (se não for condicional)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  flow        Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  intent      Intent?  @relation(fields: [intentId], references: [id], onDelete: SetNull)
+  response    Response?
+  conditions  FlowCondition[]
+
+  @@index([flowId])
+  @@index([intentId])
+}
+
+model FlowCondition {
+  id          String   @id @default(cuid())
+  stepId      String
+  condition   String   // Campo a verificar (ex: "message.content", "context.variable")
+  operator    String   // EQUALS, CONTAINS, GREATER_THAN, LESS_THAN, REGEX
+  value       String   // Valor a comparar
+  trueStepId  String?  // Próximo passo se verdadeiro
+  falseStepId String?  // Próximo passo se falso
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  step        FlowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([stepId])
+}
+
+model BotSession {
+  id            String   @id @default(cuid())
+  botId         String
+  conversationId String   @unique
+  currentFlowId String?
+  currentStepId String?
+  context       Json?    // Contexto da conversa (variáveis armazenadas)
+  isActive      Boolean  @default(true)
+  handoffToUserId String? // Se foi transferido para humano
+  handoffAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversation  Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([isActive])
+  @@index([conversationId])
+}
+
+// ============================================
+// VARIÁVEIS DO BOT
+// ============================================
+
+model BotVariable {
+  id          String   @id @default(cuid())
+  botId       String
+  name        String   // Nome da variável (ex: "firstName")
+  type        String   // STRING, NUMBER, BOOLEAN, DATE, JSON
+  defaultValue String? // Valor padrão
+  isGlobal    Boolean  @default(false) // Variável global ou de sessão
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, name])
+  @@index([botId])
+}
+
+// RESPOSTAS RÁPIDAS (QUICK REPLIES)
+// ============================================
+
+model QuickReply {
+  id          String   @id @default(cuid())
+  name        String   // Nome do template (ex: "Boas-vindas")
+  shortcut    String?  // Atalho (ex: "/boasvindas")
+  content     String   // Conteúdo da mensagem
+  type        MessageType @default(TEXT) // TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT
+  mediaUrl    String?  // URL da mídia se type não for TEXT
+  category    String?  // Categoria para organização
+  userId      String?  // null = global, String = pessoal do usuário
+  isGlobal    Boolean  @default(false) // Resposta global ou pessoal
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isGlobal])
+  @@index([category])
+}
+
+// SETORES
+// ============================================
+
+model Sector {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  color       String   @default("#3B82F6")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  channels  Channel[]
+  users     UserSector[]
+}
+
+model UserSector {
+  id        String   @id @default(cuid())
+  userId    String
+  sectorId  String
+  createdAt DateTime @default(now())
+
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sector  Sector @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sectorId])
+  @@index([userId])
+  @@index([sectorId])
+}
+
+// ============================================
+// PIPELINE (FUNIL DE VENDAS)
+// ============================================
+
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+  ABANDONED
+}
+
+model Pipeline {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String   @default("#3B82F6")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stages      PipelineStage[]
+  deals       Deal[]
+  customFields PipelineCustomField[]
+
+  @@index([isActive])
+}
+
+model PipelineStage {
+  id          String   @id @default(cuid())
+  pipelineId  String
+  name        String
+  description String?
+  color       String   @default("#6B7280")
+  order       Int      // Ordem no pipeline (0, 1, 2, ...)
+  probability Int      @default(0) // Probabilidade de fechamento (0-100)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  deals       Deal[]
+
+  @@index([pipelineId])
+  @@index([order])
+  @@index([isActive])
+}
+
+model Deal {
+  id            String     @id @default(cuid())
+  pipelineId    String
+  stageId        String
+  contactId      String
+  conversationId String?    @unique // Opcional: pode estar vinculado a uma conversa (one-to-one)
+  assignedToId   String?    // Responsável pelo negócio
+  name          String      // Nome do lead/negócio (simplificado)
+  value          Decimal?   // Valor do negócio (opcional)
+  currency       String     @default("BRL")
+  status         DealStatus @default(OPEN)
+  probability    Int        @default(0) // Probabilidade de fechamento (0-100)
+  expectedCloseDate DateTime? // Data esperada de fechamento
+  closedAt       DateTime?  // Data de fechamento (ganho ou perdido)
+  closedReason   String?   // Motivo do fechamento
+  customFields   Json?      // Campos personalizados (chave-valor)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  pipeline       Pipeline   @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  stage          PipelineStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  contact        Contact    @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  assignedTo     User?      @relation("AssignedDeals", fields: [assignedToId], references: [id], onDelete: SetNull)
+  activities     DealActivity[]
+
+  @@index([pipelineId])
+  @@index([stageId])
+  @@index([contactId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PipelineCustomField {
+  id          String   @id @default(cuid())
+  pipelineId  String
+  name        String   // Nome do campo (ex: "Empresa", "Cargo", "Orçamento")
+  type        String   @default("TEXT") // TEXT, NUMBER, DATE, EMAIL, PHONE, SELECT
+  required    Boolean  @default(false)
+  options     String[] // Opções para tipo SELECT
+  order       Int      @default(0) // Ordem de exibição
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@index([pipelineId])
+  @@index([order])
+}
+
+model DealActivity {
+  id          String   @id @default(cuid())
+  dealId      String
+  userId      String?  // Quem realizou a atividade
+  type        String   // NOTE, CALL, EMAIL, MEETING, TASK, STAGE_CHANGE, VALUE_CHANGE
+  title       String
+  description String?
+  metadata    Json?    // Dados adicionais (duração, participantes, etc.)
+  createdAt   DateTime @default(now())
+
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  user        User?    @relation("DealActivities", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([dealId])
+  @@index([userId])
+  @@index([createdAt])
+}

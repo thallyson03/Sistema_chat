@@ -1,9 +1,67 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { motion } from 'framer-motion';
 import api from '../utils/api';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import { getTimeAgo } from '../utils/timeUtils';
+import { ConversationCard } from '../components/ui/ConversationCard';
+import { Button } from '../components/ui/Button';
+import { IconButton } from '../components/ui/IconButton';
+
+// Função para gerar avatar com iniciais
+const getAvatarUrl = (name: string, size: number = 40): string => {
+  // Limpar nome e extrair iniciais (remover emojis e caracteres especiais)
+  const cleanName = name.replace(/[\u{1F300}-\u{1F9FF}]/gu, '').trim() || name;
+  
+  const initials = cleanName
+    .split(' ')
+    .map(n => {
+      // Pegar primeiro caractere alfanumérico
+      const match = n.match(/[a-zA-Z0-9\u00C0-\u017F]/);
+      return match ? match[0] : '';
+    })
+    .filter(char => char !== '')
+    .join('')
+    .toUpperCase()
+    .slice(0, 2) || cleanName.charAt(0).toUpperCase() || '?';
+  
+  const colors = [
+    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
+  ];
+  
+  const colorIndex = (cleanName.charCodeAt(0) || 0) % colors.length;
+  const bgColor = colors[colorIndex];
+  
+  // Usar encodeURIComponent para evitar problemas com caracteres especiais
+  const svgContent = `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+    <rect width="${size}" height="${size}" fill="${bgColor}" rx="${size / 2}"/>
+    <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="${size * 0.4}" 
+          fill="white" text-anchor="middle" dominant-baseline="central" font-weight="600">
+      ${initials}
+    </text>
+  </svg>`;
+  
+  // Codificar SVG de forma segura para Unicode
+  try {
+    const encoded = btoa(unescape(encodeURIComponent(svgContent)));
+    return `data:image/svg+xml;base64,${encoded}`;
+  } catch (error) {
+    // Fallback: usar encodeURIComponent se btoa falhar
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgContent)}`;
+  }
+};
+
+// Função para obter avatar do contato (foto real ou gerada)
+const getContactAvatar = (contact: { name: string; profilePicture?: string }, size: number = 40): string => {
+  // Se tiver foto de perfil do WhatsApp, usar ela
+  if (contact.profilePicture) {
+    return contact.profilePicture;
+  }
+  // Caso contrário, gerar avatar com iniciais
+  return getAvatarUrl(contact.name, size);
+};
 
 interface Conversation {
   id: string;
@@ -12,6 +70,7 @@ interface Conversation {
     id: string;
     name: string;
     phone?: string;
+    profilePicture?: string;
   };
   lastMessage: string;
   status: string;
@@ -60,6 +119,10 @@ export default function Conversations() {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
+  const [showNewConversationModal, setShowNewConversationModal] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [loadingNewConversation, setLoadingNewConversation] = useState(false);
+  const [channels, setChannels] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
   // Mantém sempre o ID da conversa selecionada mais recente para usar dentro dos handlers do socket
@@ -75,6 +138,30 @@ export default function Conversations() {
   useEffect(() => {
     fetchConversations();
     fetchUsers();
+    fetchChannels();
+
+    // Listener para selecionar conversa via evento customizado (usado ao clicar em telefone no DealDetail)
+    const handleSelectConversation = (event: Event) => {
+      const customEvent = event as CustomEvent<{ conversationId: string }>;
+      const { conversationId } = customEvent.detail;
+      if (conversationId) {
+        // Buscar a conversa na lista
+        fetchConversations().then(() => {
+          // Aguardar um pouco para garantir que as conversas foram carregadas
+          setTimeout(() => {
+            setConversations(prevConversations => {
+              const conv = prevConversations.find(c => c.id === conversationId);
+              if (conv) {
+                setSelectedConversation(conv);
+              }
+              return prevConversations;
+            });
+          }, 300);
+        });
+      }
+    };
+
+    window.addEventListener('selectConversation', handleSelectConversation);
 
     // Conectar ao Socket.IO para atualizações em tempo real
     const socket: Socket = io('http://localhost:3007', {
@@ -94,9 +181,23 @@ export default function Conversations() {
       // Se a mensagem é da conversa atualmente selecionada, buscar novamente as mensagens
       if (currentId && data.conversationId === currentId) {
         await fetchMessages(currentId);
+        // Se a conversa está aberta, marcar como lida automaticamente
+        try {
+          await api.put(`/api/messages/conversation/${currentId}/read`);
+          // Atualizar estado local para não mostrar badge
+          setConversations(prev => 
+            prev.map(conv => 
+              conv.id === currentId 
+                ? { ...conv, unreadCount: 0 }
+                : conv
+            )
+          );
+        } catch (error: any) {
+          console.error('❌ Erro ao marcar conversa como lida:', error);
+        }
       }
       
-      // Atualizar lista de conversas
+      // Atualizar lista de conversas (isso vai atualizar o contador se a conversa não estiver aberta)
       await fetchConversations();
     });
 
@@ -112,6 +213,7 @@ export default function Conversations() {
     // Limpar conexão ao desmontar componente
     return () => {
       socket.disconnect();
+      window.removeEventListener('selectConversation', handleSelectConversation);
     };
   }, []);
 
@@ -148,6 +250,27 @@ export default function Conversations() {
       console.log(`✅ ${conversationsData.length} conversas carregadas`);
       
       setConversations(conversationsData);
+      
+      // Se a conversa selecionada tiver mensagens não lidas, marcar como lida automaticamente
+      if (selectedConversation) {
+        const selectedConv = conversationsData.find((c: Conversation) => c.id === selectedConversation.id);
+        if (selectedConv && selectedConv.unreadCount > 0) {
+          try {
+            await api.put(`/api/messages/conversation/${selectedConversation.id}/read`);
+            // Atualizar estado local
+            setConversations(prev => 
+              prev.map(conv => 
+                conv.id === selectedConversation.id 
+                  ? { ...conv, unreadCount: 0 }
+                  : conv
+              )
+            );
+            console.log('✅ Conversa selecionada marcada como lida automaticamente');
+          } catch (error: any) {
+            console.error('❌ Erro ao marcar conversa como lida:', error);
+          }
+        }
+      }
     } catch (error: any) {
       console.error('❌ Erro ao carregar conversas:', error);
       console.error('Detalhes do erro:', {
@@ -170,6 +293,107 @@ export default function Conversations() {
     }
   };
 
+  const fetchChannels = async () => {
+    try {
+      const response = await api.get('/api/channels');
+      setChannels(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar canais:', error);
+    }
+  };
+
+  const handleStartNewConversation = async () => {
+    if (!phoneNumber.trim()) {
+      alert('Digite um número de telefone');
+      return;
+    }
+
+    // Limpar número (remover caracteres não numéricos, exceto +)
+    const cleanPhone = phoneNumber.replace(/[^\d+]/g, '');
+    
+    if (cleanPhone.length < 10) {
+      alert('Número de telefone inválido. Digite pelo menos 10 dígitos.');
+      return;
+    }
+
+    setLoadingNewConversation(true);
+
+    try {
+      // Buscar primeiro canal disponível (ou usar o primeiro da lista)
+      const channel = channels.length > 0 ? channels[0] : null;
+      
+      if (!channel) {
+        alert('Nenhum canal disponível. Configure um canal primeiro.');
+        setLoadingNewConversation(false);
+        return;
+      }
+
+      // Buscar contato existente pelo telefone
+      const contactsResponse = await api.get(`/api/contacts?search=${encodeURIComponent(cleanPhone)}`);
+      const contacts = contactsResponse.data?.contacts || contactsResponse.data || [];
+      
+      let contact = contacts.find((c: any) => {
+        const contactPhone = c.phone?.replace(/\D/g, '') || '';
+        return contactPhone === cleanPhone || contactPhone.includes(cleanPhone) || cleanPhone.includes(contactPhone);
+      });
+
+      // Se não encontrou, criar novo contato
+      if (!contact) {
+        const newContactResponse = await api.post('/api/contacts', {
+          name: `Contato ${cleanPhone}`,
+          phone: cleanPhone,
+          channelId: channel.id,
+          channelIdentifier: `${cleanPhone}@s.whatsapp.net`,
+        });
+        contact = newContactResponse.data;
+      }
+
+      // Buscar conversa existente para este contato
+      const conversationsResponse = await api.get(`/api/conversations?contactId=${contact.id}`);
+      const existingConversations = conversationsResponse.data?.conversations || conversationsResponse.data || [];
+      
+      let conversation = existingConversations.length > 0 ? existingConversations[0] : null;
+
+      // Se não encontrou, criar nova conversa
+      if (!conversation) {
+        const newConversationResponse = await api.post('/api/conversations', {
+          channelId: channel.id,
+          contactId: contact.id,
+        });
+        conversation = newConversationResponse.data;
+      }
+
+      // Recarregar lista de conversas
+      await fetchConversations();
+
+      // Selecionar a conversa criada/encontrada
+      setTimeout(() => {
+        const foundConversation = conversations.find(c => c.id === conversation.id) || conversation;
+        setSelectedConversation(foundConversation as Conversation);
+        setShowNewConversationModal(false);
+        setPhoneNumber('');
+      }, 500);
+
+    } catch (error: any) {
+      console.error('Erro ao iniciar conversa:', error);
+      alert(error.response?.data?.error || 'Erro ao iniciar conversa. Verifique se o número está correto.');
+    } finally {
+      setLoadingNewConversation(false);
+    }
+  };
+
+  const handleNumberKeyPress = (digit: string) => {
+    setPhoneNumber(prev => prev + digit);
+  };
+
+  const handleBackspace = () => {
+    setPhoneNumber(prev => prev.slice(0, -1));
+  };
+
+  const handleClear = () => {
+    setPhoneNumber('');
+  };
+
   const fetchMessages = async (conversationId: string) => {
     setLoadingMessages(true);
     try {
@@ -184,9 +408,29 @@ export default function Conversations() {
     }
   };
 
-  const handleConversationClick = (conversation: Conversation) => {
+  const handleConversationClick = async (conversation: Conversation) => {
     setSelectedConversation(conversation);
     setMessages([]);
+    
+    // Marcar conversa como lida quando for selecionada
+    if (conversation.unreadCount > 0) {
+      try {
+        await api.put(`/api/messages/conversation/${conversation.id}/read`);
+        
+        // Atualizar estado local para remover badge imediatamente
+        setConversations(prev => 
+          prev.map(conv => 
+            conv.id === conversation.id 
+              ? { ...conv, unreadCount: 0 }
+              : conv
+          )
+        );
+        
+        console.log('✅ Conversa marcada como lida:', conversation.id);
+      } catch (error: any) {
+        console.error('❌ Erro ao marcar conversa como lida:', error);
+      }
+    }
   };
 
   const handleSendMessage = async (e: React.FormEvent, mediaUrl?: string, messageType?: string, fileName?: string, caption?: string) => {
@@ -553,7 +797,28 @@ export default function Conversations() {
             backgroundColor: 'white',
           }}
         >
-          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600', marginBottom: '15px' }}>Conversas</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>Conversas</h2>
+            <button
+              onClick={() => setShowNewConversationModal(true)}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+              title="Iniciar nova conversa"
+            >
+              📞 Nova Conversa
+            </button>
+          </div>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -576,120 +841,75 @@ export default function Conversations() {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
-          {conversations.length === 0 ? (
+          {conversations.filter(conv => 
+            !!conv.lastMessage || !!conv.lastCustomerMessageAt || !!conv.lastAgentMessageAt
+          ).length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6b7280' }}>
               <p>Nenhuma conversa encontrada.</p>
             </div>
           ) : (
-            conversations.map((conv) => (
-              <div
-                key={conv.id}
-                onClick={() => handleConversationClick(conv)}
-                style={{
-                  backgroundColor: selectedConversation?.id === conv.id ? '#e0e7ff' : 'white',
-                  padding: '15px',
-                  marginBottom: '8px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  border: selectedConversation?.id === conv.id ? '2px solid #3b82f6' : '1px solid #e5e7eb',
-                }}
-                onMouseEnter={(e) => {
-                  if (selectedConversation?.id !== conv.id) {
-                    e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (selectedConversation?.id !== conv.id) {
-                    e.currentTarget.style.backgroundColor = 'white';
-                  }
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {conv.contact.name}
-                    </h3>
-                    <p
-                      style={{
-                        color: '#6b7280',
-                        marginTop: '4px',
-                        marginBottom: '4px',
-                        fontSize: '13px',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {conv.channel.name} • {conv.contact.phone || 'Sem telefone'}
-                    </p>
-                    <p
-                      style={{
-                        color: '#6b7280',
-                        marginTop: '4px',
-                        fontSize: '14px',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {conv.lastMessage || 'Sem mensagens'}
-                    </p>
-                    {/* Tempos de atendimento */}
-                    <div style={{ marginTop: '6px', fontSize: '11px', color: '#9ca3af', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      {conv.lastCustomerMessageAt && (
-                        <span>
-                          Cliente: {getTimeAgo(conv.lastCustomerMessageAt)}
-                        </span>
+            <motion.div
+              initial="hidden"
+              animate="visible"
+              variants={{
+                visible: {
+                  transition: {
+                    staggerChildren: 0.05,
+                  },
+                },
+              }}
+            >
+              {conversations
+                .filter(conv => 
+                  !!conv.lastMessage || !!conv.lastCustomerMessageAt || !!conv.lastAgentMessageAt
+                )
+                .map((conv, index) => (
+                <ConversationCard
+                  key={conv.id}
+                  onClick={() => handleConversationClick(conv)}
+                  isActive={selectedConversation?.id === conv.id}
+                  unreadCount={conv.unreadCount}
+                  index={index}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <img
+                          src={getContactAvatar(conv.contact, 32)}
+                          alt={conv.contact.name}
+                          className="w-8 h-8 rounded-full flex-shrink-0"
+                        />
+                        <h3 className="text-base font-semibold text-gray-900 truncate">
+                          {conv.contact.name}
+                        </h3>
+                      </div>
+                      <p className="text-xs text-gray-500 mb-1 truncate">
+                        {conv.channel.name} • {conv.contact.phone || 'Sem telefone'}
+                      </p>
+                      {conv.lastMessage && (
+                        <p className="text-sm text-gray-600 truncate mb-2">
+                          {conv.lastMessage}
+                        </p>
                       )}
-                      {conv.lastAgentMessageAt && (
-                        <span>
-                          Você: {getTimeAgo(conv.lastAgentMessageAt)}
-                        </span>
-                      )}
+                      {/* Tempos de atendimento */}
+                      <div className="text-xs text-gray-400 space-y-0.5">
+                        {conv.lastCustomerMessageAt && (
+                          <span>Cliente: {getTimeAgo(conv.lastCustomerMessageAt)}</span>
+                        )}
+                        {conv.lastAgentMessageAt && (
+                          <span>Você: {getTimeAgo(conv.lastAgentMessageAt)}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 items-end ml-3">
+                      <span className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 whitespace-nowrap">
+                        {conv.status}
+                      </span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end', marginLeft: '10px' }}>
-                    <span
-                      style={{
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: '#e5e7eb',
-                        fontSize: '11px',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {conv.status}
-                    </span>
-                    {conv.unreadCount > 0 && (
-                      <span
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: '12px',
-                          backgroundColor: '#3b82f6',
-                          color: 'white',
-                          fontSize: '11px',
-                          fontWeight: 'bold',
-                          minWidth: '20px',
-                          textAlign: 'center',
-                        }}
-                      >
-                        {conv.unreadCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))
+                </ConversationCard>
+              ))}
+            </motion.div>
           )}
         </div>
       </div>
@@ -717,47 +937,80 @@ export default function Conversations() {
                 alignItems: 'center',
               }}
             >
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
-                    {selectedConversation.contact.name}
-                  </h3>
-                  <span
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {/* Avatar do cliente no header */}
+                <div
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    overflow: 'hidden',
+                    backgroundColor: '#e5e7eb',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '2px solid #e5e7eb',
+                  }}
+                >
+                  <img
+                    src={getContactAvatar(selectedConversation.contact, 48)}
+                    alt={selectedConversation.contact.name}
                     style={{
-                      padding: '4px 8px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      backgroundColor:
-                        selectedConversation.status === 'OPEN'
-                          ? '#dcfce7'
-                          : selectedConversation.status === 'WAITING'
-                          ? '#fef3c7'
-                          : selectedConversation.status === 'CLOSED'
-                          ? '#f3f4f6'
-                          : '#e5e7eb',
-                      color:
-                        selectedConversation.status === 'OPEN'
-                          ? '#166534'
-                          : selectedConversation.status === 'WAITING'
-                          ? '#92400e'
-                          : selectedConversation.status === 'CLOSED'
-                          ? '#374151'
-                          : '#6b7280',
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
                     }}
-                  >
-                    {selectedConversation.status === 'OPEN'
-                      ? 'Aberta'
-                      : selectedConversation.status === 'WAITING'
-                      ? 'Aguardando'
-                      : selectedConversation.status === 'CLOSED'
-                      ? 'Fechada'
-                      : 'Arquivada'}
-                  </span>
+                    onError={(e) => {
+                      // Se a foto real falhar, usar avatar gerado
+                      const target = e.target as HTMLImageElement;
+                      target.src = getAvatarUrl(selectedConversation.contact.name, 48);
+                    }}
+                  />
                 </div>
-                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
-                  {selectedConversation.channel.name} • {selectedConversation.contact.phone || 'Sem telefone'}
-                </p>
+                
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
+                      {selectedConversation.contact.name}
+                    </h3>
+                    <span
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor:
+                          selectedConversation.status === 'OPEN'
+                            ? '#dcfce7'
+                            : selectedConversation.status === 'WAITING'
+                            ? '#fef3c7'
+                            : selectedConversation.status === 'CLOSED'
+                            ? '#f3f4f6'
+                            : '#e5e7eb',
+                        color:
+                          selectedConversation.status === 'OPEN'
+                            ? '#166534'
+                            : selectedConversation.status === 'WAITING'
+                            ? '#92400e'
+                            : selectedConversation.status === 'CLOSED'
+                            ? '#374151'
+                            : '#6b7280',
+                      }}
+                    >
+                      {selectedConversation.status === 'OPEN'
+                        ? 'Aberta'
+                        : selectedConversation.status === 'WAITING'
+                        ? 'Aguardando'
+                        : selectedConversation.status === 'CLOSED'
+                        ? 'Fechada'
+                        : 'Arquivada'}
+                    </span>
+                  </div>
+                  <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                    {selectedConversation.channel.name} • {selectedConversation.contact.phone || 'Sem telefone'}
+                  </p>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '8px', marginLeft: '15px' }}>
                 {selectedConversation.status === 'CLOSED' || selectedConversation.status === 'ARCHIVED' ? (
@@ -871,25 +1124,86 @@ export default function Conversations() {
                   </p>
                 </div>
               ) : (
-                messages.map((message) => {
-                  const isOwnMessage = message.userId !== null;
-                  return (
-                    <div
-                      key={message.id}
+                <motion.div
+                  initial="hidden"
+                  animate="visible"
+                  variants={{
+                    visible: {
+                      transition: {
+                        staggerChildren: 0.05,
+                      },
+                    },
+                  }}
+                >
+                  {messages.map((message, index) => {
+                    const isOwnMessage = message.userId !== null;
+                    const contactName = selectedConversation.contact.name;
+                    const contactAvatar = getContactAvatar(selectedConversation.contact);
+                    
+                    return (
+                      <motion.div
+                        key={message.id}
+                        variants={{
+                          hidden: { opacity: 0, y: 10, scale: 0.95 },
+                          visible: { opacity: 1, y: 0, scale: 1 },
+                        }}
+                        transition={{ 
+                          duration: 0.2,
+                          type: "spring",
+                          stiffness: 200
+                        }}
+                        className="flex items-end gap-2 mb-1"
                       style={{
-                        display: 'flex',
                         justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
                       }}
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ 
+                        duration: 0.2,
+                        type: "spring",
+                        stiffness: 200
+                      }}
                     >
-                      <div
+                      {/* Avatar do cliente (só aparece em mensagens do cliente) */}
+                      {!isOwnMessage && (
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            flexShrink: 0,
+                            overflow: 'hidden',
+                            backgroundColor: '#e5e7eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <img
+                            src={contactAvatar}
+                            alt={contactName}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
+                            onError={(e) => {
+                              // Se falhar, usar SVG inline
+                              const target = e.target as HTMLImageElement;
+                              target.src = contactAvatar;
+                            }}
+                          />
+                        </div>
+                      )}
+                      
+                      <motion.div
+                        className="max-w-[70%] px-4 py-3 rounded-xl shadow-sm relative"
                         style={{
-                          maxWidth: '70%',
-                          padding: '12px 16px',
-                          borderRadius: '12px',
                           backgroundColor: isOwnMessage ? '#3b82f6' : 'white',
                           color: isOwnMessage ? 'white' : '#1f2937',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
                         }}
+                        whileHover={{ scale: 1.02 }}
+                        transition={{ duration: 0.2 }}
                       >
                         {!isOwnMessage && (
                           <div
@@ -897,10 +1211,10 @@ export default function Conversations() {
                               fontSize: '12px',
                               fontWeight: '600',
                               marginBottom: '4px',
-                              opacity: 0.8,
+                              opacity: 0.9,
                             }}
                           >
-                            {selectedConversation.contact.name}
+                            {contactName}
                           </div>
                         )}
                         
@@ -1063,15 +1377,47 @@ export default function Conversations() {
                             fontSize: '11px',
                             marginTop: '6px',
                             opacity: 0.7,
-                            textAlign: 'right',
+                            textAlign: isOwnMessage ? 'right' : 'left',
                           }}
                         >
                           {formatTime(message.createdAt)}
                         </div>
-                      </div>
-                    </div>
+                      </motion.div>
+                      
+                      {/* Avatar do agente (só aparece em mensagens do agente) */}
+                      {isOwnMessage && message.user && (
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            flexShrink: 0,
+                            overflow: 'hidden',
+                            backgroundColor: '#e5e7eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <img
+                            src={getAvatarUrl(message.user.name)}
+                            alt={message.user.name}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src = getAvatarUrl(message.user!.name);
+                            }}
+                          />
+                        </div>
+                      )}
+                    </motion.div>
                   );
-                })
+                })}
+                </motion.div>
               )}
               <div ref={messagesEndRef} />
             </div>
@@ -1105,165 +1451,101 @@ export default function Conversations() {
                 </div>
               )}
 
-              <form onSubmit={(e) => {
-                if (recording) {
-                  e.preventDefault();
-                  stopRecording();
-                } else {
-                  handleSendMessage(e);
-                }
-              }} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <motion.form
+                onSubmit={(e) => {
+                  if (recording) {
+                    e.preventDefault();
+                    stopRecording();
+                  } else {
+                    handleSendMessage(e);
+                  }
+                }}
+                className="flex gap-2 items-center"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
                 {/* Botão Respostas Rápidas */}
-                <button
-                  type="button"
+                <IconButton
                   onClick={() => setShowQuickReplies(true)}
-                  style={{
-                    padding: '10px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
                   title="Respostas rápidas"
                 >
-                  ⚡
-                </button>
+                  <span className="text-xl">⚡</span>
+                </IconButton>
 
                 {/* Botão Emoji */}
-                <button
-                  type="button"
+                <IconButton
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  style={{
-                    padding: '10px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '24px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
                   title="Emojis"
                 >
-                  😊
-                </button>
+                  <span className="text-2xl">😊</span>
+                </IconButton>
 
                 {/* Botão Upload */}
-                <button
-                  type="button"
+                <IconButton
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingFile || sending}
-                  style={{
-                    padding: '10px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    cursor: uploadingFile || sending ? 'not-allowed' : 'pointer',
-                    fontSize: '20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: uploadingFile || sending ? 0.5 : 1,
-                  }}
                   title="Enviar arquivo"
                 >
-                  📎
-                </button>
+                  <span className="text-xl">📎</span>
+                </IconButton>
                 <input
                   ref={fileInputRef}
                   type="file"
                   onChange={handleFileSelect}
                   accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx"
-                  style={{ display: 'none' }}
+                  className="hidden"
                 />
 
                 {/* Botão Gravar Áudio */}
                 {!recording ? (
-                  <button
-                    type="button"
+                  <IconButton
                     onClick={startRecording}
                     disabled={sending || uploadingFile}
-                    style={{
-                      padding: '10px',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      cursor: sending || uploadingFile ? 'not-allowed' : 'pointer',
-                      fontSize: '20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      opacity: sending || uploadingFile ? 0.5 : 1,
-                    }}
                     title="Gravar áudio"
                   >
-                    🎤
-                  </button>
+                    <span className="text-xl">🎤</span>
+                  </IconButton>
                 ) : (
-                  <button
+                  <motion.button
                     type="button"
                     onClick={stopRecording}
-                    style={{
-                      padding: '10px',
-                      backgroundColor: '#ef4444',
-                      border: 'none',
-                      borderRadius: '50%',
-                      cursor: 'pointer',
-                      fontSize: '20px',
-                      width: '40px',
-                      height: '40px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      animation: 'pulse 1s infinite',
-                    }}
+                    className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center text-white"
                     title="Parar gravação"
+                    animate={{
+                      scale: [1, 1.1, 1],
+                    }}
+                    transition={{
+                      duration: 1,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                    whileHover={{ scale: 1.15 }}
+                    whileTap={{ scale: 0.95 }}
                   >
-                    ⏹
-                  </button>
+                    <span className="text-xl">⏹</span>
+                  </motion.button>
                 )}
 
-                <input
+                <motion.input
                   type="text"
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   placeholder={recording ? "Gravando áudio..." : uploadingFile ? "Enviando arquivo..." : "Digite sua mensagem..."}
                   disabled={recording || uploadingFile}
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '24px',
-                    fontSize: '15px',
-                    outline: 'none',
-                    opacity: recording || uploadingFile ? 0.6 : 1,
-                  }}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = '#3b82f6';
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = '#e5e7eb';
-                  }}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-full text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all disabled:opacity-60"
+                  whileFocus={{ scale: 1.02 }}
                 />
-                <button
+                
+                <Button
                   type="submit"
+                  variant="primary"
                   disabled={(!messageInput.trim() && !recording && !uploadingFile) || sending || uploadingFile}
-                  style={{
-                    padding: '12px 24px',
-                    backgroundColor: (messageInput.trim() || recording) && !sending && !uploadingFile ? '#3b82f6' : '#9ca3af',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '24px',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    cursor: (messageInput.trim() || recording) && !sending && !uploadingFile ? 'pointer' : 'not-allowed',
-                    transition: 'background-color 0.2s',
-                  }}
+                  className="px-6 py-3 rounded-full font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {sending ? 'Enviando...' : uploadingFile ? 'Enviando...' : recording ? 'Gravando...' : 'Enviar'}
-                </button>
-              </form>
+                </Button>
+              </motion.form>
             </div>
           </div>
         ) : (
@@ -1426,6 +1708,165 @@ export default function Conversations() {
                   borderRadius: '6px',
                   cursor: 'pointer',
                   fontWeight: '600',
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Nova Conversa */}
+      {showNewConversationModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            if (!loadingNewConversation) {
+              setShowNewConversationModal(false);
+              setPhoneNumber('');
+            }
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              padding: '30px',
+              width: '90%',
+              maxWidth: '400px',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '20px', fontWeight: '600' }}>
+              📞 Iniciar Nova Conversa
+            </h3>
+
+            {/* Display do Número */}
+            <div
+              style={{
+                padding: '20px',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                textAlign: 'center',
+                fontSize: '24px',
+                fontWeight: '600',
+                letterSpacing: '2px',
+                minHeight: '50px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: 'monospace',
+              }}
+            >
+              {phoneNumber || 'Digite o número...'}
+            </div>
+
+            {/* Teclado Numérico */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', '⌫'].map((key) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    if (key === '⌫') {
+                      handleBackspace();
+                    } else {
+                      handleNumberKeyPress(key);
+                    }
+                  }}
+                  disabled={loadingNewConversation}
+                  style={{
+                    padding: '20px',
+                    fontSize: '20px',
+                    fontWeight: '600',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    backgroundColor: key === '⌫' ? '#ef4444' : key === '+' ? '#3b82f6' : 'white',
+                    color: key === '⌫' || key === '+' ? 'white' : '#111827',
+                    cursor: loadingNewConversation ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseDown={(e) => {
+                    if (!loadingNewConversation) {
+                      e.currentTarget.style.transform = 'scale(0.95)';
+                    }
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+
+            {/* Botões de Ação */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleClear}
+                disabled={loadingNewConversation || !phoneNumber}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: '#6b7280',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: loadingNewConversation || !phoneNumber ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                }}
+              >
+                Limpar
+              </button>
+              <button
+                onClick={handleStartNewConversation}
+                disabled={loadingNewConversation || !phoneNumber || phoneNumber.replace(/\D/g, '').length < 10}
+                style={{
+                  flex: 2,
+                  padding: '12px',
+                  backgroundColor: loadingNewConversation || !phoneNumber || phoneNumber.replace(/\D/g, '').length < 10 ? '#9ca3af' : '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: loadingNewConversation || !phoneNumber || phoneNumber.replace(/\D/g, '').length < 10 ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                }}
+              >
+                {loadingNewConversation ? '⏳ Iniciando...' : '✅ Iniciar Conversa'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowNewConversationModal(false);
+                  setPhoneNumber('');
+                }}
+                disabled={loadingNewConversation}
+                style={{
+                  padding: '12px 20px',
+                  backgroundColor: '#e5e7eb',
+                  color: '#374151',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: loadingNewConversation ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
                 }}
               >
                 Cancelar

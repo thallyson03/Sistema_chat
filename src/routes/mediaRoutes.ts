@@ -311,19 +311,31 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         '.pdf': 'application/pdf',
       };
       
-      const contentType = mimeTypes[ext] || mediaMetadata?.mimetype || 'application/octet-stream';
+      // Para arquivos OGG, usar o mimetype correto com codecs
+      let contentType = mimeTypes[ext] || mediaMetadata?.mimetype || 'application/octet-stream';
+      
+      // Se for OGG e o metadata tiver mimetype com codecs, usar ele
+      if (ext === '.ogg' && metadata?.mimetype && metadata.mimetype.includes('codecs')) {
+        contentType = metadata.mimetype;
+      } else if (ext === '.ogg' && !contentType.includes('codecs')) {
+        // Se não tiver codecs no mimetype, adicionar
+        contentType = 'audio/ogg; codecs=opus';
+      }
       
       console.log('[Media] ✅ Servindo arquivo local:', {
         filename,
         path: filePath,
         contentType,
         size: fs.statSync(filePath).size,
+        ext,
+        metadataMimetype: metadata?.mimetype,
       });
       
       res.status(200);
       res.contentType(contentType);
       res.setHeader('Cache-Control', 'public, max-age=31536000');
       res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Accept-Ranges', 'bytes');
       res.sendFile(filePath);
       return;
     }

@@ -349,46 +349,41 @@ class EvolutionApiClient {
         number,
         audioUrl: audioUrl.substring(0, 100),
         hasApiKey: !!apiKey,
-        endpoint: `/message/sendMedia/${instanceName}`,
+        endpoint: `/message/sendWhatsAppAudio/${instanceName}`,
       });
 
-      // Formato da Evolution API - similar ao sendImage/sendVideo (formato direto)
-      // Usar formato direto com mediatype, media, mimetype e ptt
-      // Usar mimetype fornecido ou padrão ogg (recomendado para PTT)
-      const audioMimetype = mimetype || 'audio/ogg; codecs=opus';
-      
       // Detectar se o conteúdo é base64 "puro" (sem http/https)
       const isBase64 = !audioUrl.startsWith('http://') && 
                        !audioUrl.startsWith('https://') &&
                        !audioUrl.startsWith('/'); // não parece ser URL/caminho
 
-      // Tentar sempre usar PTT para aparecer como áudio de voz
-      const isWebm = audioMimetype.includes('webm') || audioUrl.includes('.webm');
-      
+      if (!isBase64) {
+        throw new Error('Áudio deve ser enviado como base64. Use o messageService para converter arquivos locais para base64 antes de chamar sendAudio.');
+      }
+
+      // Formato correto segundo a documentação: /message/sendWhatsAppAudio/{instance}
+      // Payload: { "number": "...", "audio": "url or base64" }
+      // Base64 pode ser enviado diretamente, sem prefixo data:
       const payload = {
         number,
-        mediatype: 'audio',
-        media: audioUrl,
-        mimetype: audioMimetype,
-        ptt: true, // Sempre usar PTT para aparecer como áudio de voz (push-to-talk)
-        // Evolution API: quando mídia é base64, precisa informar explicitamente
-        ...(isBase64 ? { isBase64: true } : {}),
+        audio: audioUrl, // Base64 puro (sem prefixo data:)
       };
       
       console.log('[EvolutionAPI] 📋 Configuração de áudio:', {
-        mimetype: audioMimetype,
-        isWebm,
         isBase64,
-        ptt: payload.ptt,
-        url: audioUrl.substring(0, 100),
-        fullUrl: audioUrl,
+        base64Length: audioUrl.length,
+        base64Preview: audioUrl.substring(0, 50) + '...',
       });
       
-      // Log detalhado para debug
-      console.log('[EvolutionAPI] 📋 Payload completo:', JSON.stringify(payload, null, 2));
+      // Log detalhado para debug (sem mostrar o base64 completo)
+      console.log('[EvolutionAPI] 📋 Payload completo (sem base64):', JSON.stringify({
+        number: payload.number,
+        audio: `[base64: ${audioUrl.length} caracteres]`,
+      }, null, 2));
 
+      // Usar /message/sendWhatsAppAudio conforme documentação
       const response = await this.client.post(
-        `/message/sendMedia/${instanceName}`,
+        `/message/sendWhatsAppAudio/${instanceName}`,
         payload,
         {
           headers: this.getHeaders(apiKey),
@@ -448,6 +443,44 @@ class EvolutionApiClient {
         error.message ||
         'Erro ao enviar documento'
       );
+    }
+  }
+
+  async getProfilePicture(instanceName: string, number: string, apiKey?: string) {
+    try {
+      console.log('[EvolutionAPI] 📸 Buscando foto de perfil:', {
+        instanceName,
+        number,
+        hasApiKey: !!apiKey,
+        endpoint: `/chat/fetchProfilePictureUrl/${instanceName}`,
+      });
+
+      const response = await this.client.get(
+        `/chat/fetchProfilePictureUrl/${instanceName}`,
+        {
+          params: {
+            number: number,
+          },
+          headers: this.getHeaders(apiKey),
+        }
+      );
+
+      console.log('[EvolutionAPI] ✅ Foto de perfil obtida:', {
+        status: response.status,
+        url: response.data?.profilePictureUrl || response.data?.url || response.data,
+      });
+
+      return response.data?.profilePictureUrl || response.data?.url || response.data || null;
+    } catch (error: any) {
+      console.warn('[EvolutionAPI] ⚠️ Erro ao buscar foto de perfil:', {
+        instanceName,
+        number,
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      // Não lançar erro, apenas retornar null se não conseguir obter
+      return null;
     }
   }
 
