@@ -340,8 +340,19 @@ router.get('/:messageId', async (req: Request, res: Response) => {
       return;
     }
 
+    // Verificar se a conversa tem canal associado
+    if (!message.conversation.channelId) {
+      return res.status(404).json({ 
+        error: 'Conversa não possui canal associado' 
+      });
+    }
+
     // Buscar token da instância para autenticação
-    let instanceToken = message.conversation.channel.evolutionInstanceToken;
+    let instanceToken: string | null = null;
+    
+    if (message.conversation.channel) {
+      instanceToken = message.conversation.channel.evolutionInstanceToken;
+    }
     
     // Se não encontrou no relacionamento, buscar diretamente do canal
     if (!instanceToken) {
@@ -365,12 +376,14 @@ router.get('/:messageId', async (req: Request, res: Response) => {
     if (!instanceToken) {
       console.error('[Media] ❌ Token da instância não encontrado');
       console.error('[Media] ChannelId:', message.conversation.channelId);
-      console.error('[Media] Channel data:', {
-        id: message.conversation.channel.id,
-        name: message.conversation.channel.name,
-        instanceId: message.conversation.channel.evolutionInstanceId,
-        hasToken: !!message.conversation.channel.evolutionInstanceToken,
-      });
+      if (message.conversation.channel) {
+        console.error('[Media] Channel data:', {
+          id: message.conversation.channel.id,
+          name: message.conversation.channel.name,
+          instanceId: message.conversation.channel.evolutionInstanceId,
+          hasToken: !!message.conversation.channel.evolutionInstanceToken,
+        });
+      }
       return res.status(500).json({ 
         error: 'Token da instância não configurado. Verifique se o canal está configurado corretamente.' 
       });

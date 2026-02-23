@@ -111,6 +111,15 @@ export class DealService {
       },
     });
 
+    // Disparar automações para a etapa inicial (deal recém-criado)
+    try {
+      const { pipelineAutomationService } = await import('./pipelineAutomationService');
+      await pipelineAutomationService.handleStageEnter(deal.id, data.stageId, true);
+    } catch (err: any) {
+      console.error('[DealService] Erro ao executar automações:', err.message);
+      // Não falhar a criação do deal se as automações derem erro
+    }
+
     return deal;
   }
 
@@ -329,6 +338,15 @@ export class DealService {
           description: `De "${oldStage.name}" para "${newStage?.name || 'N/A'}"`,
         },
       });
+
+      // Disparar automações para a nova etapa
+      try {
+        const { pipelineAutomationService } = await import('./pipelineAutomationService');
+        await pipelineAutomationService.handleStageEnter(id, data.stageId!, false);
+      } catch (err: any) {
+        console.error('[DealService] Erro ao executar automações:', err.message);
+        // Não falhar a atualização do deal se as automações derem erro
+      }
     }
 
     // Criar atividade se mudou status
@@ -401,6 +419,15 @@ export class DealService {
         description: `De "${deal.stage.name}" para "${newStage.name}"`,
       },
     });
+
+    // Disparar automações para a nova etapa
+    try {
+      const { pipelineAutomationService } = await import('./pipelineAutomationService');
+      await pipelineAutomationService.handleStageEnter(dealId, newStageId, false);
+    } catch (err: any) {
+      console.error('[DealService] Erro ao executar automações:', err.message);
+      // Não falhar a movimentação do deal se as automações derem erro
+    }
 
     return updatedDeal;
   }

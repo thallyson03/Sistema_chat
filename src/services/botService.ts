@@ -200,6 +200,11 @@ export class BotService {
     }
 
     // Verificar se há bot ativo para este canal
+    if (!conversation.channelId) {
+      console.log('[BotService] Conversa não possui canal associado, não há bot para processar');
+      return null;
+    }
+
     const bot = await prisma.bot.findFirst({
       where: {
         channelId: conversation.channelId,
@@ -269,10 +274,52 @@ export class BotService {
 
     // Se não encontrou intent, verificar se há fluxo ativo
     if (session && (session as any).currentFlowId) {
-      const flow = bot.flows.find((f) => f.id === (session as any).currentFlowId);
+      const flow = (bot as any).flows?.find((f: any) => f.id === (session as any).currentFlowId);
       if (flow && session) {
         await this.executeFlow(flow, session as any, messageContent);
         return { flow: flow.id };
+      }
+    }
+
+    // Se não há fluxo ativo, verificar se há fluxo com trigger "always" para iniciar automaticamente
+    if (session && !(session as any).currentFlowId) {
+      // Buscar fluxo com trigger "always" ou sem trigger específico (fluxo padrão)
+      const alwaysFlow = (bot as any).flows?.find((f: any) => 
+        f.isActive && 
+        (f.trigger === 'always' || !f.trigger || f.trigger === '')
+      );
+      
+      if (alwaysFlow) {
+        console.log(`[BotService] Iniciando fluxo automático "${alwaysFlow.name}" (trigger: ${alwaysFlow.trigger || 'always'})`);
+        
+        // Atualizar sessão com o fluxo ativo
+        const firstStep = alwaysFlow.steps?.find((s: any) => s.order === 0) || alwaysFlow.steps?.[0];
+        
+        if (firstStep) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: {
+              currentFlowId: alwaysFlow.id,
+              currentStepId: firstStep.id,
+            },
+          });
+
+          // Executar o primeiro step do fluxo automaticamente (sem esperar input do usuário)
+          const updatedSession = {
+            ...session,
+            currentFlowId: alwaysFlow.id,
+            currentStepId: firstStep.id,
+          };
+          
+          // Executar o primeiro step imediatamente
+          await this.executeFlow(alwaysFlow, updatedSession as any, '');
+          return { flow: alwaysFlow.id, autoStarted: true };
+        } else {
+          console.warn(`[BotService] Fluxo "${alwaysFlow.name}" não tem steps configurados`);
+        }
+      } else {
+        const flows = (bot as any).flows || [];
+        console.log(`[BotService] Nenhum fluxo "always" encontrado. Fluxos disponíveis:`, flows.map((f: any) => ({ name: f.name, trigger: f.trigger, isActive: f.isActive })));
       }
     }
 
@@ -343,26 +390,83 @@ export class BotService {
    * Executa um fluxo
    */
   async executeFlow(flow: any, session: any, input: string) {
+    console.log(`[BotService] Executando fluxo "${flow.name}", step atual: ${session.currentStepId || 'nenhum'}`);
+    
     // Implementação básica - pode ser expandida
     const currentStep = flow.steps.find((s: any) => s.id === session.currentStepId) || flow.steps[0];
 
     if (!currentStep) {
+      console.warn(`[BotService] Nenhum step encontrado no fluxo "${flow.name}"`);
       return;
     }
+
+    console.log(`[BotService] Processando step tipo: ${currentStep.type}, order: ${currentStep.order}`);
 
     // Processar step baseado no tipo
     switch (currentStep.type) {
       case 'MESSAGE':
         if (currentStep.response) {
+          console.log(`[BotService] Enviando mensagem do step:`, currentStep.response.content?.substring(0, 50));
           const sessionContext = (session.context as Record<string, any>) || {};
           await this.sendBotResponse(session.conversationId, currentStep.response, session.botId, sessionContext);
+        } else {
+          console.warn(`[BotService] Step MESSAGE sem resposta configurada`);
         }
-        // Avançar para próximo step
+        // Avançar para próximo step automaticamente se houver
         if (currentStep.nextStepId) {
+          // Se nextStepId é "END", finalizar fluxo
+          if (currentStep.nextStepId === 'END') {
+            console.log(`[BotService] Fluxo "${flow.name}" finalizado (step END)`);
+            await prisma.botSession.update({
+              where: { id: session.id },
+              data: {
+                currentFlowId: null,
+                currentStepId: null,
+              },
+            });
+          } else {
+            // Atualizar sessão com próximo step
+            await prisma.botSession.update({
+              where: { id: session.id },
+              data: {
+                currentStepId: currentStep.nextStepId,
+              },
+            });
+            
+            // Executar próximo step automaticamente se for MESSAGE
+            // Se for INPUT, apenas atualizar o currentStepId e aguardar resposta do usuário
+            const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
+            if (nextStep) {
+              if (nextStep.type === 'MESSAGE') {
+                // Executar próximo step MESSAGE automaticamente
+                const updatedSession = {
+                  ...session,
+                  currentStepId: currentStep.nextStepId,
+                };
+                await this.executeFlow(flow, updatedSession, input);
+              } else if (nextStep.type === 'INPUT' || nextStep.type === 'TEXT_INPUT' || nextStep.type === 'EMAIL_INPUT' || nextStep.type === 'NUMBER_INPUT' || nextStep.type === 'PHONE_INPUT') {
+                // Para steps INPUT, apenas atualizar o currentStepId e aguardar resposta do usuário
+                // Não executar automaticamente - o próximo processMessage vai processar o INPUT
+                console.log(`[BotService] Aguardando input do usuário no step ${nextStep.id} (tipo: ${nextStep.type})`);
+                // currentStepId já foi atualizado acima, então o próximo processMessage vai processar o INPUT
+              } else {
+                // Para outros tipos, executar automaticamente
+                const updatedSession = {
+                  ...session,
+                  currentStepId: currentStep.nextStepId,
+                };
+                await this.executeFlow(flow, updatedSession, input);
+              }
+            }
+          }
+        } else {
+          // Se não há próximo step, finalizar fluxo
+          console.log(`[BotService] Fluxo "${flow.name}" finalizado (sem próximo step)`);
           await prisma.botSession.update({
             where: { id: session.id },
             data: {
-              currentStepId: currentStep.nextStepId,
+              currentFlowId: null,
+              currentStepId: null,
             },
           });
         }
@@ -405,29 +509,67 @@ export class BotService {
         break;
 
       case 'INPUT':
-        // Aguardar input do usuário e validar
+      case 'TEXT_INPUT':
+        // Processar input do usuário e validar
+        console.log(`[BotService] Processando INPUT step ${currentStep.id} com input: "${input}"`);
         const isValid = await this.validateInput(currentStep, input);
         const sessionContext = (session.context as Record<string, any>) || {};
         
         if (isValid) {
           // Salvar resposta em variável se especificado
           const variableName = currentStep.config?.variableName;
+          let updatedContext = sessionContext;
           if (variableName) {
-            const updatedContext = this.variableService.setVariableValue(sessionContext, variableName, input);
+            updatedContext = this.variableService.setVariableValue(sessionContext, variableName, input);
             await prisma.botSession.update({
               where: { id: session.id },
               data: {
                 context: updatedContext,
               },
             });
+            console.log(`[BotService] Variável "${variableName}" salva com valor: "${input}"`);
           }
           
           // Avançar para próximo step
           if (currentStep.nextStepId) {
+            if (currentStep.nextStepId === 'END') {
+              // Finalizar fluxo
+              console.log(`[BotService] Fluxo "${flow.name}" finalizado após INPUT`);
+              await prisma.botSession.update({
+                where: { id: session.id },
+                data: {
+                  currentFlowId: null,
+                  currentStepId: null,
+                },
+              });
+            } else {
+              // Atualizar para próximo step e executar se for MESSAGE
+              await prisma.botSession.update({
+                where: { id: session.id },
+                data: {
+                  currentStepId: currentStep.nextStepId,
+                },
+              });
+              
+              // Executar próximo step se for MESSAGE
+              const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
+              if (nextStep && nextStep.type === 'MESSAGE') {
+                const updatedSession = {
+                  ...session,
+                  currentStepId: currentStep.nextStepId,
+                  context: updatedContext,
+                };
+                await this.executeFlow(flow, updatedSession, input);
+              }
+            }
+          } else {
+            // Se não há próximo step, finalizar fluxo
+            console.log(`[BotService] Fluxo "${flow.name}" finalizado após INPUT (sem próximo step)`);
             await prisma.botSession.update({
               where: { id: session.id },
               data: {
-                currentStepId: currentStep.nextStepId,
+                currentFlowId: null,
+                currentStepId: null,
               },
             });
           }
@@ -439,6 +581,7 @@ export class BotService {
             content: errorMessage,
           } as any, session.botId, sessionContext);
           // Não avança, aguarda nova tentativa
+          console.log(`[BotService] Input inválido, aguardando nova tentativa`);
         }
         break;
 

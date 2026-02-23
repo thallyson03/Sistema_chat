@@ -169,10 +169,18 @@ export class QuickReplyController {
       }
 
       // Substituir variáveis
+      // Transformar conversation para o formato esperado (channel pode ser null)
+      const conversationForReplace = conversation 
+        ? {
+            ...conversation,
+            channel: conversation.channel ? { name: conversation.channel.name } : undefined
+          }
+        : undefined;
+
       const previewContent = quickReplyService.replaceVariables(
         quickReply.content,
         contact || undefined,
-        conversation || undefined
+        conversationForReplace
       );
 
       res.json({

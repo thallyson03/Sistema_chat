@@ -1,6 +1,7 @@
 import prisma from '../config/database';
 import { MessageType, MessageStatus } from '@prisma/client';
 import evolutionApi from '../config/evolutionApi';
+import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
 import fs from 'fs';
 import path from 'path';
 
@@ -38,33 +39,97 @@ export class MessageService {
       throw new Error('Conversa não encontrada');
     }
 
-    // Se for WhatsApp e tiver instância configurada, enviar via Evolution API
+    // Se for WhatsApp, verificar qual API usar (Official ou Evolution)
     let externalId: string | null = null;
     let status: MessageStatus = MessageStatus.SENT;
 
+    if (!conversation.channel) {
+      throw new Error('Conversa não possui canal associado');
+    }
+
+    // Garantir que channel não é null para TypeScript
+    const channel = conversation.channel;
+
     console.log('🔍 [MessageService] Verificando condições para envio:', {
-      channelType: conversation.channel.type,
-      hasInstanceId: !!conversation.channel.evolutionInstanceId,
-      instanceId: conversation.channel.evolutionInstanceId,
-      hasApiKey: !!conversation.channel.evolutionApiKey,
+      channelType: channel.type,
+      hasInstanceId: !!channel.evolutionInstanceId,
+      instanceId: channel.evolutionInstanceId,
+      hasApiKey: !!channel.evolutionApiKey,
       hasPhone: !!conversation.contact.phone,
       phone: conversation.contact.phone,
       messageType: data.type,
       hasMediaUrl: !!data.mediaUrl,
+      whatsappEnv: process.env.WHATSAPP_ENV,
     });
 
+    // Verificar se deve usar WhatsApp Official
+    const useWhatsAppOfficial = process.env.WHATSAPP_ENV && 
+                                 (process.env.WHATSAPP_ENV === 'dev' || process.env.WHATSAPP_ENV === 'prod') &&
+                                 getWhatsAppOfficialService() !== null;
+
     if (
-      conversation.channel.type === 'WHATSAPP' &&
-      conversation.channel.evolutionInstanceId &&
-      conversation.channel.evolutionApiKey &&
+      channel.type === 'WHATSAPP' &&
+      useWhatsAppOfficial &&
+      conversation.contact.phone
+    ) {
+      // Usar WhatsApp Official API
+      console.log('✅ [MessageService] Usando WhatsApp Official API...');
+      try {
+        const whatsappService = getWhatsAppOfficialService();
+        if (!whatsappService) {
+          throw new Error('Serviço WhatsApp Official não disponível');
+        }
+
+        const phone = conversation.contact.phone.replace(/\D/g, '');
+        const formattedPhone = phone.startsWith('55') ? phone : `55${phone}`;
+
+        let result: any;
+
+        if (data.mediaUrl && data.type !== 'TEXT') {
+          // Enviar mídia
+          const mediaType = data.type === 'IMAGE' ? 'image' :
+                           data.type === 'VIDEO' ? 'video' :
+                           data.type === 'AUDIO' ? 'audio' :
+                           data.type === 'DOCUMENT' ? 'document' : 'image';
+
+          result = await whatsappService.sendMediaMessage({
+            to: formattedPhone,
+            mediaUrl: data.mediaUrl,
+            type: mediaType,
+            caption: data.caption || data.content,
+            filename: data.fileName,
+          });
+        } else {
+          // Enviar texto
+          result = await whatsappService.sendTextMessage({
+            to: formattedPhone,
+            text: data.content,
+          });
+        }
+
+        externalId = result.messageId;
+        status = MessageStatus.SENT;
+
+        console.log('✅ [MessageService] Mensagem enviada via WhatsApp Official:', {
+          messageId: externalId,
+          phone: formattedPhone,
+        });
+      } catch (error: any) {
+        console.error('❌ [MessageService] Erro ao enviar via WhatsApp Official:', error);
+        throw error;
+      }
+    } else if (
+      channel.type === 'WHATSAPP' &&
+      channel.evolutionInstanceId &&
+      channel.evolutionApiKey &&
       conversation.contact.phone
     ) {
       console.log('✅ [MessageService] Condições satisfeitas, iniciando envio...');
       try {
         console.log('📤 Enviando mensagem via Evolution API...');
-        console.log('Instância:', conversation.channel.evolutionInstanceId);
-        console.log('API Key presente:', !!conversation.channel.evolutionApiKey);
-        console.log('Instance Token presente:', !!conversation.channel.evolutionInstanceToken);
+        console.log('Instância:', channel.evolutionInstanceId);
+        console.log('API Key presente:', !!channel.evolutionApiKey);
+        console.log('Instance Token presente:', !!channel.evolutionInstanceToken);
         console.log('Telefone original:', conversation.contact.phone);
         
         // Formatar telefone corretamente
@@ -82,20 +147,20 @@ export class MessageService {
         
         // Usar API key master (não o token da instância para envio de mensagens)
         // O token da instância é usado apenas para webhook, não para envio
-        const apiKey = conversation.channel.evolutionApiKey || process.env.EVOLUTION_API_KEY;
+        const apiKey = channel.evolutionApiKey || process.env.EVOLUTION_API_KEY;
         
         if (!apiKey) {
           throw new Error('API key não encontrada. Configure EVOLUTION_API_KEY no .env ou no canal.');
         }
         
         console.log('📤 [MessageService] Enviando via Evolution API:', {
-          instanceId: conversation.channel.evolutionInstanceId,
+          instanceId: channel.evolutionInstanceId,
           number: whatsappNumber,
           contentLength: data.content.length,
           type: data.type,
           hasMediaUrl: !!data.mediaUrl,
           usingApiKey: !!apiKey,
-          hasInstanceToken: !!conversation.channel.evolutionInstanceToken,
+          hasInstanceToken: !!channel.evolutionInstanceToken,
         });
         
         let evolutionResponse: any;
@@ -131,7 +196,7 @@ export class MessageService {
           switch (messageType) {
             case MessageType.IMAGE:
               evolutionResponse = await evolutionApi.sendImage(
-                conversation.channel.evolutionInstanceId,
+                channel.evolutionInstanceId!,
                 whatsappNumber,
                 fullMediaUrl,
                 data.caption || data.content,
@@ -140,7 +205,7 @@ export class MessageService {
               break;
             case MessageType.VIDEO:
               evolutionResponse = await evolutionApi.sendVideo(
-                conversation.channel.evolutionInstanceId,
+                channel.evolutionInstanceId!,
                 whatsappNumber,
                 fullMediaUrl,
                 data.caption || data.content,
@@ -271,7 +336,7 @@ export class MessageService {
               });
 
               evolutionResponse = await evolutionApi.sendAudio(
-                conversation.channel.evolutionInstanceId,
+                channel.evolutionInstanceId!,
                 whatsappNumber,
                 audioMedia,
                 apiKey,
@@ -280,7 +345,7 @@ export class MessageService {
               break;
             case MessageType.DOCUMENT:
               evolutionResponse = await evolutionApi.sendDocument(
-                conversation.channel.evolutionInstanceId,
+                channel.evolutionInstanceId!,
                 whatsappNumber,
                 fullMediaUrl,
                 data.fileName || 'document',
@@ -290,7 +355,7 @@ export class MessageService {
               break;
             default:
               evolutionResponse = await evolutionApi.sendMessage(
-                conversation.channel.evolutionInstanceId,
+                channel.evolutionInstanceId!,
                 whatsappNumber,
                 data.content,
                 apiKey
@@ -299,7 +364,7 @@ export class MessageService {
         } else {
           // Enviar mensagem de texto
           evolutionResponse = await evolutionApi.sendMessage(
-            conversation.channel.evolutionInstanceId,
+            channel.evolutionInstanceId!,
             whatsappNumber,
             data.content,
             apiKey
@@ -334,17 +399,17 @@ export class MessageService {
       }
     } else {
       const reasons = [];
-      if (conversation.channel.type !== 'WHATSAPP') reasons.push('não é WhatsApp');
-      if (!conversation.channel.evolutionInstanceId) reasons.push('sem instanceId');
-      if (!conversation.channel.evolutionApiKey) reasons.push('sem API key');
+      if (channel.type !== 'WHATSAPP') reasons.push('não é WhatsApp');
+      if (!channel.evolutionInstanceId) reasons.push('sem instanceId');
+      if (!channel.evolutionApiKey) reasons.push('sem API key');
       if (!conversation.contact.phone) reasons.push('sem telefone do contato');
       
       console.log('ℹ️ [MessageService] Mensagem NÃO será enviada via Evolution API:', {
         reasons: reasons.length > 0 ? reasons.join(', ') : 'condição não satisfeita',
-        channelType: conversation.channel.type,
-        hasInstanceId: !!conversation.channel.evolutionInstanceId,
-        instanceId: conversation.channel.evolutionInstanceId,
-        hasApiKey: !!conversation.channel.evolutionApiKey,
+        channelType: channel.type,
+        hasInstanceId: !!channel.evolutionInstanceId,
+        instanceId: channel.evolutionInstanceId,
+        hasApiKey: !!channel.evolutionApiKey,
         hasPhone: !!conversation.contact.phone,
         phone: conversation.contact.phone,
       });

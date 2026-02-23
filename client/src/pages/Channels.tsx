@@ -28,6 +28,7 @@ export default function Channels() {
     name: '',
     type: 'WHATSAPP',
     sectorId: '',
+    provider: 'evolution', // 'evolution' ou 'whatsapp_official'
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -61,10 +62,28 @@ export default function Channels() {
     setSubmitting(true);
 
     try {
-      await api.post('/api/channels', formData);
+      // Preparar dados para envio
+      const channelData: any = {
+        name: formData.name,
+        type: formData.type,
+        sectorId: formData.sectorId || undefined,
+      };
+
+      // Se for WhatsApp, adicionar config com provider
+      if (formData.type === 'WHATSAPP') {
+        channelData.config = {
+          provider: formData.provider,
+        };
+        
+        // Se for Evolution, não enviar nada (vai usar do .env)
+        // Se for Official, já está no config
+      }
+
+      await api.post('/api/channels', channelData);
       setShowModal(false);
-      setFormData({ name: '', type: 'WHATSAPP', sectorId: '' });
+      setFormData({ name: '', type: 'WHATSAPP', sectorId: '', provider: 'evolution' });
       fetchChannels();
+      alert('Canal criado com sucesso!');
     } catch (error: any) {
       alert(error.response?.data?.error || 'Erro ao criar canal');
     } finally {
@@ -266,7 +285,7 @@ export default function Channels() {
                 </label>
                 <select
                   value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value, provider: e.target.value === 'WHATSAPP' ? formData.provider : 'evolution' })}
                   style={{
                     width: '100%',
                     padding: '10px',
@@ -280,6 +299,32 @@ export default function Channels() {
                   <option value="WEBCHAT">Webchat</option>
                 </select>
               </div>
+
+              {formData.type === 'WHATSAPP' && (
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                    Provedor
+                  </label>
+                  <select
+                    value={formData.provider}
+                    onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #ddd',
+                      borderRadius: '5px',
+                    }}
+                  >
+                    <option value="evolution">Evolution API</option>
+                    <option value="whatsapp_official">WhatsApp Official (Meta Cloud API)</option>
+                  </select>
+                  <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '5px' }}>
+                    {formData.provider === 'whatsapp_official' 
+                      ? 'Usa a API oficial do WhatsApp (Meta Cloud API). Requer configuração no Meta Developers.'
+                      : 'Usa Evolution API. Requer API Key da Evolution.'}
+                  </p>
+                </div>
+              )}
 
 
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>

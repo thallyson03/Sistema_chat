@@ -16,6 +16,360 @@ export function setSocketIO(socketIO: any) {
 
 const router = Router();
 
+// Middleware para log de todas as requisições ao webhook
+router.use('/whatsapp', (req: Request, res: Response, next: Function) => {
+  console.log('🔔 [WebhookMiddleware] Requisição recebida:', {
+    method: req.method,
+    url: req.url,
+    path: req.path,
+    originalUrl: req.originalUrl,
+    timestamp: new Date().toISOString(),
+    hasBody: !!req.body,
+    bodyKeys: req.body ? Object.keys(req.body) : [],
+  });
+  next();
+});
+
+// ============================================
+// WEBHOOK WHATSAPP OFFICIAL API
+// ============================================
+
+/**
+ * Webhook do WhatsApp Official API
+ * GET: Verificação do webhook (handshake)
+ * POST: Recebimento de eventos (mensagens, status, etc.)
+ */
+router.get('/whatsapp', (req: Request, res: Response) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const verifyToken = process.env.WHATSAPP_DEV_WEBHOOK_VERIFY_TOKEN || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+
+  console.log('[WebhookWhatsApp] 🔐 ============================================');
+  console.log('[WebhookWhatsApp] 🔐 Verificação do webhook (GET)');
+  console.log('[WebhookWhatsApp] 🔐 URL:', req.url);
+  console.log('[WebhookWhatsApp] 🔐 Query params:', JSON.stringify(req.query, null, 2));
+  console.log('[WebhookWhatsApp] 🔐 Mode:', mode);
+  console.log('[WebhookWhatsApp] 🔐 Token recebido:', token);
+  console.log('[WebhookWhatsApp] 🔐 Token esperado:', verifyToken);
+  console.log('[WebhookWhatsApp] 🔐 Challenge:', challenge);
+  console.log('[WebhookWhatsApp] 🔐 ============================================');
+
+  // Se não tem parâmetros, é acesso direto do navegador - retornar info
+  if (!mode && !token && !challenge) {
+    return res.status(200).json({
+      message: 'Webhook endpoint ativo',
+      method: 'GET',
+      description: 'Este endpoint é usado pelo Meta para verificar o webhook',
+      requiredParams: ['hub.mode', 'hub.verify_token', 'hub.challenge'],
+      webhookUrl: '/api/webhooks/whatsapp',
+    });
+  }
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('[WebhookWhatsApp] ✅ Webhook verificado com sucesso!');
+    res.status(200).send(challenge);
+  } else {
+    console.warn('[WebhookWhatsApp] ⚠️ Verificação falhou:', {
+      mode,
+      tokenMatch: token === verifyToken,
+    });
+    res.status(403).send('Forbidden');
+  }
+});
+
+router.post('/whatsapp', async (req: Request, res: Response) => {
+  try {
+    console.log('📨 ============================================');
+    console.log('📨 Webhook recebido do WhatsApp Official API');
+    console.log('📨 Timestamp:', new Date().toISOString());
+    console.log('📨 URL:', req.url);
+    console.log('📨 Method:', req.method);
+    console.log('📨 Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('📨 Body completo:', JSON.stringify(req.body, null, 2));
+    console.log('📨 ============================================');
+
+    // WhatsApp Official envia eventos em req.body.entry[]
+    const entries = req.body.entry || [];
+    
+    console.log(`[WhatsAppOfficial] 📦 Processando ${entries.length} entrada(s)`);
+
+    if (entries.length === 0) {
+      console.warn('[WhatsAppOfficial] ⚠️ Nenhuma entrada encontrada no webhook');
+    }
+
+    for (const entry of entries) {
+      const changes = entry.changes || [];
+      console.log(`[WhatsAppOfficial] 📦 Processando ${changes.length} mudança(s) na entrada`);
+      
+      for (const change of changes) {
+        if (change.value) {
+          const value = change.value;
+          console.log('[WhatsAppOfficial] 🔍 Valor da mudança:', {
+            hasMessages: !!value.messages,
+            hasStatuses: !!value.statuses,
+            messageCount: value.messages?.length || 0,
+            statusCount: value.statuses?.length || 0,
+          });
+
+          // Processar mensagens recebidas
+          if (value.messages && Array.isArray(value.messages)) {
+            console.log(`[WhatsAppOfficial] 📩 Processando ${value.messages.length} mensagem(ns)`);
+            for (const message of value.messages) {
+              await handleWhatsAppOfficialMessage(message, value);
+            }
+          } else {
+            console.log('[WhatsAppOfficial] ℹ️ Nenhuma mensagem encontrada neste evento');
+          }
+
+          // Processar status de mensagens (delivered, read, etc.)
+          if (value.statuses && Array.isArray(value.statuses)) {
+            console.log(`[WhatsAppOfficial] 📊 Processando ${value.statuses.length} status`);
+            for (const status of value.statuses) {
+              await handleWhatsAppOfficialStatus(status);
+            }
+          }
+        } else {
+          console.warn('[WhatsAppOfficial] ⚠️ Mudança sem valor:', change);
+        }
+      }
+    }
+
+    // WhatsApp Official requer resposta 200 para confirmar recebimento
+    console.log('[WhatsAppOfficial] ✅ Webhook processado com sucesso');
+    res.status(200).json({ received: true });
+  } catch (error: any) {
+    console.error('❌ Erro ao processar webhook do WhatsApp Official:', error);
+    console.error('❌ Stack:', error.stack);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Processa mensagem recebida do WhatsApp Official
+ */
+async function handleWhatsAppOfficialMessage(message: any, value: any) {
+  try {
+    console.log('[WhatsAppOfficial] 📩 Processando mensagem:', {
+      messageId: message.id,
+      from: message.from,
+      type: message.type,
+      timestamp: message.timestamp,
+    });
+
+    const phoneNumber = message.from;
+    const messageId = message.id;
+    const messageType = message.type;
+    const timestamp = new Date(parseInt(message.timestamp) * 1000);
+
+    // Buscar ou criar contato
+    let contact = await prisma.contact.findFirst({
+      where: {
+        phone: phoneNumber,
+      },
+      include: {
+        channel: true,
+      },
+    });
+
+    // Se não encontrou contato, buscar canal WhatsApp Official
+    if (!contact) {
+      console.log('[WhatsAppOfficial] 🔍 Contato não encontrado, buscando canal WhatsApp...');
+      
+      let whatsappChannel = await prisma.channel.findFirst({
+        where: {
+          type: 'WHATSAPP',
+          // Adicionar flag para identificar canal oficial (pode ser adicionado ao schema depois)
+        },
+      });
+
+      // Se não encontrou canal, criar um automaticamente para WhatsApp Official
+      if (!whatsappChannel) {
+        console.log('[WhatsAppOfficial] ⚠️ Canal WhatsApp não encontrado. Criando canal automaticamente...');
+        
+        try {
+          whatsappChannel = await prisma.channel.create({
+            data: {
+              name: 'WhatsApp Official',
+              type: 'WHATSAPP',
+              status: 'ACTIVE',
+              config: {
+                provider: 'whatsapp_official',
+                phoneNumberId: process.env.WHATSAPP_DEV_PHONE_NUMBER_ID,
+                businessAccountId: process.env.WHATSAPP_DEV_WABA_ID,
+              },
+            },
+          });
+          console.log('[WhatsAppOfficial] ✅ Canal WhatsApp criado automaticamente:', whatsappChannel.id);
+        } catch (createError: any) {
+          console.error('[WhatsAppOfficial] ❌ Erro ao criar canal:', createError);
+          console.error('[WhatsAppOfficial] 💡 Dica: Crie um canal WhatsApp manualmente no sistema');
+          return;
+        }
+      } else {
+        console.log('[WhatsAppOfficial] ✅ Canal WhatsApp encontrado:', whatsappChannel.id);
+      }
+
+      // Criar contato
+      contact = await prisma.contact.create({
+        data: {
+          name: phoneNumber, // Nome padrão, pode ser atualizado depois
+          phone: phoneNumber,
+          channelId: whatsappChannel.id,
+          channelIdentifier: phoneNumber, // Usar phone como identifier
+        },
+        include: {
+          channel: true,
+        },
+      });
+    }
+
+    // Verificar se contact foi criado/encontrado
+    if (!contact) {
+      console.error('[WhatsAppOfficial] ❌ Não foi possível criar/encontrar contato');
+      return;
+    }
+
+    // Buscar ou criar conversa
+    let conversation = await prisma.conversation.findFirst({
+      where: {
+        contactId: contact.id,
+        channelId: contact.channelId,
+      },
+    });
+
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          contactId: contact.id,
+          channelId: contact.channelId,
+          status: 'OPEN',
+          lastMessageAt: timestamp,
+          lastCustomerMessageAt: timestamp,
+        },
+      });
+    } else {
+      // Atualizar timestamps
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastMessageAt: timestamp,
+          lastCustomerMessageAt: timestamp,
+          unreadCount: { increment: 1 },
+        },
+      });
+    }
+
+    // Extrair conteúdo da mensagem baseado no tipo
+    let messageContent = '';
+    let messageTypeDb = 'TEXT';
+    let mediaUrl: string | null = null;
+
+    switch (messageType) {
+      case 'text':
+        messageContent = message.text?.body || '';
+        messageTypeDb = 'TEXT';
+        break;
+      case 'image':
+        messageContent = message.image?.caption || '';
+        messageTypeDb = 'IMAGE';
+        mediaUrl = message.image?.id || null;
+        break;
+      case 'video':
+        messageContent = message.video?.caption || '';
+        messageTypeDb = 'VIDEO';
+        mediaUrl = message.video?.id || null;
+        break;
+      case 'audio':
+        messageContent = '';
+        messageTypeDb = 'AUDIO';
+        mediaUrl = message.audio?.id || null;
+        break;
+      case 'document':
+        messageContent = message.document?.caption || message.document?.filename || '';
+        messageTypeDb = 'DOCUMENT';
+        mediaUrl = message.document?.id || null;
+        break;
+      default:
+        messageContent = `[Mensagem do tipo: ${messageType}]`;
+        messageTypeDb = 'TEXT';
+    }
+
+    // Criar mensagem no banco
+    const createdMessage = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        userId: null, // Mensagem do cliente
+        content: messageContent,
+        type: messageTypeDb as any,
+        status: 'PENDING', // Mensagem recebida, será processada
+        externalId: messageId,
+        // mediaUrl não existe no schema, usar metadata para armazenar URL de mídia
+        metadata: mediaUrl ? { mediaUrl, mediaId: mediaUrl } : undefined,
+      },
+    });
+
+    console.log('[WhatsAppOfficial] ✅ Mensagem salva:', {
+      messageId: createdMessage.id,
+      conversationId: conversation.id,
+    });
+
+    // Processar com bot se houver
+    if (messageContent && messageType === 'text') {
+      try {
+        await botService.processMessage(messageContent, conversation.id);
+      } catch (botError: any) {
+        console.error('[WhatsAppOfficial] ❌ Erro ao processar com bot:', botError);
+      }
+    }
+
+    // Emitir evento via Socket.IO
+    if (io) {
+      io.to(`conversation_${conversation.id}`).emit('new_message', {
+        conversationId: conversation.id,
+        messageId: createdMessage.id,
+      });
+      io.emit('conversation_updated');
+    }
+  } catch (error: any) {
+    console.error('[WhatsAppOfficial] ❌ Erro ao processar mensagem:', error);
+  }
+}
+
+/**
+ * Processa status de mensagem (delivered, read, etc.)
+ */
+async function handleWhatsAppOfficialStatus(status: any) {
+  try {
+    console.log('[WhatsAppOfficial] 📊 Processando status:', {
+      messageId: status.id,
+      status: status.status,
+      timestamp: status.timestamp,
+    });
+
+    // Atualizar status da mensagem no banco se houver externalId
+    if (status.id) {
+      await prisma.message.updateMany({
+        where: {
+          externalId: status.id,
+        },
+        data: {
+          status: status.status === 'delivered' ? 'DELIVERED' :
+                 status.status === 'read' ? 'READ' :
+                 status.status === 'failed' ? 'FAILED' : 'SENT',
+        },
+      });
+    }
+  } catch (error: any) {
+    console.error('[WhatsAppOfficial] ❌ Erro ao processar status:', error);
+  }
+}
+
+// ============================================
+// WEBHOOK EVOLUTION API (EXISTENTE)
+// ============================================
+
 // Webhook da Evolution API - Rota principal
 router.post('/evolution', async (req: Request, res: Response) => {
   try {

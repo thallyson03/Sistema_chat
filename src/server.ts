@@ -28,6 +28,10 @@ import { setSocketIO as setMessageSocketIO } from './controllers/messageControll
 // Carregar variáveis de ambiente
 dotenv.config();
 
+// Inicializar WhatsApp Official (se configurado)
+import whatsappOfficial from './config/whatsappOfficial';
+whatsappOfficial.init();
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -43,6 +47,19 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true,
 }));
+// Middleware para log de requisições de webhook
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.path.includes('/webhooks') || req.path.includes('/whatsapp')) {
+    console.log('📥 [Server] Requisição recebida:', {
+      method: req.method,
+      path: req.path,
+      url: req.url,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -94,8 +111,9 @@ app.use('/api/contacts', contactRoutes); // Rotas de contatos
 app.use('/api/contact-lists', contactListRoutes); // Rotas de listas de contatos
 app.use('/api/campaigns', campaignRoutes); // Rotas de campanhas
 app.use('/api/journeys', journeyRoutes); // Rotas de jornadas / automações
-app.use('/webhooks', webhookRoutes);
+app.use('/api/webhooks', webhookRoutes);
 // Rota alternativa para compatibilidade com webhooks antigos
+app.use('/webhooks', webhookRoutes);
 app.use('/api/whatsapp', webhookRoutes);
 // Rotas para n8n e bots
 app.use('/api/webhooks/n8n', n8nWebhookRoutes);
@@ -128,7 +146,16 @@ const PORT = process.env.PORT || 3007;
 
 httpServer.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`📡 Webhooks disponíveis em http://localhost:${PORT}/webhooks`);
+  console.log(`📡 Webhooks disponíveis em:`);
+  console.log(`   - http://localhost:${PORT}/api/webhooks/whatsapp`);
+  console.log(`   - http://localhost:${PORT}/webhooks/whatsapp`);
+  console.log(`   - http://localhost:${PORT}/api/whatsapp/whatsapp`);
+  
+  const ngrokUrl = process.env.API_BASE_URL || process.env.NGROK_URL;
+  if (ngrokUrl) {
+    console.log(`🌐 URL pública (ngrok): ${ngrokUrl}`);
+    console.log(`📨 Webhook URL completa: ${ngrokUrl}/api/webhooks/whatsapp`);
+  }
   
   if (process.env.EVOLUTION_API_URL) {
     console.log(`🔗 Evolution API: ${process.env.EVOLUTION_API_URL}`);

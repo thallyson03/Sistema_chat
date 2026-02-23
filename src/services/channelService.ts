@@ -177,8 +177,12 @@ export class ChannelService {
     let instanceToken = data.evolutionInstanceToken;
 
     // Se for WhatsApp e tiver API key (do .env ou fornecida), criar instância na Evolution API
+    // Mas só se não for WhatsApp Official (que não usa Evolution)
     const apiKey = data.evolutionApiKey || process.env.EVOLUTION_API_KEY;
-    if (data.type === ChannelType.WHATSAPP && apiKey && !instanceId) {
+    const isWhatsAppOfficial = data.config?.provider === 'whatsapp_official' || 
+                              (!apiKey && process.env.WHATSAPP_ENV);
+    
+    if (data.type === ChannelType.WHATSAPP && apiKey && !instanceId && !isWhatsAppOfficial) {
       try {
         const instanceName = `channel_${Date.now()}`;
         console.log('[ChannelService] Criando instância na Evolution API:', {
@@ -229,15 +233,18 @@ export class ChannelService {
     const normalizedSectorId =
       data.sectorId && data.sectorId.trim() !== '' ? data.sectorId : undefined;
 
+    // Para WhatsApp Official, status deve ser ACTIVE (não precisa de QR code)
+    const channelStatus = isWhatsAppOfficial ? ChannelStatus.ACTIVE : ChannelStatus.INACTIVE;
+    
     return await prisma.channel.create({
       data: {
         name: data.name,
         type: data.type,
-        status: ChannelStatus.INACTIVE,
+        status: channelStatus,
         config: data.config || {},
-        evolutionApiKey: apiKey,
-        evolutionInstanceId: instanceId,
-        evolutionInstanceToken: instanceToken,
+        evolutionApiKey: apiKey || null,
+        evolutionInstanceId: instanceId || null,
+        evolutionInstanceToken: instanceToken || null,
         sectorId: normalizedSectorId,
       },
     });
@@ -303,81 +310,30 @@ export class ChannelService {
       console.log('[ChannelService] Canal não tem instância na Evolution API para deletar');
     }
 
-    // Verificar relacionamentos
-    const conversations = await prisma.conversation.findMany({
+    // Verificar relacionamentos (apenas para logging)
+    const conversationsCount = await prisma.conversation.count({
       where: { channelId: id },
-      select: { id: true },
     });
     
-    const contacts = await prisma.contact.findMany({
+    const contactsCount = await prisma.contact.count({
       where: { channelId: id },
-      select: { id: true },
     });
 
-    const conversationsCount = conversations.length;
-    const contactsCount = contacts.length;
-
-    console.log('[ChannelService] Relacionamentos encontrados:', {
+    console.log('[ChannelService] Relacionamentos encontrados (serão preservados):', {
       conversations: conversationsCount,
       contacts: contactsCount,
     });
 
-    // Deletar em cascata: Mensagens -> Conversas -> Contatos -> Canal
     try {
-      // 1. Deletar todas as mensagens das conversas deste canal
-      if (conversationsCount > 0) {
-        const conversationIds = conversations.map(c => c.id);
-        const messagesCount = await prisma.message.deleteMany({
-          where: {
-            conversationId: { in: conversationIds },
-          },
-        });
-        console.log(`[ChannelService] ✅ ${messagesCount.count} mensagem(ns) deletada(s)`);
-      }
-
-      // 2. Deletar tags de conversas (ConversationTag)
-      if (conversationsCount > 0) {
-        const conversationIds = conversations.map(c => c.id);
-        const tagsCount = await prisma.conversationTag.deleteMany({
-          where: {
-            conversationId: { in: conversationIds },
-          },
-        });
-        console.log(`[ChannelService] ✅ ${tagsCount.count} tag(s) de conversa deletada(s)`);
-      }
-
-      // 3. Deletar tickets relacionados às conversas
-      if (conversationsCount > 0) {
-        const conversationIds = conversations.map(c => c.id);
-        const ticketsCount = await prisma.ticket.deleteMany({
-          where: {
-            conversationId: { in: conversationIds },
-          },
-        });
-        console.log(`[ChannelService] ✅ ${ticketsCount.count} ticket(s) deletado(s)`);
-      }
-
-      // 4. Deletar todas as conversas do canal
-      if (conversationsCount > 0) {
-        const deletedConversations = await prisma.conversation.deleteMany({
-          where: { channelId: id },
-        });
-        console.log(`[ChannelService] ✅ ${deletedConversations.count} conversa(s) deletada(s)`);
-      }
-
-      // 5. Deletar todos os contatos do canal
-      if (contactsCount > 0) {
-        const deletedContacts = await prisma.contact.deleteMany({
-          where: { channelId: id },
-        });
-        console.log(`[ChannelService] ✅ ${deletedContacts.count} contato(s) deletado(s)`);
-      }
-
-      // 6. Finalmente, deletar o canal
+      // Deletar apenas o canal
+      // Com onDelete: SetNull no schema, os contatos e conversas terão channelId = null
+      // mas os dados históricos serão preservados
       await prisma.channel.delete({
         where: { id },
       });
+      
       console.log('[ChannelService] ✅ Canal deletado com sucesso');
+      console.log(`[ChannelService] ℹ️ ${conversationsCount} conversa(s) e ${contactsCount} contato(s) foram preservados (channelId definido como null)`);
     } catch (error: any) {
       console.error('[ChannelService] ❌ Erro ao deletar canal:', error.message);
       console.error('[ChannelService] Código:', error.code);

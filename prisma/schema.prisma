@@ -157,8 +157,8 @@ model Channel {
   updatedAt               DateTime       @updatedAt
 
   sector        Sector?            @relation(fields: [sectorId], references: [id], onDelete: SetNull)
-  contacts      Contact[]
-  conversations Conversation[]
+  contacts      Contact[]         @relation("ContactChannel")
+  conversations Conversation[]    @relation("ConversationChannel")
   webhooks      WebhookConfig[]
   bots          Bot[]
   campaigns     Campaign[]
@@ -170,13 +170,13 @@ model Contact {
   phone            String?
   email            String?
   profilePicture   String?  // URL da foto de perfil do WhatsApp
-  channelId        String
+  channelId        String?  // Opcional: permite manter histórico quando canal é deletado
   channelIdentifier String
   metadata         Json?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  channel       Channel?       @relation("ContactChannel", fields: [channelId], references: [id], onDelete: SetNull)
   conversations Conversation[]
   deals         Deal[]
   // Relacionamento com campanhas
@@ -192,7 +192,7 @@ model Contact {
 
 model Conversation {
   id           String             @id @default(cuid())
-  channelId    String
+  channelId    String?  // Opcional: permite manter histórico quando canal é deletado
   contactId    String
   assignedToId String?
   status       ConversationStatus @default(OPEN)
@@ -204,7 +204,7 @@ model Conversation {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
-  channel      Channel            @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  channel      Channel?           @relation("ConversationChannel", fields: [channelId], references: [id], onDelete: SetNull)
   contact      Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
   assignedTo   User?              @relation("AssignedConversations", fields: [assignedToId], references: [id], onDelete: SetNull)
   messages     Message[]
@@ -776,6 +776,7 @@ model Pipeline {
   stages      PipelineStage[]
   deals       Deal[]
   customFields PipelineCustomField[]
+  automationRules PipelineAutomationRule[]
 
   @@index([isActive])
 }
@@ -794,6 +795,7 @@ model PipelineStage {
 
   pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
   deals       Deal[]
+  automationRules PipelineAutomationRule[]
 
   @@index([pipelineId])
   @@index([order])
@@ -825,6 +827,7 @@ model Deal {
   conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   assignedTo     User?      @relation("AssignedDeals", fields: [assignedToId], references: [id], onDelete: SetNull)
   activities     DealActivity[]
+  tasks          PipelineTask[]
 
   @@index([pipelineId])
   @@index([stageId])
@@ -868,4 +871,48 @@ model DealActivity {
   @@index([dealId])
   @@index([userId])
   @@index([createdAt])
+}
+
+// ============================================
+// AUTOMAÇÕES DE PIPELINE
+// ============================================
+
+enum PipelineAutomationType {
+  SALES_BOT      // Iniciar robô de vendas
+  CHANGE_STAGE   // Mudar etapa automaticamente
+  ADD_TASK       // Adicionar tarefa
+}
+
+model PipelineAutomationRule {
+  id         String                @id @default(cuid())
+  pipelineId String
+  stageId    String
+  type       PipelineAutomationType
+  name       String
+  active     Boolean               @default(true)
+  config     Json                  // { botId, targetStageId, taskTitle, taskDescription, delaySeconds, ... }
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  pipeline   Pipeline              @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  stage      PipelineStage         @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@index([pipelineId, stageId])
+  @@index([stageId, active])
+}
+
+model PipelineTask {
+  id          String   @id @default(cuid())
+  dealId      String
+  title       String
+  description String?
+  status      String   @default("PENDING") // PENDING, DONE, CANCELLED
+  dueDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([dealId])
+  @@index([status])
 }

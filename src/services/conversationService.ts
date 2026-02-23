@@ -210,7 +210,7 @@ export class ConversationService {
       }
 
       // Se o canal tem setor, verificar se o usuário pode atender esse setor
-      if (conversation.channel.sectorId) {
+      if (conversation.channel?.sectorId) {
         const userSector = await prisma.userSector.findFirst({
           where: {
             userId: data.assignedToId,
@@ -276,7 +276,7 @@ export class ConversationService {
       }
 
       // Se o canal tem setor, verificar se o usuário pode atender esse setor
-      if (conversation.channel.sectorId) {
+      if (conversation.channel?.sectorId) {
         const userSector = await prisma.userSector.findFirst({
           where: {
             userId,

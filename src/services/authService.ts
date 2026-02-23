@@ -56,21 +56,35 @@ export class AuthService {
   }
 
   async login(credentials: LoginCredentials): Promise<{ user: User; token: string }> {
+    console.log('[AuthService] Tentativa de login:', { email: credentials.email });
+    
     const user = await prisma.user.findUnique({
       where: { email: credentials.email },
     });
 
     if (!user) {
+      console.log('[AuthService] ❌ Usuário não encontrado:', credentials.email);
       throw new Error('Credenciais inválidas');
     }
 
+    console.log('[AuthService] ✅ Usuário encontrado:', { 
+      id: user.id, 
+      email: user.email, 
+      name: user.name,
+      isActive: user.isActive 
+    });
+
     if (!user.isActive) {
+      console.log('[AuthService] ❌ Usuário inativo');
       throw new Error('Usuário inativo');
     }
 
+    console.log('[AuthService] Comparando senha...');
     const passwordMatch = await bcrypt.compare(credentials.password, user.password);
+    console.log('[AuthService] Resultado da comparação:', passwordMatch ? '✅ CORRETO' : '❌ INCORRETO');
 
     if (!passwordMatch) {
+      console.log('[AuthService] ❌ Senha incorreta');
       throw new Error('Credenciais inválidas');
     }
 

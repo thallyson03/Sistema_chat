@@ -2,12 +2,14 @@ import { Router } from 'express';
 import { PipelineController } from '../controllers/pipelineController';
 import { DealController } from '../controllers/dealController';
 import { PipelineCustomFieldController } from '../controllers/pipelineCustomFieldController';
+import { PipelineAutomationController } from '../controllers/pipelineAutomationController';
 import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 const pipelineController = new PipelineController();
 const dealController = new DealController();
 const customFieldController = new PipelineCustomFieldController();
+const automationController = new PipelineAutomationController();
 
 // Todas as rotas precisam de autenticação
 router.use(authenticateToken);
@@ -58,6 +60,12 @@ router.put('/:pipelineId/custom-fields/reorder', customFieldController.reorderCu
 // STATISTICS
 // ============================================
 router.get('/:pipelineId/stats', dealController.getPipelineStats.bind(dealController));
+
+// ============================================
+// AUTOMATIONS
+// ============================================
+router.get('/:id/automations', automationController.getAutomations.bind(automationController));
+router.put('/:id/automations', automationController.saveAutomations.bind(automationController));
 
 export default router;
 

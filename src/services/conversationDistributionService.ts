@@ -40,6 +40,11 @@ export class ConversationDistributionService {
 
     // Buscar canal se não fornecido
     const channelId = criteria?.channelId || conversation.channelId;
+    
+    if (!channelId) {
+      throw new Error('Canal não encontrado para distribuição da conversa');
+    }
+    
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
       include: {
@@ -183,6 +188,11 @@ export class ConversationDistributionService {
 
     for (const conversation of unassignedConversations) {
       try {
+        if (!conversation.channelId || !conversation.channel) {
+          console.warn(`[ConversationDistribution] Conversa ${conversation.id} não possui canal associado, pulando distribuição`);
+          continue;
+        }
+
         const userId = await this.distributeConversation(conversation.id, {
           channelId: conversation.channelId,
           sectorId: conversation.channel.sectorId || undefined,
@@ -234,6 +244,11 @@ export class ConversationDistributionService {
         });
 
         // Redistribuir
+        if (!conversation.channelId || !conversation.channel) {
+          console.warn(`[ConversationDistribution] Conversa ${conversation.id} não possui canal associado, pulando redistribuição`);
+          continue;
+        }
+
         const newUserId = await this.distributeConversation(conversation.id, {
           channelId: conversation.channelId,
           sectorId: conversation.channel.sectorId || undefined,

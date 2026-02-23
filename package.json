@@ -12,8 +12,10 @@
     "lint": "eslint src --ext .ts",
     "test": "jest",
     "seed": "ts-node src/scripts/seed.ts",
+    "create:user": "ts-node src/scripts/createTestUser.ts",
     "check:enilson": "ts-node scripts/checkEnilson.ts",
     "check:database": "ts-node scripts/checkDatabase.ts",
+    "check:channels": "ts-node scripts/checkWhatsAppOfficialChannel.ts",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:setup": "prisma migrate deploy && prisma generate"

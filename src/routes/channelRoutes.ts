@@ -10,6 +10,7 @@ router.use(authenticateToken);
 
 // Rotas de canais
 router.get('/', channelController.getChannels.bind(channelController));
+router.get('/check/whatsapp-official', channelController.checkWhatsAppOfficial.bind(channelController));
 router.get('/:id', channelController.getChannelById.bind(channelController));
 router.get('/:id/qrcode', channelController.getQRCode.bind(channelController));
 router.get('/:id/status', channelController.getStatus.bind(channelController));
