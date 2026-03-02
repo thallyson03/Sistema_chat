@@ -158,185 +158,144 @@ export default function Users() {
   });
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0 }}>Usuários</h1>
+    <div className="p-8 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Usuários</h1>
+          <p className="text-sm text-slate-500">
+            Gerencie os usuários da equipe, suas funções e setores de atendimento.
+          </p>
+        </div>
         <button
           onClick={handleCreate}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontWeight: '600',
-          }}
+          className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 px-5 py-2 text-sm font-semibold text-slate-950 shadow-md hover:shadow-lg hover:brightness-105 transition"
         >
           + Novo Usuário
         </button>
       </div>
 
       {/* Busca */}
-      <div style={{ marginBottom: '20px' }}>
-        <input
-          type="text"
-          placeholder="Buscar usuários..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{
-            width: '100%',
-            maxWidth: '400px',
-            padding: '10px',
-            border: '1px solid #e5e7eb',
-            borderRadius: '6px',
-            fontSize: '14px',
-          }}
-        />
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="relative w-full max-w-md">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 text-sm">
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Buscar por nome, e-mail ou função..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full rounded-full border border-slate-200 bg-white/80 pl-9 pr-3 py-2.5 text-sm text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none transition"
+          />
+        </div>
       </div>
 
       {/* Lista de Usuários */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px' }}>Carregando...</div>
+        <div className="flex justify-center py-16 text-slate-500 text-sm">
+          Carregando usuários...
+        </div>
       ) : filteredUsers.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-          <p>Nenhum usuário encontrado.</p>
+        <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+          <p className="text-sm mb-4">Nenhum usuário encontrado.</p>
           <button
             onClick={handleCreate}
-            style={{
-              marginTop: '20px',
-              padding: '10px 20px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-            }}
+            className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-slate-800 transition"
           >
             Criar primeiro usuário
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           {filteredUsers.map((user) => (
             <div
               key={user.id}
-              style={{
-                padding: '20px',
-                border: '1px solid #e5e7eb',
-                borderRadius: '8px',
-                backgroundColor: 'white',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-              }}
+              className="group relative rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition card-hover overflow-hidden"
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px' }}>
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>{user.name}</h3>
-                  <p style={{ margin: '6px 0', color: '#6b7280', fontSize: '14px' }}>{user.email}</p>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                    <span
-                      style={{
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        backgroundColor:
-                          user.role === 'ADMIN'
-                            ? '#dc2626'
-                            : user.role === 'SUPERVISOR'
-                            ? '#f59e0b'
-                            : '#3b82f6',
-                        color: 'white',
-                        fontSize: '12px',
-                        fontWeight: '600',
-                      }}
-                    >
-                      {user.role}
-                    </span>
-                    {!user.isActive && (
+              <div className="p-5 flex flex-col h-full">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {user.name}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 break-all">
+                      {user.email}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 mt-3">
                       <span
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          backgroundColor: '#fef2f2',
-                          color: '#dc2626',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                        }}
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white ${
+                          user.role === 'ADMIN'
+                            ? 'bg-rose-500'
+                            : user.role === 'SUPERVISOR'
+                            ? 'bg-amber-500'
+                            : 'bg-sky-500'
+                        }`}
                       >
-                        Inativo
+                        {user.role}
                       </span>
-                    )}
-                  </div>
-                  {user.sectors && user.sectors.length > 0 && (
-                    <div style={{ marginTop: '12px' }}>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Setores:</div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        {user.sectors.map((us) => (
-                          <span
-                            key={us.sector.id}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              backgroundColor: `${us.sector.color}20`,
-                              color: us.sector.color,
-                              fontSize: '11px',
-                              fontWeight: '600',
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '50%',
-                                backgroundColor: us.sector.color,
-                              }}
-                            />
-                            {us.sector.name}
-                          </span>
-                        ))}
-                      </div>
+                      {!user.isActive && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-100">
+                          Inativo
+                        </span>
+                      )}
                     </div>
-                  )}
-                  <div style={{ display: 'flex', gap: '16px', marginTop: '12px', fontSize: '13px', color: '#6b7280' }}>
-                    <span>
-                      <strong>{user._count?.assignedConversations || 0}</strong> conversa(s)
-                    </span>
-                    <span>
-                      <strong>{user._count?.assignedTickets || 0}</strong> ticket(s)
-                    </span>
+
+                    {user.sectors && user.sectors.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-[11px] text-slate-500 mb-1">
+                          Setores:
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {user.sectors.map((us) => (
+                            <span
+                              key={us.sector.id}
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                              style={{
+                                backgroundColor: `${us.sector.sector.color}20`,
+                                color: us.sector.sector.color,
+                              }}
+                            >
+                              <span
+                                className="h-1.5 w-1.5 rounded-full"
+                                style={{ backgroundColor: us.sector.sector.color }}
+                              />
+                              {us.sector.sector.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-4 mt-3 text-[11px] text-slate-500">
+                      <span>
+                        <span className="font-semibold text-slate-700">
+                          {user._count?.assignedConversations || 0}
+                        </span>{' '}
+                        conversas
+                      </span>
+                      <span>
+                        <span className="font-semibold text-slate-700">
+                          {user._count?.assignedTickets || 0}
+                        </span>{' '}
+                        tickets
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <button
-                    onClick={() => handleEdit(user)}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#3b82f6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(user.id)}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
-                  >
-                    Deletar
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => handleEdit(user)}
+                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => handleDelete(user.id)}
+                      className="inline-flex items-center justify-center rounded-full bg-red-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-red-600 transition"
+                    >
+                      Deletar
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -347,40 +306,35 @@ export default function Users() {
       {/* Modal de Criar/Editar */}
       {showModal && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 2000,
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60"
           onClick={() => setShowModal(false)}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '12px',
-              width: '90%',
-              maxWidth: '600px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              padding: '24px',
-            }}
+            className="w-full max-w-xl rounded-2xl bg-white shadow-2xl p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px' }}>
-              {editingUser ? 'Editar Usuário' : 'Novo Usuário'}
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {editingUser ? 'Editar usuário' : 'Novo usuário'}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Defina dados de acesso, função e setores em que o usuário poderá atuar.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 text-xs"
+              >
+                ✕
+              </button>
+            </div>
 
-            <form onSubmit={handleSubmit}>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>
-                  Nome <span style={{ color: 'red' }}>*</span>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nome <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -388,19 +342,13 @@ export default function Users() {
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Ex: João Silva"
                   required
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                 />
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>
-                  Email <span style={{ color: 'red' }}>*</span>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Email <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="email"
@@ -408,56 +356,39 @@ export default function Users() {
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="exemplo@email.com"
                   required
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                 />
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>
-                  Senha {!editingUser && <span style={{ color: 'red' }}>*</span>}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Senha {!editingUser && <span className="text-red-500">*</span>}
                 </label>
                 <input
                   type="password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder={editingUser ? 'Deixe em branco para não alterar' : 'Mínimo 6 caracteres'}
+                  placeholder={
+                    editingUser ? 'Deixe em branco para não alterar' : 'Mínimo 6 caracteres'
+                  }
                   required={!editingUser}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                 />
                 {editingUser && (
-                  <small style={{ color: '#6b7280', fontSize: '12px', display: 'block', marginTop: '5px' }}>
-                    Deixe em branco para manter a senha atual
-                  </small>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Deixe em branco para manter a senha atual.
+                  </p>
                 )}
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Função
                 </label>
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    cursor: 'pointer',
-                  }}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                 >
                   <option value="AGENT">Agente</option>
                   <option value="SUPERVISOR">Supervisor</option>
@@ -465,105 +396,63 @@ export default function Users() {
                 </select>
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Setores que pode atender
                 </label>
-                <div
-                  style={{
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    padding: '10px',
-                    maxHeight: '200px',
-                    overflowY: 'auto',
-                  }}
-                >
+                <div className="border border-slate-200 rounded-lg p-2.5 max-h-56 overflow-y-auto space-y-1">
                   {sectors.length === 0 ? (
-                    <p style={{ color: '#6b7280', fontSize: '14px', margin: 0 }}>
+                    <p className="text-xs text-slate-500 m-0">
                       Nenhum setor cadastrado. Crie setores primeiro.
                     </p>
                   ) : (
                     sectors.map((sector) => (
                       <label
                         key={sector.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '8px',
-                          cursor: 'pointer',
-                          borderRadius: '4px',
-                          transition: 'background-color 0.2s',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#f9fafb';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                        }}
+                        className="flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer hover:bg-slate-50 text-xs text-slate-700"
                       >
                         <input
                           type="checkbox"
                           checked={formData.sectorIds.includes(sector.id)}
                           onChange={() => handleToggleSector(sector.id)}
-                          style={{ cursor: 'pointer' }}
+                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
                         />
                         <div
-                          style={{
-                            width: '16px',
-                            height: '16px',
-                            borderRadius: '4px',
-                            backgroundColor: sector.color,
-                            flexShrink: 0,
-                          }}
+                          className="h-4 w-4 rounded-md flex-shrink-0"
+                          style={{ backgroundColor: sector.color }}
                         />
-                        <span style={{ fontSize: '14px' }}>{sector.name}</span>
+                        <span>{sector.name}</span>
                       </label>
                     ))
                   )}
                 </div>
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <div>
+                <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
                   />
-                  <span style={{ fontWeight: '600' }}>Ativo</span>
+                  <span className="font-semibold">Ativo</span>
                 </label>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#e5e7eb',
-                    color: '#374151',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
-                  }}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#3b82f6',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
-                  }}
+                  className="rounded-full bg-slate-900 px-5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
                 >
-                  {editingUser ? 'Salvar Alterações' : 'Criar Usuário'}
+                  {editingUser ? 'Salvar alterações' : 'Criar usuário'}
                 </button>
               </div>
             </form>

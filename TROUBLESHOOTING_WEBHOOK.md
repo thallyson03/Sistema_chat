@@ -139,3 +139,5 @@ Se precisar de ajuda, forneça:
 - Se o ngrok está autenticado ou não
 - Mensagem de erro completa do Meta
 
+
+

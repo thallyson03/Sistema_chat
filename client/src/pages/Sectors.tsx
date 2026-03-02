@@ -111,148 +111,133 @@ export default function Sectors() {
   });
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0 }}>Setores</h1>
+    <div className="p-8 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Setores</h1>
+          <p className="text-sm text-slate-500">
+            Organize times, filas e canais por áreas da sua empresa.
+          </p>
+        </div>
         <button
           onClick={handleCreate}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontWeight: '600',
-          }}
+          className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 px-5 py-2 text-sm font-semibold text-slate-950 shadow-md hover:shadow-lg hover:brightness-105 transition"
         >
           + Novo Setor
         </button>
       </div>
 
       {/* Busca */}
-      <div style={{ marginBottom: '20px' }}>
-        <input
-          type="text"
-          placeholder="Buscar setores..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{
-            width: '100%',
-            maxWidth: '400px',
-            padding: '10px',
-            border: '1px solid #e5e7eb',
-            borderRadius: '6px',
-            fontSize: '14px',
-          }}
-        />
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="relative w-full max-w-md">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 text-sm">
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Buscar por nome ou descrição..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full rounded-full border border-slate-200 bg-white/80 pl-9 pr-3 py-2.5 text-sm text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none transition"
+          />
+        </div>
       </div>
 
       {/* Lista de Setores */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px' }}>Carregando...</div>
+        <div className="flex justify-center py-16 text-slate-500 text-sm">
+          Carregando setores...
+        </div>
       ) : filteredSectors.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-          <p>Nenhum setor encontrado.</p>
+        <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+          <p className="text-sm mb-4">Nenhum setor encontrado.</p>
           <button
             onClick={handleCreate}
-            style={{
-              marginTop: '20px',
-              padding: '10px 20px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-            }}
+            className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-slate-800 transition"
           >
             Criar primeiro setor
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           {filteredSectors.map((sector) => (
             <div
               key={sector.id}
-              style={{
-                padding: '20px',
-                border: '1px solid #e5e7eb',
-                borderRadius: '8px',
-                backgroundColor: 'white',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-              }}
+              className="group relative rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition card-hover overflow-hidden"
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <div
+                className="h-1.5 w-full bg-gradient-to-r"
+                style={{ backgroundImage: `linear-gradient(to right, ${sector.color}, #0f172a)` }}
+              />
+              <div className="p-5 flex flex-col h-full">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3">
                     <div
-                      style={{
-                        width: '20px',
-                        height: '20px',
-                        borderRadius: '4px',
-                        backgroundColor: sector.color,
-                        flexShrink: 0,
-                      }}
+                      className="h-8 w-8 rounded-xl shadow-sm"
+                      style={{ backgroundColor: sector.color }}
                     />
-                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>{sector.name}</h3>
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">
+                        {sector.name}
+                      </h3>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                        Setor operacional
+                      </p>
+                    </div>
                   </div>
-                  {sector.description && (
-                    <p style={{ margin: '8px 0', color: '#6b7280', fontSize: '14px' }}>{sector.description}</p>
-                  )}
-                  <div style={{ display: 'flex', gap: '16px', marginTop: '12px', fontSize: '13px', color: '#6b7280' }}>
-                    <span>
-                      <strong>{sector._count?.channels || 0}</strong> canal(is)
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      sector.isActive
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                        : 'bg-rose-50 text-rose-700 border border-rose-100'
+                    }`}
+                  >
+                    <span className="mr-1 text-[8px]">
+                      {sector.isActive ? '●' : '○'}
                     </span>
-                    <span>
-                      <strong>{sector._count?.users || 0}</strong> usuário(s)
-                    </span>
-                  </div>
-                  {!sector.isActive && (
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        marginTop: '8px',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: '#fef2f2',
-                        color: '#dc2626',
-                        fontSize: '12px',
-                        fontWeight: '600',
-                      }}
-                    >
-                      Inativo
-                    </span>
-                  )}
+                    {sector.isActive ? 'Ativo' : 'Inativo'}
+                  </span>
                 </div>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <button
-                    onClick={() => handleEdit(sector)}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#3b82f6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(sector.id)}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
-                  >
-                    Deletar
-                  </button>
+
+                {sector.description && (
+                  <p className="text-xs text-slate-600 mb-3 line-clamp-3">
+                    {sector.description}
+                  </p>
+                )}
+
+                <div className="mt-auto">
+                  <div className="flex gap-4 text-[11px] text-slate-500 mb-3">
+                    <span className="flex items-center gap-1">
+                      <span className="text-slate-400">📡</span>
+                      <span className="font-semibold text-slate-700">
+                        {sector._count?.channels || 0}
+                      </span>
+                      <span>canais</span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="text-slate-400">👤</span>
+                      <span className="font-semibold text-slate-700">
+                        {sector._count?.users || 0}
+                      </span>
+                      <span>usuários</span>
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEdit(sector)}
+                      className="flex-1 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => handleDelete(sector.id)}
+                      className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition"
+                    >
+                      Remover
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -263,38 +248,35 @@ export default function Sectors() {
       {/* Modal de Criar/Editar */}
       {showModal && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 2000,
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60"
           onClick={() => setShowModal(false)}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '12px',
-              width: '90%',
-              maxWidth: '500px',
-              padding: '24px',
-            }}
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-6 relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px' }}>
-              {editingSector ? 'Editar Setor' : 'Novo Setor'}
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {editingSector ? 'Editar setor' : 'Novo setor'}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Defina nome, cor e status para organizar seus canais e usuários.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 text-xs"
+              >
+                ✕
+              </button>
+            </div>
 
-            <form onSubmit={handleSubmit}>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>
-                  Nome <span style={{ color: 'red' }}>*</span>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nome <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -302,18 +284,12 @@ export default function Sectors() {
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Ex: Vendas, Suporte, Financeiro"
                   required
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                 />
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Descrição (opcional)
                 </label>
                 <textarea
@@ -321,92 +297,56 @@ export default function Sectors() {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Descreva o propósito deste setor"
                   rows={3}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    fontFamily: 'inherit',
-                    resize: 'vertical',
-                  }}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none resize-y"
                 />
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Cor
                 </label>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div className="flex items-center gap-3">
                   <input
                     type="color"
                     value={formData.color}
                     onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                    style={{
-                      width: '60px',
-                      height: '40px',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                    }}
+                    className="h-10 w-14 rounded-lg border border-slate-200 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={formData.color}
                     onChange={(e) => setFormData({ ...formData, color: e.target.value })}
                     placeholder="#3B82F6"
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      fontFamily: 'monospace',
-                    }}
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                   />
                 </div>
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <div>
+                <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
                   />
-                  <span style={{ fontWeight: '600' }}>Ativo</span>
+                  <span className="font-semibold">Ativo</span>
                 </label>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#e5e7eb',
-                    color: '#374151',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
-                  }}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#3b82f6',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
-                  }}
+                  className="rounded-full bg-slate-900 px-5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
                 >
-                  {editingSector ? 'Salvar Alterações' : 'Criar Setor'}
+                  {editingSector ? 'Salvar alterações' : 'Criar setor'}
                 </button>
               </div>
             </form>

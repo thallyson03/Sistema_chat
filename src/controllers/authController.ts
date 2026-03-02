@@ -13,7 +13,11 @@ export class AuthController {
         return res.status(400).json({ error: 'Email, senha e nome são obrigatórios' });
       }
 
-      const user = await authService.register({ email, password, name, role, sectorIds });
+      // Sanitizar role recebido para evitar valores inválidos
+      const allowedRoles = ['ADMIN', 'SUPERVISOR', 'AGENT'] as const;
+      const safeRole = allowedRoles.includes(role) ? role : undefined;
+
+      const user = await authService.register({ email, password, name, role: safeRole, sectorIds });
 
       res.status(201).json({
         message: 'Usuário criado com sucesso',

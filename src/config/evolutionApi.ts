@@ -510,9 +510,17 @@ class EvolutionApiClient {
         },
       };
 
-      console.log('[EvolutionAPI] Configuração do webhook:', JSON.stringify(webhookConfig, null, 2));
+      console.log('[EvolutionAPI] Configuração do webhook:', JSON.stringify({
+        instance: webhookConfig.instance,
+        webhook: {
+          enabled: webhookConfig.webhook.enabled,
+          url: webhookConfig.webhook.url,
+          webhookByEvents: webhookConfig.webhook.webhookByEvents,
+          events: webhookConfig.webhook.events,
+        },
+      }, null, 2));
       console.log('[EvolutionAPI] Endpoint completo:', `${this.baseURL}/webhook/set/${instanceName}`);
-      console.log('[EvolutionAPI] Headers:', JSON.stringify(this.getHeaders(apiKey), null, 2));
+      console.log('[EvolutionAPI] Headers: { apikey: "***masked***", "Content-Type": "application/json" }');
 
       const response = await this.client.post(
         `/webhook/set/${instanceName}`,

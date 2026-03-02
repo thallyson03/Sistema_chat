@@ -50,6 +50,16 @@ const upload = multer({
   },
 });
 
+// Helper para validar nomes de arquivo e evitar path traversal
+function isSafeFilename(filename: string): boolean {
+  return (
+    !!filename &&
+    !filename.includes('..') &&
+    !filename.includes('/') &&
+    !filename.includes('\\')
+  );
+}
+
 // Rota para upload de arquivos
 router.post('/upload', authenticateToken, upload.single('file'), async (req: AuthRequest, res: Response) => {
   try {
@@ -160,7 +170,19 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req: Aut
 // Rota para servir arquivos enviados (público para Evolution API poder baixar)
 router.get('/file/:filename', (req: Request, res: Response) => {
   const filename = req.params.filename;
-  const filePath = path.join(uploadDir, filename);
+
+  if (!isSafeFilename(filename)) {
+    console.error('[Media] ❌ Nome de arquivo inválido (possível path traversal):', filename);
+    return res.status(400).json({ error: 'Nome de arquivo inválido' });
+  }
+
+  const filePath = path.resolve(uploadDir, filename);
+
+  // Garante que o caminho final permanece dentro de uploadDir
+  if (!filePath.startsWith(path.resolve(uploadDir))) {
+    console.error('[Media] ❌ Caminho de arquivo fora do diretório permitido:', filePath);
+    return res.status(400).json({ error: 'Caminho de arquivo inválido' });
+  }
 
   if (!fs.existsSync(filePath)) {
     console.error('[Media] ❌ Arquivo não encontrado:', filename);
@@ -287,8 +309,19 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         // Se for caminho relativo, assumir que é o nome do arquivo
         filename = mediaUrl.replace(/^\/+/, ''); // Remove barras iniciais
       }
-      
-      const filePath = path.join(uploadDir, filename);
+
+      if (!isSafeFilename(filename)) {
+        console.error('[Media] ❌ Nome de arquivo inválido em mediaUrl (possível path traversal):', filename);
+        return res.status(400).json({ error: 'Nome de arquivo inválido' });
+      }
+
+      const filePath = path.resolve(uploadDir, filename);
+
+      // Garante que o caminho final permanece dentro de uploadDir
+      if (!filePath.startsWith(path.resolve(uploadDir))) {
+        console.error('[Media] ❌ Caminho de arquivo fora do diretório permitido em mediaUrl:', filePath);
+        return res.status(400).json({ error: 'Caminho de arquivo inválido' });
+      }
       
       // Verificar se arquivo existe
       if (!fs.existsSync(filePath)) {

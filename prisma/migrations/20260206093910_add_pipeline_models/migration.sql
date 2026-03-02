@@ -136,3 +136,5 @@ ALTER TABLE "DealActivity" ADD CONSTRAINT "DealActivity_userId_fkey" FOREIGN KEY
 
 
 
+
+

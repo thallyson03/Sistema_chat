@@ -176,11 +176,14 @@ export class ChannelService {
     let instanceId = data.evolutionInstanceId;
     let instanceToken = data.evolutionInstanceToken;
 
-    // Se for WhatsApp e tiver API key (do .env ou fornecida), criar instância na Evolution API
-    // Mas só se não for WhatsApp Official (que não usa Evolution)
-    const apiKey = data.evolutionApiKey || process.env.EVOLUTION_API_KEY;
-    const isWhatsAppOfficial = data.config?.provider === 'whatsapp_official' || 
-                              (!apiKey && process.env.WHATSAPP_ENV);
+    // Detectar se é canal WhatsApp Official (não usa Evolution)
+    const isWhatsAppOfficial = data.config?.provider === 'whatsapp_official';
+
+    // Se for WhatsApp e tiver API key (do .env ou fornecida), criar instância na Evolution API,
+    // mas apenas se NÃO for WhatsApp Official.
+    const apiKey = !isWhatsAppOfficial
+      ? data.evolutionApiKey || process.env.EVOLUTION_API_KEY
+      : undefined;
     
     if (data.type === ChannelType.WHATSAPP && apiKey && !instanceId && !isWhatsAppOfficial) {
       try {

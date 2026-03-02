@@ -29,13 +29,24 @@ export default function Channels() {
     type: 'WHATSAPP',
     sectorId: '',
     provider: 'evolution', // 'evolution' ou 'whatsapp_official'
+    whatsappToken: '',
+    whatsappPhoneNumberId: '',
+    whatsappBusinessAccountId: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchChannels();
     fetchSectors();
   }, []);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const timeout = setTimeout(() => setSuccessMessage(null), 4000);
+    return () => clearTimeout(timeout);
+  }, [successMessage]);
 
   const fetchSectors = async () => {
     try {
@@ -74,14 +85,25 @@ export default function Channels() {
         channelData.config = {
           provider: formData.provider,
         };
-        
-        // Se for Evolution, não enviar nada (vai usar do .env)
-        // Se for Official, já está no config
+
+        if (formData.provider === 'whatsapp_official') {
+          channelData.config.token = formData.whatsappToken || undefined;
+          channelData.config.phoneNumberId = formData.whatsappPhoneNumberId || undefined;
+          channelData.config.businessAccountId = formData.whatsappBusinessAccountId || undefined;
+        }
       }
 
       await api.post('/api/channels', channelData);
       setShowModal(false);
-      setFormData({ name: '', type: 'WHATSAPP', sectorId: '', provider: 'evolution' });
+      setFormData({
+        name: '',
+        type: 'WHATSAPP',
+        sectorId: '',
+        provider: 'evolution',
+        whatsappToken: '',
+        whatsappPhoneNumberId: '',
+        whatsappBusinessAccountId: '',
+      });
       fetchChannels();
       alert('Canal criado com sucesso!');
     } catch (error: any) {
@@ -168,15 +190,11 @@ export default function Channels() {
   };
 
   const handleDeleteChannel = async (channelId: string, channelName: string) => {
-    if (!confirm(`Tem certeza que deseja excluir o canal "${channelName}"?\n\nEsta ação não pode ser desfeita e também excluirá a instância na Evolution API se existir.`)) {
-      return;
-    }
-
     try {
       console.log('🗑️ Excluindo canal:', channelId, channelName);
       const response = await api.delete(`/api/channels/${channelId}`);
       console.log('✅ Canal excluído com sucesso:', response.data);
-      alert('Canal excluído com sucesso!');
+      setSuccessMessage('Canal excluído com sucesso!');
       fetchChannels();
     } catch (error: any) {
       console.error('❌ Erro ao excluir canal:', error);
@@ -188,87 +206,182 @@ export default function Channels() {
   };
 
   if (loading) {
-    return <div>Carregando canais...</div>;
+    return (
+      <div className="p-8 max-w-6xl mx-auto text-sm text-slate-500">
+        Carregando canais...
+      </div>
+    );
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>Canais</h1>
+    <div className="p-8 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Canais</h1>
+          <p className="text-sm text-slate-500">
+            Gerencie integrações com WhatsApp, email e outros canais de atendimento.
+          </p>
+        </div>
         <button
           onClick={() => setShowModal(true)}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-          }}
+          className="inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-md hover:bg-slate-800 transition"
         >
-          Novo Canal
+          + Novo Canal
         </button>
       </div>
 
+      {/* Lista de canais */}
+      {channels.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+          <p className="text-sm mb-4">Nenhum canal configurado.</p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 shadow hover:bg-emerald-600 transition"
+          >
+            Criar primeiro canal
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+          {channels.map((channel) => (
+            <div
+              key={channel.id}
+              className="group relative rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition card-hover overflow-hidden"
+            >
+              <div className="p-5 flex flex-col h-full">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-sm font-semibold text-slate-900">
+                        {channel.name}
+                      </h3>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        {channel.type}
+                      </span>
+                    </div>
+                    {channel.sector && (
+                      <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-1">
+                        <span>Setor:</span>
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                          style={{
+                            backgroundColor: `${channel.sector.color}20`,
+                            color: channel.sector.color,
+                          }}
+                        >
+                          <span
+                            className="h-1.5 w-1.5 rounded-full"
+                            style={{ backgroundColor: channel.sector.color }}
+                          />
+                          {channel.sector.name}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      channel.status === 'ACTIVE'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                        : 'bg-rose-50 text-rose-700 border border-rose-100'
+                    }`}
+                  >
+                    <span className="mr-1 text-[8px]">
+                      {channel.status === 'ACTIVE' ? '●' : '○'}
+                    </span>
+                    {channel.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+                  </span>
+                </div>
+
+                <div className="mt-auto space-y-3">
+                  {channel.type === 'WHATSAPP' && (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            await handleRefreshStatus(channel.id);
+                            setTimeout(() => fetchChannels(), 1000);
+                          } catch (error) {
+                            console.error('Erro ao atualizar status:', error);
+                          }
+                        }}
+                        className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      >
+                        Atualizar status
+                      </button>
+                      {channel.status !== 'ACTIVE' && (
+                        <button
+                          onClick={() => handleViewQRCode(channel.id)}
+                          className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow hover:bg-emerald-600 transition"
+                        >
+                          Ver QR Code
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setDeleteTarget({ id: channel.id, name: channel.name })}
+                    className="mt-1 inline-flex w-full items-center justify-center rounded-full bg-red-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-red-600 transition"
+                  >
+                    Excluir canal
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal de criar canal */}
       {showModal && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000,
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60"
           onClick={() => setShowModal(false)}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              padding: '30px',
-              borderRadius: '10px',
-              width: '500px',
-              maxWidth: '90%',
-            }}
+            className="w-full max-w-lg rounded-2xl bg-white shadow-2xl p-6 relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0 }}>Criar Novo Canal</h2>
-            <form onSubmit={handleCreateChannel}>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                  Nome do Canal
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Criar novo canal</h2>
+                <p className="text-xs text-slate-500">
+                  Configure integrações com WhatsApp, email e outros canais de atendimento.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateChannel} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nome do canal
                 </label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #ddd',
-                    borderRadius: '5px',
-                  }}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                 />
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Setor (opcional)
                 </label>
                 <select
                   value={formData.sectorId}
                   onChange={(e) => setFormData({ ...formData, sectorId: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #ddd',
-                    borderRadius: '5px',
-                  }}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                 >
                   <option value="">Nenhum setor</option>
                   {sectors.map((sector) => (
@@ -279,83 +392,118 @@ export default function Channels() {
                 </select>
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                  Tipo
-                </label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value, provider: e.target.value === 'WHATSAPP' ? formData.provider : 'evolution' })}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #ddd',
-                    borderRadius: '5px',
-                  }}
-                >
-                  <option value="WHATSAPP">WhatsApp</option>
-                  <option value="TELEGRAM">Telegram</option>
-                  <option value="EMAIL">Email</option>
-                  <option value="WEBCHAT">Webchat</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tipo
+                  </label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        type: e.target.value,
+                        provider: e.target.value === 'WHATSAPP' ? formData.provider : 'evolution',
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                  >
+                    <option value="WHATSAPP">WhatsApp</option>
+                    <option value="TELEGRAM">Telegram</option>
+                    <option value="EMAIL">Email</option>
+                    <option value="WEBCHAT">Webchat</option>
+                  </select>
+                </div>
+
+                {formData.type === 'WHATSAPP' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Provedor WhatsApp
+                    </label>
+                    <select
+                      value={formData.provider}
+                      onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                    >
+                      <option value="evolution">Evolution API</option>
+                      <option value="whatsapp_official">WhatsApp Official (Meta Cloud API)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               {formData.type === 'WHATSAPP' && (
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                    Provedor
-                  </label>
-                  <select
-                    value={formData.provider}
-                    onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '5px',
-                    }}
-                  >
-                    <option value="evolution">Evolution API</option>
-                    <option value="whatsapp_official">WhatsApp Official (Meta Cloud API)</option>
-                  </select>
-                  <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '5px' }}>
-                    {formData.provider === 'whatsapp_official' 
-                      ? 'Usa a API oficial do WhatsApp (Meta Cloud API). Requer configuração no Meta Developers.'
-                      : 'Usa Evolution API. Requer API Key da Evolution.'}
+                <p className="text-[11px] text-slate-500">
+                  {formData.provider === 'whatsapp_official'
+                    ? 'Usa a API oficial do WhatsApp (Meta Cloud API). Requer credenciais copiadas do Meta Developers.'
+                    : 'Usa Evolution API com a API Key configurada no servidor.'}
+                </p>
+              )}
+
+              {formData.type === 'WHATSAPP' && formData.provider === 'whatsapp_official' && (
+                <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 px-3 py-3">
+                  <p className="text-[11px] text-emerald-800">
+                    Preencha com o Access Token, Phone Number ID e WABA ID obtidos no painel do Meta.
                   </p>
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-slate-700">
+                      Access Token
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.whatsappToken}
+                      onChange={(e) => setFormData({ ...formData, whatsappToken: e.target.value })}
+                      placeholder="EAAG..."
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700">
+                        Phone Number ID
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.whatsappPhoneNumberId}
+                        onChange={(e) =>
+                          setFormData({ ...formData, whatsappPhoneNumberId: e.target.value })
+                        }
+                        placeholder="Ex: 123456789012345"
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700">
+                        WABA ID
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.whatsappBusinessAccountId}
+                        onChange={(e) =>
+                          setFormData({ ...formData, whatsappBusinessAccountId: e.target.value })
+                        }
+                        placeholder="Ex: 123456789012345"
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 
-
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#6b7280',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                  }}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#3b82f6',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '5px',
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                    opacity: submitting ? 0.6 : 1,
-                  }}
+                  className="rounded-full bg-slate-900 px-5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {submitting ? 'Criando...' : 'Criar'}
+                  {submitting ? 'Criando...' : 'Criar canal'}
                 </button>
               </div>
             </form>
@@ -363,20 +511,10 @@ export default function Channels() {
         </div>
       )}
 
+      {/* Modal de QR Code */}
       {showQRModal && qrCode && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.7)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1001,
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70"
           onClick={() => {
             if (!checkingConnection) {
               setShowQRModal(false);
@@ -385,223 +523,110 @@ export default function Channels() {
           }}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              padding: '30px',
-              borderRadius: '15px',
-              width: '450px',
-              maxWidth: '90%',
-              textAlign: 'center',
-              boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
-            }}
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-6 text-center"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, color: '#25D366' }}>📱 Conectar WhatsApp</h2>
-            <p style={{ color: '#6b7280', marginBottom: '20px' }}>
-              Escaneie este QR Code com o WhatsApp
+            <h2 className="text-lg font-bold text-emerald-600 mb-1">Conectar WhatsApp</h2>
+            <p className="text-xs text-slate-500 mb-4">
+              Escaneie este QR Code com o aplicativo WhatsApp para conectar sua instância.
             </p>
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              marginBottom: '20px',
-              padding: '20px',
-              backgroundColor: '#f9fafb',
-              borderRadius: '10px',
-            }}>
-              <img 
-                src={qrCode} 
-                alt="QR Code" 
-                style={{ 
-                  maxWidth: '100%', 
-                  height: 'auto',
-                  border: '3px solid #25D366', 
-                  borderRadius: '10px',
-                }} 
+            <div className="flex justify-center mb-4 p-4 bg-slate-50 rounded-xl">
+              <img
+                src={qrCode}
+                alt="QR Code"
+                className="max-w-full h-auto rounded-xl border-4 border-emerald-500"
               />
             </div>
             {checkingConnection && (
-              <div style={{ 
-                marginTop: '15px', 
-                padding: '10px',
-                backgroundColor: '#eff6ff',
-                borderRadius: '5px',
-                color: '#1e40af',
-                fontSize: '14px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  <div style={{
-                    width: '16px',
-                    height: '16px',
-                    border: '2px solid #1e40af',
-                    borderTop: '2px solid transparent',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                  }}></div>
-                  Aguardando conexão...
-                </div>
+              <div className="mt-3 rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-800 flex items-center justify-center gap-2">
+                <span className="h-4 w-4 border-2 border-sky-700 border-t-transparent rounded-full animate-spin" />
+                Aguardando conexão...
               </div>
             )}
-            <div style={{ marginTop: '20px' }}>
+            <div className="mt-5">
               <button
                 onClick={() => {
                   setShowQRModal(false);
                   setQrCode(null);
                   setCheckingConnection(false);
                 }}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#6b7280',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                }}
+                className="rounded-full bg-slate-900 px-5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
               >
                 Fechar
               </button>
             </div>
-            <style>{`
-              @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-              }
-            `}</style>
           </div>
         </div>
       )}
 
-      {channels.length === 0 ? (
-        <p style={{ marginTop: '20px', color: '#6b7280' }}>
-          Nenhum canal configurado.
-        </p>
-      ) : (
+      {/* Modal de confirmação de exclusão */}
+      {deleteTarget && (
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-            gap: '20px',
-            marginTop: '20px',
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70"
+          onClick={() => setDeleteTarget(null)}
         >
-          {channels.map((channel) => (
-            <div
-              key={channel.id}
-              style={{
-                backgroundColor: 'white',
-                padding: '20px',
-                borderRadius: '10px',
-                boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-              }}
-            >
-              <h3>{channel.name}</h3>
-              <p style={{ color: '#6b7280', marginTop: '5px' }}>
-                Tipo: {channel.type}
-              </p>
-              {channel.sector && (
-                <p style={{ color: '#6b7280', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  Setor: 
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: `${channel.sector.color}20`,
-                      color: channel.sector.color,
-                      fontSize: '12px',
-                      fontWeight: '600',
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: channel.sector.color,
-                      }}
-                    />
-                    {channel.sector.name}
-                  </span>
-                </p>
-              )}
-              <div style={{ marginTop: '10px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <span
-                  style={{
-                    padding: '4px 12px',
-                    borderRadius: '4px',
-                    backgroundColor:
-                      channel.status === 'ACTIVE' ? '#10b981' : '#ef4444',
-                    color: 'white',
-                    fontSize: '12px',
-                  }}
-                >
-                  {channel.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-slate-900 mb-1">
+                Excluir canal
+              </h2>
+              <p className="text-xs text-slate-500">
+                Tem certeza que deseja excluir o canal{' '}
+                <span className="font-semibold text-slate-900">
+                  "{deleteTarget.name}"
                 </span>
-                
-                {channel.type === 'WHATSAPP' && (
-                  <>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await handleRefreshStatus(channel.id);
-                          // Forçar atualização da lista após verificar status
-                          setTimeout(() => fetchChannels(), 1000);
-                        } catch (error) {
-                          console.error('Erro ao atualizar status:', error);
-                        }
-                      }}
-                      style={{
-                        padding: '4px 12px',
-                        backgroundColor: '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                      }}
-                    >
-                      Atualizar Status
-                    </button>
-                    {channel.status !== 'ACTIVE' && (
-                      <button
-                        onClick={() => handleViewQRCode(channel.id)}
-                        style={{
-                          padding: '4px 12px',
-                          backgroundColor: '#10b981',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                        }}
-                      >
-                        Ver QR Code
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-              
-              <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #e5e7eb' }}>
-                <button
-                  onClick={() => handleDeleteChannel(channel.id, channel.name)}
-                  style={{
-                    padding: '6px 16px',
-                    backgroundColor: '#ef4444',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    width: '100%',
-                  }}
-                >
-                  Excluir Canal
-                </button>
-              </div>
+                ?
+              </p>
+              <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                Esta ação não pode ser desfeita e também excluirá a instância na Evolution API,
+                se existir.
+              </p>
             </div>
-          ))}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleDeleteChannel(deleteTarget.id, deleteTarget.name);
+                  setDeleteTarget(null);
+                }}
+                className="rounded-full bg-red-500 px-5 py-1.5 text-xs font-semibold text-white hover:bg-red-600"
+              >
+                Excluir canal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast de sucesso */}
+      {successMessage && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <div className="flex items-center gap-3 rounded-2xl bg-slate-900 text-white px-4 py-3 shadow-lg shadow-slate-900/40">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
+              ✓
+            </div>
+            <div className="text-xs">
+              <p className="font-semibold text-white">Pronto!</p>
+              <p className="text-slate-200">{successMessage}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSuccessMessage(null)}
+              className="ml-2 text-slate-400 hover:text-slate-200 text-xs"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
     </div>

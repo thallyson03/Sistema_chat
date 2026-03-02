@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import { WebhookService } from '../services/webhookService';
 import { BotService } from '../services/botService';
 import { ConversationDistributionService } from '../services/conversationDistributionService';
+import crypto from 'crypto';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -89,6 +90,37 @@ router.post('/whatsapp', async (req: Request, res: Response) => {
     console.log('📨 Headers:', JSON.stringify(req.headers, null, 2));
     console.log('📨 Body completo:', JSON.stringify(req.body, null, 2));
     console.log('📨 ============================================');
+
+    // Validação opcional de assinatura (X-Hub-Signature-256) do WhatsApp/META
+    const appSecret = process.env.WHATSAPP_APP_SECRET;
+    const signatureHeader = req.headers['x-hub-signature-256'] as string | undefined;
+
+    if (appSecret) {
+      if (!signatureHeader) {
+        console.warn('[WebhookWhatsApp] ⚠️ Assinatura X-Hub-Signature-256 ausente');
+        return res.status(403).json({ error: 'Assinatura do webhook ausente' });
+      }
+
+      const expected = crypto
+        .createHmac('sha256', appSecret)
+        .update((req as any).rawBody || Buffer.from(JSON.stringify(req.body)))
+        .digest('hex');
+
+      const expectedSignature = `sha256=${expected}`;
+
+      const provided = signatureHeader.trim();
+
+      const valid =
+        provided.length === expectedSignature.length &&
+        crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expectedSignature));
+
+      if (!valid) {
+        console.error('[WebhookWhatsApp] ❌ Assinatura inválida no webhook do WhatsApp Official');
+        return res.status(403).json({ error: 'Assinatura inválida' });
+      }
+    } else {
+      console.warn('[WebhookWhatsApp] ⚠️ WHATSAPP_APP_SECRET não configurado. Assinatura não será validada.');
+    }
 
     // WhatsApp Official envia eventos em req.body.entry[]
     const entries = req.body.entry || [];

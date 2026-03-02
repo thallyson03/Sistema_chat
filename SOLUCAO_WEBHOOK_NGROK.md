@@ -149,3 +149,5 @@ O erro "Forbidden" ao acessar a URL no navegador é **normal** e **esperado**. O
 
 O problema real é que o **POST do Meta não está chegando ao servidor**. Isso geralmente é causado pelo ngrok free tier bloqueando requisições.
 
+
+

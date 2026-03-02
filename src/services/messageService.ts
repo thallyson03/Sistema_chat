@@ -2,6 +2,7 @@ import prisma from '../config/database';
 import { MessageType, MessageStatus } from '@prisma/client';
 import evolutionApi from '../config/evolutionApi';
 import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
+import { WhatsAppOfficialService } from './whatsappOfficialService';
 import fs from 'fs';
 import path from 'path';
 
@@ -63,24 +64,52 @@ export class MessageService {
     });
 
     // Verificar se deve usar WhatsApp Official
-    const useWhatsAppOfficial = process.env.WHATSAPP_ENV && 
-                                 (process.env.WHATSAPP_ENV === 'dev' || process.env.WHATSAPP_ENV === 'prod') &&
-                                 getWhatsAppOfficialService() !== null;
+    const channelConfig: any = channel.config || {};
+    const hasChannelOfficialConfig =
+      channelConfig.provider === 'whatsapp_official' &&
+      !!channelConfig.phoneNumberId &&
+      !!channelConfig.businessAccountId &&
+      !!channelConfig.token;
 
-    if (
+    // Se não houver credenciais no canal, tentar usar configuração global do .env (compatibilidade)
+    const hasGlobalEnvOfficial =
+      !!process.env.WHATSAPP_ENV &&
+      (process.env.WHATSAPP_ENV === 'dev' || process.env.WHATSAPP_ENV === 'prod') &&
+      getWhatsAppOfficialService() !== null;
+
+    const shouldUseWhatsAppOfficial =
       channel.type === 'WHATSAPP' &&
-      useWhatsAppOfficial &&
-      conversation.contact.phone
-    ) {
+      !!conversation.contact.phone &&
+      (hasChannelOfficialConfig || hasGlobalEnvOfficial);
+
+    if (shouldUseWhatsAppOfficial) {
       // Usar WhatsApp Official API
       console.log('✅ [MessageService] Usando WhatsApp Official API...');
       try {
-        const whatsappService = getWhatsAppOfficialService();
-        if (!whatsappService) {
-          throw new Error('Serviço WhatsApp Official não disponível');
+        let whatsappService: WhatsAppOfficialService | null = null;
+
+        if (hasChannelOfficialConfig) {
+          console.log('[MessageService] Usando credenciais do canal para WhatsApp Official');
+          whatsappService = new WhatsAppOfficialService({
+            token: channelConfig.token,
+            phoneNumberId: channelConfig.phoneNumberId,
+            businessAccountId: channelConfig.businessAccountId,
+          });
+        } else {
+          console.log('[MessageService] Usando configuração global (env) para WhatsApp Official');
+          whatsappService = getWhatsAppOfficialService();
         }
 
-        const phone = conversation.contact.phone.replace(/\D/g, '');
+        if (!whatsappService) {
+          throw new Error('Serviço WhatsApp Official não disponível (sem credenciais válidas)');
+        }
+
+        const contactPhone = conversation.contact.phone;
+        if (!contactPhone) {
+          throw new Error('Contato não possui telefone configurado');
+        }
+
+        const phone = contactPhone.replace(/\D/g, '');
         const formattedPhone = phone.startsWith('55') ? phone : `55${phone}`;
 
         let result: any;

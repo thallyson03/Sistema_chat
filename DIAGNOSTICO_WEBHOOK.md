@@ -144,3 +144,5 @@ Verifique:
 4. **Reinicie o ngrok**: Pode ter mudado a URL
 5. **Atualize a URL no Meta Developers**: Se o ngrok mudou, atualize no Meta
 
+
+

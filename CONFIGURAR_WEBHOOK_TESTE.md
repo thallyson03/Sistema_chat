@@ -135,3 +135,5 @@ NGROK_URL="https://1234abcd.ngrok.io"
 - [ ] Webhook verificado com sucesso (logs mostram ✅)
 - [ ] Mensagem de teste enviada e recebida
 
+
+

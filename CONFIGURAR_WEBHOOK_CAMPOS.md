@@ -84,3 +84,5 @@ Se não aparecer, verifique:
 - [ ] ngrok está rodando?
 - [ ] URL está correta no Meta?
 
+
+

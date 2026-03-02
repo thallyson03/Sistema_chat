@@ -41,19 +41,19 @@ export function JourneyCustomNode({ data, id }: CustomNodeProps) {
   const configured = isConfigured();
 
   const getNodeColor = () => {
-    if (!configured) return { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' };
+    if (!configured) return { bg: '#fef2f2', border: '#ef4444', text: '#991b1b', softBg: '#fee2e2' };
     
     switch (type) {
       case 'TRIGGER':
-        return { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' };
+        return { bg: '#dbeafe', border: '#0ea5e9', text: '#0f172a', softBg: '#eff6ff' };
       case 'ACTION':
-        return { bg: '#dcfce7', border: '#10b981', text: '#166534' };
+        return { bg: '#dcfce7', border: '#22c55e', text: '#064e3b', softBg: '#ecfdf3' };
       case 'CONDITION':
-        return { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' };
+        return { bg: '#fef3c7', border: '#f97316', text: '#78350f', softBg: '#fffbeb' };
       case 'CONTROL':
-        return { bg: '#e9d5ff', border: '#8b5cf6', text: '#6b21a8' };
+        return { bg: '#e9d5ff', border: '#8b5cf6', text: '#4c1d95', softBg: '#f5f3ff' };
       default:
-        return { bg: '#f3f4f6', border: '#6b7280', text: '#374151' };
+        return { bg: '#f3f4f6', border: '#6b7280', text: '#374151', softBg: '#f9fafb' };
     }
   };
 
@@ -62,15 +62,25 @@ export function JourneyCustomNode({ data, id }: CustomNodeProps) {
   return (
     <div
       style={{
-        background: colors.bg,
-        border: `2px solid ${colors.border}`,
-        borderRadius: '12px',
-        padding: '12px 16px',
-        minWidth: '180px',
-        boxShadow: configured ? '0 4px 6px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.05)',
+        background: '#ffffff',
+        border: `1px solid ${configured ? colors.border : '#e5e7eb'}`,
+        borderRadius: '14px',
+        minWidth: '220px',
+        boxShadow: configured
+          ? '0 10px 20px rgba(15, 23, 42, 0.18)'
+          : '0 4px 8px rgba(15, 23, 42, 0.08)',
         position: 'relative',
+        overflow: 'hidden',
       }}
     >
+      {/* Faixa superior colorida */}
+      <div
+        style={{
+          height: '5px',
+          background: `linear-gradient(90deg, ${colors.border}, ${colors.bg})`,
+        }}
+      />
+
       {/* Handle de entrada (apenas se não for TRIGGER) */}
       {type !== 'TRIGGER' && (
         <Handle
@@ -122,63 +132,125 @@ export function JourneyCustomNode({ data, id }: CustomNodeProps) {
       </button>
 
       {/* Indicador de status */}
-      <div style={{ position: 'absolute', top: '8px', right: '32px' }}>
+      <div style={{ position: 'absolute', top: '10px', right: '36px' }}>
         {configured ? (
-          <span style={{ fontSize: '12px' }}>✓</span>
+          <span style={{ fontSize: '12px', color: '#16a34a' }}>✓</span>
         ) : (
           <span style={{ fontSize: '12px', color: '#ef4444' }}>⚠️</span>
         )}
       </div>
 
-      {/* Tipo do nó */}
+      {/* Conteúdo principal */}
       <div
         style={{
-          fontSize: '10px',
-          fontWeight: 'bold',
-          textTransform: 'uppercase',
-          color: colors.text,
-          marginBottom: '4px',
-          opacity: 0.8,
+          padding: '10px 14px 12px',
+          background: configured ? '#ffffff' : colors.softBg,
         }}
       >
-        {type === 'TRIGGER' ? '🎯 Trigger' :
-         type === 'ACTION' ? '⚡ Ação' :
-         type === 'CONDITION' ? '❓ Condição' : '🎛️ Controle'}
-      </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '6px',
+            gap: '8px',
+          }}
+        >
+          {/* Ícone circular à esquerda */}
+          <div
+            style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '999px',
+              background: colors.bg,
+              border: `1px solid ${colors.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '14px',
+            }}
+          >
+            {type === 'TRIGGER'
+              ? '🎯'
+              : type === 'ACTION'
+              ? '⚡'
+              : type === 'CONDITION'
+              ? '❓'
+              : '🎛️'}
+          </div>
 
-      {/* Label */}
-      <div
-        style={{
-          fontSize: '13px',
-          fontWeight: '600',
-          color: colors.text,
-          marginBottom: '4px',
-        }}
-      >
-        {label}
-      </div>
-
-      {/* Informações adicionais */}
-      {type === 'ACTION' && config.actionType === 'send_message' && (
-        <div style={{ marginTop: '8px', fontSize: '11px', color: colors.text, opacity: 0.7 }}>
-          {config.message ? (
-            <div style={{ 
-              padding: '6px', 
-              backgroundColor: 'rgba(255,255,255,0.5)', 
-              borderRadius: '4px',
-              maxHeight: '40px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis'
-            }}>
-              💬 {config.message.substring(0, 30)}{config.message.length > 30 ? '...' : ''}
+          {/* Tipo + label */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Tipo do nó */}
+            <div
+              style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                color: colors.text,
+                opacity: 0.8,
+                letterSpacing: '0.06em',
+                marginBottom: '1px',
+              }}
+            >
+              {type === 'TRIGGER'
+                ? 'Trigger'
+                : type === 'ACTION'
+                ? 'Ação'
+                : type === 'CONDITION'
+                ? 'Condição'
+                : 'Controle'}
             </div>
-          ) : (
-            <div style={{ color: '#ef4444', fontWeight: '500' }}>
-              ⚠️ Mensagem não configurada
+            {/* Label */}
+            <div
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: colors.text,
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis',
+                overflow: 'hidden',
+              }}
+              title={label}
+            >
+              {label}
             </div>
-          )}
+          </div>
         </div>
-      )}
+
+        {/* Informações adicionais */}
+        {type === 'ACTION' && config.actionType === 'send_message' && (
+          <div
+            style={{
+              marginTop: '8px',
+              fontSize: '11px',
+              color: colors.text,
+              opacity: 0.8,
+            }}
+          >
+            {config.message ? (
+              <div
+                style={{
+                  padding: '6px 8px',
+                  backgroundColor: '#f9fafb',
+                  borderRadius: '6px',
+                  maxHeight: '48px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                💬 {config.message.substring(0, 50)}
+                {config.message.length > 50 ? '…' : ''}
+              </div>
+            ) : (
+              <div style={{ color: '#ef4444', fontWeight: 500 }}>
+                ⚠️ Mensagem não configurada
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Handle de saída */}
       <Handle

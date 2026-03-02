@@ -60,7 +60,13 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
   next();
 });
 
-app.use(express.json());
+// Preservar rawBody para validação de assinatura em webhooks (ex: WhatsApp Official)
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    // Armazena o corpo bruto para uso posterior em validações HMAC
+    (req as any).rawBody = Buffer.from(buf);
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Servir arquivos de upload (público para Evolution API poder baixar)

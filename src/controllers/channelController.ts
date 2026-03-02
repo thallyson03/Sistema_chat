@@ -41,18 +41,25 @@ export class ChannelController {
       }
 
       // Verificar se é WhatsApp Official (não usa Evolution API)
-      // Se WHATSAPP_ENV estiver configurado e não houver evolutionApiKey, é WhatsApp Official
       const hasEvolutionApiKey = evolutionApiKey || process.env.EVOLUTION_API_KEY;
-      const isWhatsAppOfficial = type === 'WHATSAPP' && 
-                                process.env.WHATSAPP_ENV && 
-                                !hasEvolutionApiKey;
+      const isWhatsAppOfficial =
+        type === 'WHATSAPP' &&
+        (config?.provider === 'whatsapp_official' ||
+          (!hasEvolutionApiKey && process.env.WHATSAPP_ENV));
 
       // Configurar config com provider se for WhatsApp Official
       const channelConfig = config || {};
       if (isWhatsAppOfficial) {
         channelConfig.provider = 'whatsapp_official';
-        channelConfig.phoneNumberId = process.env.WHATSAPP_DEV_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_NUMBER_ID;
-        channelConfig.businessAccountId = process.env.WHATSAPP_DEV_WABA_ID || process.env.WHATSAPP_WABA_ID;
+        // Preferir dados enviados pela interface; se não vierem, usar fallback do .env
+        channelConfig.phoneNumberId =
+          channelConfig.phoneNumberId ||
+          process.env.WHATSAPP_DEV_PHONE_NUMBER_ID ||
+          process.env.WHATSAPP_PHONE_NUMBER_ID;
+        channelConfig.businessAccountId =
+          channelConfig.businessAccountId ||
+          process.env.WHATSAPP_DEV_WABA_ID ||
+          process.env.WHATSAPP_WABA_ID;
       }
 
       // Usar API key do .env apenas se não for WhatsApp Official

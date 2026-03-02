@@ -8,13 +8,6 @@ interface Channel {
   status: string;
 }
 
-interface Contact {
-  id: string;
-  name: string;
-  phone?: string;
-  email?: string;
-}
-
 interface ContactList {
   id: string;
   name: string;
@@ -49,10 +42,8 @@ export default function JourneyNodeConfigModal({
 
   // Dados para selects
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactLists, setContactLists] = useState<ContactList[]>([]);
   const [loadingChannels, setLoadingChannels] = useState(false);
-  const [loadingContacts, setLoadingContacts] = useState(false);
   const [loadingLists, setLoadingLists] = useState(false);
 
   useEffect(() => {
@@ -73,7 +64,6 @@ export default function JourneyNodeConfigModal({
         fetchChannels();
       }
       if (nodeType === 'TRIGGER') {
-        fetchContacts();
         fetchContactLists();
       }
     }
@@ -88,18 +78,6 @@ export default function JourneyNodeConfigModal({
       console.error('Erro ao carregar canais:', error);
     } finally {
       setLoadingChannels(false);
-    }
-  };
-
-  const fetchContacts = async () => {
-    setLoadingContacts(true);
-    try {
-      const response = await api.get('/api/contacts', { params: { limit: 100 } });
-      setContacts(response.data?.contacts || response.data || []);
-    } catch (error) {
-      console.error('Erro ao carregar contatos:', error);
-    } finally {
-      setLoadingContacts(false);
     }
   };
 
