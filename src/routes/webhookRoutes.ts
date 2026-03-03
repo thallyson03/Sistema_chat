@@ -298,6 +298,8 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
     let messageTypeDb = 'TEXT';
     let mediaUrl: string | null = null;
 
+    let mediaId: string | null = null;
+
     switch (messageType) {
       case 'text':
         messageContent = message.text?.body || '';
@@ -306,22 +308,27 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       case 'image':
         messageContent = message.image?.caption || '';
         messageTypeDb = 'IMAGE';
-        mediaUrl = message.image?.id || null;
+        // Para WhatsApp Official, a URL direta vem em image.url e o ID em image.id
+        mediaUrl = message.image?.url || null;
+        mediaId = message.image?.id || null;
         break;
       case 'video':
         messageContent = message.video?.caption || '';
         messageTypeDb = 'VIDEO';
-        mediaUrl = message.video?.id || null;
+        mediaUrl = message.video?.url || null;
+        mediaId = message.video?.id || null;
         break;
       case 'audio':
         messageContent = '';
         messageTypeDb = 'AUDIO';
-        mediaUrl = message.audio?.id || null;
+        mediaUrl = message.audio?.url || null;
+        mediaId = message.audio?.id || null;
         break;
       case 'document':
         messageContent = message.document?.caption || message.document?.filename || '';
         messageTypeDb = 'DOCUMENT';
-        mediaUrl = message.document?.id || null;
+        mediaUrl = message.document?.url || null;
+        mediaId = message.document?.id || null;
         break;
       default:
         messageContent = `[Mensagem do tipo: ${messageType}]`;
@@ -337,8 +344,13 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         type: messageTypeDb as any,
         status: 'PENDING', // Mensagem recebida, será processada
         externalId: messageId,
-        // mediaUrl não existe no schema, usar metadata para armazenar URL de mídia
-        metadata: mediaUrl ? { mediaUrl, mediaId: mediaUrl } : undefined,
+        // mediaUrl não existe no schema, usar metadata para armazenar URL de mídia/ID
+        metadata: mediaUrl
+          ? {
+              mediaUrl,
+              mediaId: mediaId || mediaUrl,
+            }
+          : undefined,
       },
     });
 
@@ -358,10 +370,18 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
 
     // Emitir evento via Socket.IO
     if (io) {
+      // Evento específico da sala da conversa (usado por outras telas/detalhes)
       io.to(`conversation_${conversation.id}`).emit('new_message', {
         conversationId: conversation.id,
         messageId: createdMessage.id,
       });
+
+      // Evento global para lista de conversas e tela principal de conversas
+      io.emit('new_message', {
+        conversationId: conversation.id,
+        messageId: createdMessage.id,
+      });
+
       io.emit('conversation_updated');
     }
   } catch (error: any) {

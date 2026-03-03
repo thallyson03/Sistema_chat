@@ -264,7 +264,10 @@ router.get('/:messageId', async (req: Request, res: Response) => {
     console.log('[Media] MediaUrl completo:', mediaUrl);
     console.log('[Media] MediaMetadata keys:', Object.keys(mediaMetadata));
     console.log('[Media] HasMediaKey:', !!mediaMetadata?.mediaKey);
-    console.log('[Media] Metadata completo (primeiros 500 chars):', JSON.stringify(metadata, null, 2).substring(0, 500));
+    console.log(
+      '[Media] Metadata completo (primeiros 500 chars):',
+      JSON.stringify(metadata, null, 2).substring(0, 500),
+    );
     console.log('[Media] ============================================');
 
     if (!mediaUrl) {
@@ -298,17 +301,11 @@ router.get('/:messageId', async (req: Request, res: Response) => {
 
     // Verificar se é URL local (arquivo enviado pelo sistema)
     // URLs locais começam com /api/media/file/ ou são caminhos relativos
-    if (mediaUrl.startsWith('/api/media/file/') || (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://'))) {
+    if (mediaUrl.startsWith('/api/media/file/')) {
       console.log('[Media] 📁 Detectado arquivo local, servindo diretamente...');
       
       // Extrair nome do arquivo da URL
-      let filename: string;
-      if (mediaUrl.startsWith('/api/media/file/')) {
-        filename = mediaUrl.replace('/api/media/file/', '');
-      } else {
-        // Se for caminho relativo, assumir que é o nome do arquivo
-        filename = mediaUrl.replace(/^\/+/, ''); // Remove barras iniciais
-      }
+      const filename = mediaUrl.replace('/api/media/file/', '');
 
       if (!isSafeFilename(filename)) {
         console.error('[Media] ❌ Nome de arquivo inválido em mediaUrl (possível path traversal):', filename);
@@ -379,6 +376,146 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         error: 'Conversa não possui canal associado' 
       });
     }
+
+    // Verificar provedor do canal (Evolution x WhatsApp Official)
+    const channelProvider =
+      (message.conversation.channel?.config as any)?.provider || 'evolution';
+
+    // ============================================
+    // Fluxo para WhatsApp Official (Meta Cloud API)
+    // ============================================
+    if (channelProvider === 'whatsapp_official') {
+      // Token pode vir da config do canal ou das variáveis de ambiente
+      const channelConfig = (message.conversation.channel?.config || {}) as any;
+      const appToken =
+        channelConfig.token ||
+        process.env.WHATSAPP_DEV_TOKEN ||
+        process.env.WHATSAPP_TOKEN;
+
+      if (!appToken) {
+        console.error(
+          '[Media] ❌ Token da API oficial não configurado (WHATSAPP_DEV_TOKEN / WHATSAPP_TOKEN ou config.token).',
+        );
+        return res.status(500).json({
+          error:
+            'Token da API oficial não configurado. Configure WHATSAPP_DEV_TOKEN ou WHATSAPP_TOKEN no .env ou no canal.',
+        });
+      }
+
+      try {
+        console.log('[Media] 📥 Baixando mídia do WhatsApp Official (Cloud API)...');
+        console.log('[Media] URL atual em metadata:', mediaUrl.substring(0, 120));
+
+        let downloadUrl = mediaUrl;
+
+        // Se o mediaUrl não começa com http, provavelmente é apenas o mediaId antigo salvo no banco.
+        // Precisamos primeiro buscar a URL real no Graph API: GET /{media-id}
+        if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
+          const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0';
+          const mediaId = downloadUrl;
+
+          console.log('[Media] 🔍 mediaUrl não é uma URL, tratando como mediaId:', mediaId);
+          console.log(
+            '[Media] 🔍 Buscando metadados da mídia no Graph API:',
+            `https://graph.facebook.com/${apiVersion}/${mediaId}`,
+          );
+
+          try {
+            const metaResp = await axios.get(
+              `https://graph.facebook.com/${apiVersion}/${mediaId}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${appToken}`,
+                },
+                timeout: 15000,
+              },
+            );
+
+            const graphUrl = metaResp.data?.url;
+            if (graphUrl && typeof graphUrl === 'string') {
+              downloadUrl = graphUrl;
+              console.log('[Media] ✅ URL da mídia obtida do Graph API:', downloadUrl.substring(0, 120));
+            } else {
+              console.warn(
+                '[Media] ⚠️ Resposta do Graph API não contém campo url. Usando mediaId diretamente (pode falhar).',
+                JSON.stringify(metaResp.data || {}, null, 2).substring(0, 300),
+              );
+            }
+          } catch (graphError: any) {
+            console.error(
+              '[Media] ❌ Erro ao buscar URL da mídia no Graph API:',
+              graphError.message,
+            );
+            if (graphError.response) {
+              console.error(
+                '[Media] Graph status:',
+                graphError.response.status,
+                'data:',
+                JSON.stringify(graphError.response.data || {}, null, 2).substring(0, 300),
+              );
+            }
+            // Continua tentando usar o mediaUrl original; pode funcionar em alguns casos
+          }
+        }
+
+        console.log('[Media] 📥 Fazendo download da mídia a partir de:', downloadUrl.substring(0, 160));
+
+        // Para Cloud API, a URL de mídia normalmente requer o mesmo access token usado na API.
+        const response = await axios.get(downloadUrl, {
+          headers: {
+            Authorization: `Bearer ${appToken}`,
+          },
+          responseType: 'arraybuffer',
+          timeout: 30000,
+        });
+
+        const buffer = Buffer.from(response.data);
+        const contentType =
+          response.headers['content-type'] ||
+          response.headers['Content-Type'] ||
+          (message.type === 'IMAGE'
+            ? 'image/jpeg'
+            : message.type === 'VIDEO'
+            ? 'video/mp4'
+            : message.type === 'AUDIO'
+            ? 'audio/ogg'
+            : 'application/octet-stream');
+
+        console.log('[Media] ✅ Mídia baixada do WhatsApp Official:', {
+          mediaType: message.type,
+          size: buffer.length,
+          contentType,
+          status: response.status,
+        });
+
+        res.status(200);
+        res.contentType(contentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.write(buffer);
+        res.end();
+        return;
+      } catch (error: any) {
+        console.error('[Media] ❌ Erro ao baixar mídia do WhatsApp Official:', error.message);
+        if (error.response) {
+          console.error('[Media] Status:', error.response.status);
+          console.error(
+            '[Media] Data:',
+            typeof error.response.data === 'string'
+              ? error.response.data.substring(0, 200)
+              : JSON.stringify(error.response.data, null, 2).substring(0, 200),
+          );
+        }
+        return res.status(500).json({
+          error: 'Erro ao baixar mídia do WhatsApp Official',
+          details: error.message,
+        });
+      }
+    }
+
+    // ============================================
+    // Fluxo original Evolution API (Baileys)
+    // ============================================
 
     // Buscar token da instância para autenticação
     let instanceToken: string | null = null;

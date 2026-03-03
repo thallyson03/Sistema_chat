@@ -104,6 +104,10 @@ interface Message {
 }
 
 export default function Conversations() {
+  // Base da API (mesma usada pelo axios)
+  const apiBase =
+    (api.defaults.baseURL || '').replace(/\/$/, '') || 'http://localhost:3007';
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1223,7 +1227,7 @@ export default function Conversations() {
                           <div style={{ marginBottom: '8px' }}>
                             {message.type === 'IMAGE' && (
                               <img
-                                src={`http://localhost:3007/api/media/${message.id}`}
+                                src={`${apiBase}/api/media/${message.id}`}
                                 alt={message.content || 'Imagem'}
                                 style={{
                                   maxWidth: '100%',
@@ -1238,23 +1242,38 @@ export default function Conversations() {
                                 onError={(e) => {
                                   console.error('❌ Erro ao carregar imagem:', message.id, e);
                                   const imgEl = e.target as HTMLImageElement;
+                                  // Evitar loop infinito: se já tentamos fallback uma vez, mostra placeholder e sai
+                                  if (imgEl.dataset.fallbackTried === '1') {
+                                    imgEl.onerror = null;
+                                    imgEl.src =
+                                      'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E';
+                                    return;
+                                  }
+
+                                  // Marcar que o fallback já foi tentado
+                                  imgEl.dataset.fallbackTried = '1';
+
                                   // Fallback: tentar URL direta do metadata se disponível
                                   if (message.metadata?.mediaUrl) {
-                                    if (message.metadata.mediaUrl.startsWith('http')) {
-                                      imgEl.src = message.metadata.mediaUrl;
-                                    } else {
-                                      imgEl.src = `http://localhost:3007${message.metadata.mediaUrl}`;
+                                    let fallbackUrl = message.metadata.mediaUrl;
+                                    if (!fallbackUrl.startsWith('http')) {
+                                      const path = fallbackUrl.startsWith('/')
+                                        ? fallbackUrl
+                                        : `/${fallbackUrl}`;
+                                      fallbackUrl = `${apiBase}${path}`;
                                     }
+                                    imgEl.src = fallbackUrl;
                                     console.log('🔄 Tentando URL alternativa:', imgEl.src);
                                   } else {
-                                    imgEl.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E';
+                                    imgEl.src =
+                                      'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E';
                                   }
                                 }}
                               />
                             )}
                             {message.type === 'VIDEO' && (
                               <video
-                                src={`http://localhost:3007/api/media/${message.id}`}
+                                src={`${apiBase}/api/media/${message.id}`}
                                 controls
                                 style={{
                                   maxWidth: '100%',
@@ -1269,11 +1288,14 @@ export default function Conversations() {
                                   const videoEl = e.target as HTMLVideoElement;
                                   // Fallback: tentar URL direta do metadata se disponível
                                   if (message.metadata?.mediaUrl) {
-                                    if (message.metadata.mediaUrl.startsWith('http')) {
-                                      videoEl.src = message.metadata.mediaUrl;
-                                    } else {
-                                      videoEl.src = `http://localhost:3007${message.metadata.mediaUrl}`;
+                                    let fallbackUrl = message.metadata.mediaUrl;
+                                    if (!fallbackUrl.startsWith('http')) {
+                                      const path = fallbackUrl.startsWith('/')
+                                        ? fallbackUrl
+                                        : `/${fallbackUrl}`;
+                                      fallbackUrl = `${apiBase}${path}`;
                                     }
+                                    videoEl.src = fallbackUrl;
                                     console.log('🔄 Tentando URL alternativa:', videoEl.src);
                                   }
                                 }}
@@ -1468,27 +1490,24 @@ export default function Conversations() {
                 {/* Botão Respostas Rápidas */}
                 <IconButton
                   onClick={() => setShowQuickReplies(true)}
-                  title="Respostas rápidas"
-                >
-                  <span className="text-xl">⚡</span>
-                </IconButton>
+                  icon={<span className="text-xl">⚡</span>}
+                  tooltip="Respostas rápidas"
+                />
 
                 {/* Botão Emoji */}
                 <IconButton
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  title="Emojis"
-                >
-                  <span className="text-2xl">😊</span>
-                </IconButton>
+                  icon={<span className="text-2xl">😊</span>}
+                  tooltip="Emojis"
+                />
 
                 {/* Botão Upload */}
                 <IconButton
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingFile || sending}
-                  title="Enviar arquivo"
-                >
-                  <span className="text-xl">📎</span>
-                </IconButton>
+                  icon={<span className="text-xl">📎</span>}
+                  tooltip="Enviar arquivo"
+                />
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1502,10 +1521,9 @@ export default function Conversations() {
                   <IconButton
                     onClick={startRecording}
                     disabled={sending || uploadingFile}
-                    title="Gravar áudio"
-                  >
-                    <span className="text-xl">🎤</span>
-                  </IconButton>
+                    icon={<span className="text-xl">🎤</span>}
+                    tooltip="Gravar áudio"
+                  />
                 ) : (
                   <motion.button
                     type="button"

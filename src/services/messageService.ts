@@ -115,15 +115,50 @@ export class MessageService {
         let result: any;
 
         if (data.mediaUrl && data.type !== 'TEXT') {
-          // Enviar mídia
+          // Enviar mídia via WhatsApp Official
           const mediaType = data.type === 'IMAGE' ? 'image' :
                            data.type === 'VIDEO' ? 'video' :
                            data.type === 'AUDIO' ? 'audio' :
                            data.type === 'DOCUMENT' ? 'document' : 'image';
 
+          // Construir URL pública completa para a mídia (WhatsApp Official exige link HTTP/HTTPS válido)
+          const baseUrl =
+            process.env.API_BASE_URL ||
+            process.env.NGROK_URL ||
+            process.env.APP_URL ||
+            '';
+
+          const fullMediaUrl = data.mediaUrl.startsWith('http')
+            ? data.mediaUrl
+            : baseUrl
+            ? `${baseUrl}${data.mediaUrl}`
+            : data.mediaUrl;
+
+          const isValidHttpUrl =
+            fullMediaUrl.startsWith('https://') ||
+            fullMediaUrl.startsWith('http://');
+
+          console.log('[MessageService] URL de mídia para WhatsApp Official:', {
+            originalUrl: data.mediaUrl,
+            fullMediaUrl,
+            baseUrl,
+            mediaType,
+            isValidHttpUrl,
+          });
+
+          if (!isValidHttpUrl) {
+            console.error(
+              '❌ [MessageService] URL de mídia inválida para WhatsApp Official. ' +
+                'Configure API_BASE_URL ou NGROK_URL no .env com uma URL pública (https) e tente novamente.'
+            );
+            throw new Error(
+              'URL de mídia inválida para WhatsApp Official. Verifique a configuração de API_BASE_URL/NGROK_URL.'
+            );
+          }
+
           result = await whatsappService.sendMediaMessage({
             to: formattedPhone,
-            mediaUrl: data.mediaUrl,
+            mediaUrl: fullMediaUrl,
             type: mediaType,
             caption: data.caption || data.content,
             filename: data.fileName,
