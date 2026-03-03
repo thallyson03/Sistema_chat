@@ -127,6 +127,19 @@ export default function Conversations() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loadingNewConversation, setLoadingNewConversation] = useState(false);
   const [channels, setChannels] = useState<any[]>([]);
+  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const [audioState, setAudioState] = useState<
+    Record<string, { playing: boolean; currentTime: number; duration: number }>
+  >({});
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const [videoState, setVideoState] = useState<
+    Record<string, { playing: boolean; currentTime: number; duration: number }>
+  >({});
+  const [previewMedia, setPreviewMedia] = useState<{
+    type: 'IMAGE' | 'VIDEO';
+    src: string;
+  } | null>(null);
+  const [openMediaMenuId, setOpenMediaMenuId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
   // Mantém sempre o ID da conversa selecionada mais recente para usar dentro dos handlers do socket
@@ -744,6 +757,17 @@ export default function Conversations() {
     };
   }, [showEmojiPicker]);
 
+  // Fechar menu de mídia ao clicar fora em qualquer lugar da página
+  useEffect(() => {
+    const handleClick = () => {
+      setOpenMediaMenuId(null);
+    };
+    document.addEventListener('click', handleClick);
+    return () => {
+      document.removeEventListener('click', handleClick);
+    };
+  }, []);
+
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -759,6 +783,67 @@ export default function Conversations() {
       month: '2-digit',
       year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
     });
+  };
+
+  const formatAudioTime = (seconds: number) => {
+    if (!seconds || Number.isNaN(seconds)) return '0:00';
+    const total = Math.floor(seconds);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleDownloadMedia = async (message: Message) => {
+    try {
+      // Sempre baixar via backend para que ele trate autenticação / tokens da Meta
+      const endpoint =
+        message.type === 'AUDIO'
+          ? `/api/media/download/${message.id}` // converte para MP3 quando possível
+          : `/api/media/${message.id}`;
+      const response = await api.get(endpoint, {
+        responseType: 'blob',
+      });
+
+      const contentType = response.headers['content-type'];
+      const blob = new Blob([response.data], { type: contentType || undefined });
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+
+      let filename =
+        message.metadata?.fileName || message.content || (message.type === 'AUDIO' ? 'audio' : 'arquivo');
+
+      if (message.type === 'AUDIO') {
+        // Garantir extensão .mp3 para download de áudio
+        filename = filename.replace(/\.[^/.]+$/, '');
+        filename += '.mp3';
+      }
+
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // Liberar URL em memória
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erro ao iniciar download da mídia:', error);
+      alert('Não foi possível baixar este arquivo. Tente novamente.');
+    }
+  };
+
+  const getPreviewSrc = (message: Message) => {
+    // Usar sempre a rota de mídia do backend como fonte principal
+    let src = `${apiBase}/api/media/${message.id}`;
+
+    const metaUrl = message.metadata?.mediaUrl;
+    if (metaUrl && !metaUrl.startsWith('http')) {
+      const path = metaUrl.startsWith('/') ? metaUrl : `/${metaUrl}`;
+      src = `${apiBase}${path}`;
+    }
+
+    return src;
   };
 
   if (loading) {
@@ -783,6 +868,81 @@ export default function Conversations() {
           }
         `}
       </style>
+      {/* Modal de preview de mídia (imagem/vídeo em tela cheia) */}
+      {previewMedia && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: '640px', // alinhado com a área de conversa
+            backgroundColor: 'rgba(0,0,0,0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 3000,
+          }}
+          onClick={() => setPreviewMedia(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewMedia(null)}
+            style={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              background: 'none',
+              border: 'none',
+              color: '#fff',
+              fontSize: '18px',
+              cursor: 'pointer',
+            }}
+          >
+            Fechar ✕
+          </button>
+
+          <div
+            style={{
+              width: '40%',
+              maxWidth: '500px',
+              maxHeight: '40vh',
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {previewMedia.type === 'IMAGE' ? (
+              <img
+                src={previewMedia.src}
+                alt="Pré-visualização"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                  borderRadius: '8px',
+                }}
+              />
+            ) : (
+              <video
+                src={previewMedia.src}
+                controls
+                autoPlay
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  borderRadius: '8px',
+                  backgroundColor: '#000',
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Sidebar Esquerda - Lista de Conversas */}
       <div
         style={{
@@ -1201,12 +1361,14 @@ export default function Conversations() {
                       )}
                       
                       <motion.div
-                        className="max-w-[70%] px-4 py-3 rounded-xl shadow-sm relative"
+                        className="max-w-[70%] px-0 py-0 rounded-xl relative"
                         style={{
-                          backgroundColor: isOwnMessage ? '#3b82f6' : 'white',
-                          color: isOwnMessage ? 'white' : '#1f2937',
+                          // Sem fundo de card: deixa o conteúdo (texto/mídia) “solto” sobre o fundo da tela
+                          backgroundColor: 'transparent',
+                          color: '#111827',
+                          boxShadow: 'none',
                         }}
-                        whileHover={{ scale: 1.02 }}
+                        whileHover={{ scale: 1.0 }}
                         transition={{ duration: 0.2 }}
                       >
                         {!isOwnMessage && (
@@ -1226,108 +1388,555 @@ export default function Conversations() {
                         {['IMAGE', 'VIDEO', 'AUDIO'].includes(message.type) && message.id && (
                           <div style={{ marginBottom: '8px' }}>
                             {message.type === 'IMAGE' && (
-                              <img
-                                src={`${apiBase}/api/media/${message.id}`}
-                                alt={message.content || 'Imagem'}
-                                style={{
-                                  maxWidth: '100%',
-                                  maxHeight: '300px',
-                                  borderRadius: '8px',
-                                  objectFit: 'contain',
-                                  display: 'block',
-                                }}
-                                onLoad={() => {
-                                  console.log('✅ Imagem carregada com sucesso:', message.id);
-                                }}
-                                onError={(e) => {
-                                  console.error('❌ Erro ao carregar imagem:', message.id, e);
-                                  const imgEl = e.target as HTMLImageElement;
-                                  // Evitar loop infinito: se já tentamos fallback uma vez, mostra placeholder e sai
-                                  if (imgEl.dataset.fallbackTried === '1') {
-                                    imgEl.onerror = null;
-                                    imgEl.src =
-                                      'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E';
-                                    return;
-                                  }
-
-                                  // Marcar que o fallback já foi tentado
-                                  imgEl.dataset.fallbackTried = '1';
-
-                                  // Fallback: tentar URL direta do metadata se disponível
-                                  if (message.metadata?.mediaUrl) {
-                                    let fallbackUrl = message.metadata.mediaUrl;
-                                    if (!fallbackUrl.startsWith('http')) {
-                                      const path = fallbackUrl.startsWith('/')
-                                        ? fallbackUrl
-                                        : `/${fallbackUrl}`;
-                                      fallbackUrl = `${apiBase}${path}`;
+                              <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <img
+                                  src={`${apiBase}/api/media/${message.id}`}
+                                  alt={message.content || 'Imagem'}
+                                  style={{
+                                    maxWidth: '100%',
+                                    maxHeight: '300px',
+                                    borderRadius: '8px',
+                                    objectFit: 'contain',
+                                    display: 'block',
+                                    cursor: 'pointer',
+                                  }}
+                                  onClick={() => {
+                                    setPreviewMedia({
+                                      type: 'IMAGE',
+                                      src: getPreviewSrc(message),
+                                    });
+                                  }}
+                                  onLoad={() => {
+                                    console.log('✅ Imagem carregada com sucesso:', message.id);
+                                  }}
+                                  onError={(e) => {
+                                    console.error('❌ Erro ao carregar imagem:', message.id, e);
+                                    const imgEl = e.target as HTMLImageElement;
+                                    // Evitar loop infinito: se já tentamos fallback uma vez, mostra placeholder e sai
+                                    if (imgEl.dataset.fallbackTried === '1') {
+                                      imgEl.onerror = null;
+                                      imgEl.src =
+                                        'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E';
+                                      return;
                                     }
-                                    imgEl.src = fallbackUrl;
-                                    console.log('🔄 Tentando URL alternativa:', imgEl.src);
-                                  } else {
-                                    imgEl.src =
-                                      'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E';
-                                  }
-                                }}
-                              />
+
+                                    // Marcar que o fallback já foi tentado
+                                    imgEl.dataset.fallbackTried = '1';
+
+                                    // Fallback: tentar URL direta do metadata se disponível
+                                    if (message.metadata?.mediaUrl) {
+                                      let fallbackUrl = message.metadata.mediaUrl;
+                                      if (!fallbackUrl.startsWith('http')) {
+                                        const path = fallbackUrl.startsWith('/')
+                                          ? fallbackUrl
+                                          : `/${fallbackUrl}`;
+                                        fallbackUrl = `${apiBase}${path}`;
+                                      }
+                                      imgEl.src = fallbackUrl;
+                                      console.log('🔄 Tentando URL alternativa:', imgEl.src);
+                                    } else {
+                                      imgEl.src =
+                                        'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E';
+                                    }
+                                  }}
+                                />
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: 6,
+                                    right: 6,
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenMediaMenuId((prev) =>
+                                        prev === message.id ? null : message.id
+                                      );
+                                    }}
+                                    style={{
+                                      width: 26,
+                                      height: 26,
+                                      borderRadius: '999px',
+                                      border: 'none',
+                                      backgroundColor: 'rgba(0,0,0,0.6)',
+                                      color: '#fff',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: 'pointer',
+                                      fontSize: '16px',
+                                    }}
+                                    title="Mais opções"
+                                  >
+                                    ⋮
+                                  </button>
+                                  {openMediaMenuId === message.id && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        marginTop: 4,
+                                        right: 0,
+                                        position: 'absolute',
+                                        minWidth: '160px',
+                                        backgroundColor: '#FFFFFF',
+                                        boxShadow:
+                                          '0 4px 12px rgba(0,0,0,0.15)',
+                                        borderRadius: '8px',
+                                        padding: '6px 0',
+                                        zIndex: 50,
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenMediaMenuId(null);
+                                          // Futuro: ação de responder
+                                        }}
+                                        style={{
+                                          width: '100%',
+                                          padding: '6px 14px',
+                                          background: 'none',
+                                          border: 'none',
+                                          textAlign: 'left',
+                                          fontSize: '13px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        Responder
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleDownloadMedia(message);
+                                          setOpenMediaMenuId(null);
+                                        }}
+                                        style={{
+                                          width: '100%',
+                                          padding: '6px 14px',
+                                          background: 'none',
+                                          border: 'none',
+                                          textAlign: 'left',
+                                          fontSize: '13px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        Baixar
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             )}
                             {message.type === 'VIDEO' && (
-                              <video
-                                src={`${apiBase}/api/media/${message.id}`}
-                                controls
+                              <div
                                 style={{
+                                  position: 'relative',
+                                  display: 'inline-block',
                                   maxWidth: '100%',
-                                  maxHeight: '300px',
-                                  borderRadius: '8px',
+                                  maxHeight: '320px',
+                                  borderRadius: '12px',
+                                  overflow: 'hidden',
+                                  backgroundColor: '#000',
                                 }}
-                                onLoadedMetadata={() => {
-                                  console.log('✅ Vídeo carregado com sucesso:', message.id);
-                                }}
-                                onError={(e) => {
-                                  console.error('❌ Erro ao carregar vídeo:', message.id, e);
-                                  const videoEl = e.target as HTMLVideoElement;
-                                  // Fallback: tentar URL direta do metadata se disponível
-                                  if (message.metadata?.mediaUrl) {
-                                    let fallbackUrl = message.metadata.mediaUrl;
-                                    if (!fallbackUrl.startsWith('http')) {
-                                      const path = fallbackUrl.startsWith('/')
-                                        ? fallbackUrl
-                                        : `/${fallbackUrl}`;
-                                      fallbackUrl = `${apiBase}${path}`;
+                              >
+                                <video
+                                  src={`${apiBase}/api/media/${message.id}`}
+                                  controls={false}
+                                  style={{
+                                    width: '100%',
+                                    maxHeight: '320px',
+                                    display: 'block',
+                                    objectFit: 'cover',
+                                  }}
+                                  preload="metadata"
+                                  crossOrigin="anonymous"
+                                  ref={(el) => {
+                                    videoRefs.current[message.id] = el;
+                                  }}
+                                  onLoadedMetadata={(ev) => {
+                                    const el = ev.currentTarget;
+                                    console.log('✅ Vídeo carregado com sucesso:', message.id);
+                                    setVideoState((prev) => ({
+                                      ...prev,
+                                      [message.id]: {
+                                        playing: false,
+                                        currentTime: 0,
+                                        duration: el.duration || prev[message.id]?.duration || 0,
+                                      },
+                                    }));
+                                  }}
+                                  onTimeUpdate={(ev) => {
+                                    const el = ev.currentTarget;
+                                    setVideoState((prev) => ({
+                                      ...prev,
+                                      [message.id]: {
+                                        playing: !el.paused,
+                                        currentTime: el.currentTime,
+                                        duration: el.duration || prev[message.id]?.duration || 0,
+                                      },
+                                    }));
+                                  }}
+                                  onPause={(ev) => {
+                                    const el = ev.currentTarget;
+                                    setVideoState((prev) => ({
+                                      ...prev,
+                                      [message.id]: {
+                                        playing: false,
+                                        currentTime: el.currentTime,
+                                        duration: el.duration || prev[message.id]?.duration || 0,
+                                      },
+                                    }));
+                                  }}
+                                  onError={(e) => {
+                                    console.error('❌ Erro ao carregar vídeo:', message.id, e);
+                                    const videoEl = e.target as HTMLVideoElement;
+                                    // Fallback: tentar URL direta do metadata se disponível
+                                    if (message.metadata?.mediaUrl) {
+                                      let fallbackUrl = message.metadata.mediaUrl;
+                                      if (!fallbackUrl.startsWith('http')) {
+                                        const path = fallbackUrl.startsWith('/')
+                                          ? fallbackUrl
+                                          : `/${fallbackUrl}`;
+                                        fallbackUrl = `${apiBase}${path}`;
+                                      }
+                                      videoEl.src = fallbackUrl;
+                                      console.log('🔄 Tentando URL alternativa:', videoEl.src);
                                     }
-                                    videoEl.src = fallbackUrl;
-                                    console.log('🔄 Tentando URL alternativa:', videoEl.src);
-                                  }
-                                }}
-                              />
+                                  }}
+                                />
+
+                                {/* Botão play/pause central, estilo WhatsApp */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const videoEl = videoRefs.current[message.id];
+                                    if (!videoEl) return;
+
+                                    // Pausar outros vídeos
+                                    Object.entries(videoRefs.current).forEach(([id, el]) => {
+                                      if (el && !el.paused && id !== message.id) {
+                                        el.pause();
+                                      }
+                                    });
+
+                                    if (videoEl.paused) {
+                                      videoEl
+                                        .play()
+                                        .then(() => {
+                                          setVideoState((prev) => ({
+                                            ...prev,
+                                            [message.id]: {
+                                              playing: true,
+                                              currentTime: prev[message.id]?.currentTime || 0,
+                                              duration: prev[message.id]?.duration || videoEl.duration || 0,
+                                            },
+                                          }));
+                                        })
+                                        .catch((err) => {
+                                          console.error('Erro ao reproduzir vídeo:', err);
+                                        });
+                                    } else {
+                                      videoEl.pause();
+                                    }
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    top: '50%',
+                                    left: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                    width: 52,
+                                    height: 52,
+                                    borderRadius: '50%',
+                                    border: 'none',
+                                    backgroundColor: 'rgba(0,0,0,0.6)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    color: '#fff',
+                                    fontSize: '22px',
+                                  }}
+                                >
+                                  {videoState[message.id]?.playing ? '⏸' : '▶'}
+                                </button>
+
+                                {/* Indicador de progresso e tempo no rodapé do vídeo */}
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    padding: '6px 10px',
+                                    background:
+                                      'linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0))',
+                                    color: '#fff',
+                                    fontSize: '12px',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      height: '3px',
+                                      borderRadius: '999px',
+                                      backgroundColor: 'rgba(255,255,255,0.3)',
+                                      overflow: 'hidden',
+                                      marginBottom: '4px',
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        height: '100%',
+                                        width: `${
+                                          videoState[message.id]?.duration
+                                            ? Math.min(
+                                                100,
+                                                (videoState[message.id].currentTime /
+                                                  videoState[message.id].duration) *
+                                                  100,
+                                              )
+                                            : 0
+                                        }%`,
+                                        backgroundColor: '#25D366',
+                                        transition: 'width 0.15s linear',
+                                      }}
+                                    />
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      opacity: 0.9,
+                                    }}
+                                  >
+                                    <span>
+                                      {formatAudioTime(
+                                        videoState[message.id]?.currentTime || 0,
+                                      )}
+                                    </span>
+                                    <span>
+                                      {formatAudioTime(
+                                        videoState[message.id]?.duration || 0,
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Botão de menu (três pontinhos) para ações adicionais */}
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: 6,
+                                    right: 6,
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenMediaMenuId((prev) =>
+                                        prev === message.id ? null : message.id,
+                                      );
+                                    }}
+                                    style={{
+                                      width: 26,
+                                      height: 26,
+                                      borderRadius: '999px',
+                                      border: 'none',
+                                      backgroundColor: 'rgba(0,0,0,0.6)',
+                                      color: '#fff',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: 'pointer',
+                                      fontSize: '16px',
+                                    }}
+                                    title="Mais opções"
+                                  >
+                                    ⋮
+                                  </button>
+                                  {openMediaMenuId === message.id && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        marginTop: 4,
+                                        right: 0,
+                                        position: 'absolute',
+                                        minWidth: '160px',
+                                        backgroundColor: '#FFFFFF',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                        borderRadius: '8px',
+                                        padding: '6px 0',
+                                        zIndex: 50,
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenMediaMenuId(null);
+                                        }}
+                                        style={{
+                                          width: '100%',
+                                          padding: '6px 14px',
+                                          background: 'none',
+                                          border: 'none',
+                                          textAlign: 'left',
+                                          fontSize: '13px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        Responder
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleDownloadMedia(message);
+                                          setOpenMediaMenuId(null);
+                                        }}
+                                        style={{
+                                          width: '100%',
+                                          padding: '6px 14px',
+                                          background: 'none',
+                                          border: 'none',
+                                          textAlign: 'left',
+                                          fontSize: '13px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        Baixar
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             )}
                             {message.type === 'AUDIO' && (
                               <div
                                 style={{
                                   display: 'flex',
                                   alignItems: 'center',
-                                  gap: '10px',
-                                  padding: '8px',
-                                  backgroundColor: isOwnMessage ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                                  borderRadius: '8px',
-                                  minWidth: '250px',
+                                  gap: '12px',
+                                  padding: '10px 12px',
+                                  backgroundColor: isOwnMessage ? '#DCF8C6' : '#ffffff',
+                                  borderRadius: '999px',
+                                  minWidth: '260px',
+                                  boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
                                 }}
                               >
-                                <span style={{ fontSize: '24px' }}>🎧</span>
-                                <audio
-                                  src={
-                                    // Sempre tentar rota de mídia primeiro (funciona para recebidos e enviados)
-                                    // Se falhar, tentar URL direta
-                                    `http://localhost:3007/api/media/${message.id}`
-                                  }
-                                  controls
-                                  style={{ 
-                                    width: '220px',
-                                    height: '32px',
-                                    flex: 1,
+                                {/* Botão play/pause customizado, estilo WhatsApp */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const audioEl = audioRefs.current[message.id];
+                                    if (!audioEl) return;
+
+                                    // Pausar outros áudios
+                                    Object.entries(audioRefs.current).forEach(([id, el]) => {
+                                      if (el && !el.paused && id !== message.id) {
+                                        el.pause();
+                                      }
+                                    });
+
+                                    if (audioEl.paused) {
+                                      audioEl
+                                        .play()
+                                        .then(() => {
+                                          setAudioState((prev) => ({
+                                            ...prev,
+                                            [message.id]: {
+                                              playing: true,
+                                              currentTime: prev[message.id]?.currentTime || 0,
+                                              duration: prev[message.id]?.duration || audioEl.duration || 0,
+                                            },
+                                          }));
+                                        })
+                                        .catch((err) => {
+                                          console.error('Erro ao reproduzir áudio:', err);
+                                        });
+                                    } else {
+                                      audioEl.pause();
+                                      setAudioState((prev) => ({
+                                        ...prev,
+                                        [message.id]: {
+                                          playing: false,
+                                          currentTime: prev[message.id]?.currentTime || audioEl.currentTime || 0,
+                                          duration: prev[message.id]?.duration || audioEl.duration || 0,
+                                        },
+                                      }));
+                                    }
                                   }}
+                                  style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '50%',
+                                    border: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    backgroundColor: '#25D366',
+                                    color: 'white',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                                  }}
+                                >
+                                  {audioState[message.id]?.playing ? '⏸' : '▶'}
+                                </button>
+
+                                {/* Barra de progresso simples + duração */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      height: '4px',
+                                      borderRadius: '999px',
+                                      backgroundColor: isOwnMessage ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.08)',
+                                      overflow: 'hidden',
+                                      marginBottom: '6px',
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        height: '100%',
+                                        width: `${
+                                          audioState[message.id]?.duration
+                                            ? Math.min(
+                                                100,
+                                                (audioState[message.id].currentTime /
+                                                  audioState[message.id].duration) *
+                                                  100,
+                                              )
+                                            : 0
+                                        }%`,
+                                        backgroundColor: '#25D366',
+                                        transition: 'width 0.15s linear',
+                                      }}
+                                    />
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      fontSize: '12px',
+                                      opacity: 0.8,
+                                    }}
+                                  >
+                                    <span>{formatAudioTime(audioState[message.id]?.currentTime || 0)}</span>
+                                    <span>{formatAudioTime(audioState[message.id]?.duration || 0)}</span>
+                                  </div>
+                                </div>
+
+                                {/* Áudio real (nativo), mas oculto; usado como engine do player */}
+                                <audio
+                                  src={`${apiBase}/api/media/${message.id}`}
+                                  controls={false}
+                                  style={{ display: 'none' }}
                                   preload="metadata"
                                   crossOrigin="anonymous"
+                                  ref={(el) => {
+                                    audioRefs.current[message.id] = el;
+                                  }}
                                   onError={(e) => {
                                     console.error('❌ Erro ao carregar áudio via /api/media/:id:', message.id, e);
                                     const audioEl = e.target as HTMLAudioElement;
@@ -1336,15 +1945,129 @@ export default function Conversations() {
                                       if (message.metadata.mediaUrl.startsWith('http')) {
                                         audioEl.src = message.metadata.mediaUrl;
                                       } else {
-                                        audioEl.src = `http://localhost:3007${message.metadata.mediaUrl}`;
+                                        audioEl.src = `${apiBase}${
+                                          message.metadata.mediaUrl.startsWith('/') ? '' : '/'
+                                        }${message.metadata.mediaUrl}`;
                                       }
                                       console.log('🔄 Tentando URL alternativa:', audioEl.src);
                                     }
                                   }}
-                                  onLoadedMetadata={() => {
+                                  onLoadedMetadata={(ev) => {
+                                    const el = ev.currentTarget;
                                     console.log('✅ Áudio carregado com sucesso:', message.id);
+                                    setAudioState((prev) => ({
+                                      ...prev,
+                                      [message.id]: {
+                                        playing: false,
+                                        currentTime: 0,
+                                        duration: el.duration || prev[message.id]?.duration || 0,
+                                      },
+                                    }));
+                                  }}
+                                  onTimeUpdate={(ev) => {
+                                    const el = ev.currentTarget;
+                                    setAudioState((prev) => ({
+                                      ...prev,
+                                      [message.id]: {
+                                        playing: !el.paused,
+                                        currentTime: el.currentTime,
+                                        duration: el.duration || prev[message.id]?.duration || 0,
+                                      },
+                                    }));
+                                  }}
+                                  onPause={(ev) => {
+                                    const el = ev.currentTarget;
+                                    setAudioState((prev) => ({
+                                      ...prev,
+                                      [message.id]: {
+                                        playing: false,
+                                        currentTime: el.currentTime,
+                                        duration: el.duration || prev[message.id]?.duration || 0,
+                                      },
+                                    }));
                                   }}
                                 />
+
+                                {/* Menu de três pontinhos para ações (baixar, responder) */}
+                                <div style={{ position: 'relative' }}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenMediaMenuId((prev) =>
+                                        prev === message.id ? null : message.id,
+                                      );
+                                    }}
+                                    style={{
+                                      width: 26,
+                                      height: 26,
+                                      borderRadius: '999px',
+                                      border: 'none',
+                                      backgroundColor: 'rgba(0,0,0,0.6)',
+                                      color: '#fff',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: 'pointer',
+                                      fontSize: '16px',
+                                    }}
+                                    title="Mais opções"
+                                  >
+                                    ⋮
+                                  </button>
+                                  {openMediaMenuId === message.id && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        marginTop: 4,
+                                        right: 0,
+                                        position: 'absolute',
+                                        minWidth: '160px',
+                                        backgroundColor: '#FFFFFF',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                        borderRadius: '8px',
+                                        padding: '6px 0',
+                                        zIndex: 50,
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenMediaMenuId(null);
+                                        }}
+                                        style={{
+                                          width: '100%',
+                                          padding: '6px 14px',
+                                          background: 'none',
+                                          border: 'none',
+                                          textAlign: 'left',
+                                          fontSize: '13px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        Responder
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleDownloadMedia(message);
+                                          setOpenMediaMenuId(null);
+                                        }}
+                                        style={{
+                                          width: '100%',
+                                          padding: '6px 14px',
+                                          background: 'none',
+                                          border: 'none',
+                                          textAlign: 'left',
+                                          fontSize: '13px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        Baixar
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             )}
                             {message.type === 'DOCUMENT' && (
@@ -1361,27 +2084,33 @@ export default function Conversations() {
                                 <span style={{ fontSize: '24px' }}>📄</span>
                                 <div style={{ flex: 1 }}>
                                   <div style={{ fontWeight: '600', fontSize: '14px' }}>
-                                    {message.metadata.fileName || 'Documento'}
+                                    {message.metadata?.fileName || 'Documento'}
                                   </div>
-                                  <a
-                                    href={`http://localhost:3007${message.metadata.mediaUrl}`}
-                                    download
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadMedia(message)}
                                     style={{
-                                      color: isOwnMessage ? 'white' : '#3b82f6',
+                                      marginTop: '4px',
+                                      padding: '4px 8px',
+                                      borderRadius: '999px',
+                                      border: 'none',
+                                      backgroundColor: isOwnMessage ? '#10b981' : '#e5e7eb',
+                                      color: isOwnMessage ? 'white' : '#111827',
                                       fontSize: '12px',
-                                      textDecoration: 'underline',
+                                      cursor: 'pointer',
                                     }}
                                   >
-                                    Baixar arquivo
-                                  </a>
+                                    Baixar
+                                  </button>
                                 </div>
                               </div>
                             )}
                           </div>
                         )}
                         
-                        {/* Exibir conteúdo/caption */}
-                        {message.content && (
+                        {/* Exibir texto apenas para mensagens de texto.
+                            Para mídias (imagem, vídeo, áudio, documento) não mostramos mais o "título"/arquivo abaixo. */}
+                        {message.content && message.type === 'TEXT' && (
                           <div
                             style={{
                               fontSize: '15px',

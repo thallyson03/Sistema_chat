@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { authenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
-import { convertWebmToOgg } from '../utils/audioConverter';
+import { convertWebmToOgg, convertOggToMp3 } from '../utils/audioConverter';
 
 const router = Router();
 
@@ -224,6 +224,77 @@ router.get('/file/:filename', (req: Request, res: Response) => {
 });
 
 // Rota para servir mídia descriptografada
+// Rota específica para download de áudio em MP3 (quando possível)
+router.get('/download/:messageId', async (req: Request, res: Response) => {
+  const { messageId } = req.params;
+
+  try {
+    const message = await prisma.message.findUnique({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      return res.status(404).json({ error: 'Mensagem não encontrada' });
+    }
+
+    if (message.type !== 'AUDIO') {
+      // Para não-áudio, delegar para rota padrão
+      return res.redirect(`/api/media/${messageId}`);
+    }
+
+    const metadata = message.metadata as any;
+    const mediaUrl = metadata?.mediaUrl as string | undefined;
+
+    if (!mediaUrl || !mediaUrl.startsWith('/api/media/file/')) {
+      // Se não for arquivo local, usar fluxo padrão
+      return res.redirect(`/api/media/${messageId}`);
+    }
+
+    const originalFilename = mediaUrl.replace('/api/media/file/', '');
+    if (!isSafeFilename(originalFilename)) {
+      return res.status(400).json({ error: 'Nome de arquivo inválido' });
+    }
+
+    const oggPath = path.resolve(uploadDir, originalFilename);
+    if (!fs.existsSync(oggPath)) {
+      console.error('[MediaDownload] ❌ Arquivo OGG original não encontrado para conversão MP3:', oggPath);
+      return res.status(404).json({ error: 'Arquivo de áudio não encontrado' });
+    }
+
+    const baseName = originalFilename.replace(/\.(ogg|webm|mp3)$/i, '');
+    const mp3Filename = `${baseName}.mp3`;
+    const mp3Path = path.resolve(uploadDir, mp3Filename);
+
+    try {
+      if (!fs.existsSync(mp3Path)) {
+        await convertOggToMp3(oggPath, mp3Path);
+      } else {
+        console.log('[MediaDownload] ℹ️ MP3 já existente, reutilizando:', mp3Filename);
+      }
+
+      const stats = fs.statSync(mp3Path);
+      res.status(200);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${mp3Filename}"`,
+      );
+      res.setHeader('Content-Length', stats.size.toString());
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      return res.sendFile(mp3Path);
+    } catch (error: any) {
+      console.error('[MediaDownload] ❌ Erro ao converter/servir MP3:', error.message);
+      return res.status(500).json({ error: 'Erro ao converter áudio para MP3' });
+    }
+  } catch (error: any) {
+    console.error('[MediaDownload] ❌ Erro geral no download MP3:', error.message);
+    return res.status(500).json({ error: 'Erro ao processar download de áudio' });
+  }
+});
+
+// Rota para servir mídia descriptografada
 router.get('/:messageId', async (req: Request, res: Response) => {
   const { messageId } = req.params;
 
@@ -408,13 +479,19 @@ router.get('/:messageId', async (req: Request, res: Response) => {
 
         let downloadUrl = mediaUrl;
 
-        // Se o mediaUrl não começa com http, provavelmente é apenas o mediaId antigo salvo no banco.
-        // Precisamos primeiro buscar a URL real no Graph API: GET /{media-id}
-        if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
-          const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0';
-          const mediaId = downloadUrl;
+        // Sempre que possível, usar o mediaId salvo no metadata para buscar
+        // uma URL fresca via Graph API (mais confiável do que reutilizar o link antigo).
+        const mediaIdFromMetadata =
+          (metadata as any)?.mediaId ||
+          (mediaMetadata as any)?.mediaId ||
+          undefined;
 
-          console.log('[Media] 🔍 mediaUrl não é uma URL, tratando como mediaId:', mediaId);
+        const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0';
+
+        if (mediaIdFromMetadata) {
+          const mediaId = mediaIdFromMetadata as string;
+
+          console.log('[Media] 🔍 Usando mediaId do metadata para buscar URL no Graph API:', mediaId);
           console.log(
             '[Media] 🔍 Buscando metadados da mídia no Graph API:',
             `https://graph.facebook.com/${apiVersion}/${mediaId}`,
@@ -437,7 +514,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
               console.log('[Media] ✅ URL da mídia obtida do Graph API:', downloadUrl.substring(0, 120));
             } else {
               console.warn(
-                '[Media] ⚠️ Resposta do Graph API não contém campo url. Usando mediaId diretamente (pode falhar).',
+                '[Media] ⚠️ Resposta do Graph API não contém campo url. Usando URL original do metadata (pode falhar).',
                 JSON.stringify(metaResp.data || {}, null, 2).substring(0, 300),
               );
             }
@@ -455,6 +532,52 @@ router.get('/:messageId', async (req: Request, res: Response) => {
               );
             }
             // Continua tentando usar o mediaUrl original; pode funcionar em alguns casos
+          }
+        } else if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
+          // Caso legado: mediaUrl antigo contendo apenas o mediaId
+          const mediaId = downloadUrl;
+
+          console.log('[Media] 🔍 mediaUrl não é uma URL, tratando como mediaId (legado):', mediaId);
+          console.log(
+            '[Media] 🔍 Buscando metadados da mídia no Graph API (legado):',
+            `https://graph.facebook.com/${apiVersion}/${mediaId}`,
+          );
+
+          try {
+            const metaResp = await axios.get(
+              `https://graph.facebook.com/${apiVersion}/${mediaId}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${appToken}`,
+                },
+                timeout: 15000,
+              },
+            );
+
+            const graphUrl = metaResp.data?.url;
+            if (graphUrl && typeof graphUrl === 'string') {
+              downloadUrl = graphUrl;
+              console.log('[Media] ✅ URL da mídia obtida do Graph API (legado):', downloadUrl.substring(0, 120));
+            } else {
+              console.warn(
+                '[Media] ⚠️ Resposta do Graph API (legado) não contém campo url. Usando mediaId diretamente (pode falhar).',
+                JSON.stringify(metaResp.data || {}, null, 2).substring(0, 300),
+              );
+            }
+          } catch (graphError: any) {
+            console.error(
+              '[Media] ❌ Erro ao buscar URL da mídia no Graph API (legado):',
+              graphError.message,
+            );
+            if (graphError.response) {
+              console.error(
+                '[Media] Graph status (legado):',
+                graphError.response.status,
+                'data:',
+                JSON.stringify(graphError.response.data || {}, null, 2).substring(0, 300),
+              );
+            }
+            // Continua tentando usar o valor original; pode funcionar em alguns casos
           }
         }
 
@@ -488,6 +611,66 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           status: response.status,
         });
 
+        // ============================================
+        // Cache local da mídia para não expirar
+        // ============================================
+        try {
+          // Mapear extensão a partir do contentType
+          let ext = '.bin';
+          if (contentType.startsWith('image/jpeg')) ext = '.jpg';
+          else if (contentType.startsWith('image/png')) ext = '.png';
+          else if (contentType.startsWith('image/gif')) ext = '.gif';
+          else if (contentType.startsWith('image/webp')) ext = '.webp';
+          else if (contentType.startsWith('video/mp4')) ext = '.mp4';
+          else if (contentType.startsWith('video/')) ext = '.mp4';
+          else if (contentType.startsWith('audio/ogg')) ext = '.ogg';
+          else if (contentType.startsWith('audio/mpeg')) ext = '.mp3';
+          else if (contentType.startsWith('audio/')) ext = '.ogg';
+
+          const safeExt = ext.startsWith('.') ? ext : `.${ext}`;
+          const filename = `${messageId}-${Date.now()}${safeExt}`;
+          const filePath = path.join(uploadDir, filename);
+
+          fs.writeFileSync(filePath, buffer);
+
+          console.log('[Media] 💾 Mídia oficial salva em cache local:', {
+            filename,
+            filePath,
+            size: buffer.length,
+            contentType,
+          });
+
+          // Atualizar metadata da mensagem para apontar para o arquivo local
+          const newMetadata: any = {
+            ...(metadata || {}),
+            mediaUrl: `/api/media/file/${filename}`,
+            mediaMetadata: {
+              ...(mediaMetadata || {}),
+              originalUrl: mediaUrl,
+              contentType,
+            },
+          };
+
+          try {
+            await prisma.message.update({
+              where: { id: messageId },
+              data: {
+                metadata: newMetadata,
+              },
+            });
+
+            console.log('[Media] ✅ Metadata da mensagem atualizada para usar arquivo local:', {
+              messageId,
+              mediaUrl: newMetadata.mediaUrl,
+            });
+          } catch (updateError: any) {
+            console.error('[Media] ❌ Erro ao atualizar metadata da mensagem com arquivo local:', updateError.message);
+          }
+        } catch (cacheError: any) {
+          console.error('[Media] ❌ Erro ao salvar mídia oficial em cache local:', cacheError.message);
+        }
+
+        // Retornar a mídia baixada (mesmo que o cache falhe, o usuário recebe a imagem)
         res.status(200);
         res.contentType(contentType);
         res.setHeader('Cache-Control', 'public, max-age=31536000');
