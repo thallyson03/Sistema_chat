@@ -1172,7 +1172,8 @@ export default function Conversations() {
                     </span>
                   </div>
                   <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
-                    {selectedConversation.channel.name} • {selectedConversation.contact.phone || 'Sem telefone'}
+                    {selectedConversation.channel.name} •{' '}
+                    {selectedConversation.contact.name || selectedConversation.contact.phone || 'Sem telefone'}
                   </p>
                 </div>
               </div>
@@ -1491,24 +1492,6 @@ export default function Conversations() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          setOpenMediaMenuId(null);
-                                          // Futuro: ação de responder
-                                        }}
-                                        style={{
-                                          width: '100%',
-                                          padding: '6px 14px',
-                                          background: 'none',
-                                          border: 'none',
-                                          textAlign: 'left',
-                                          fontSize: '13px',
-                                          cursor: 'pointer',
-                                        }}
-                                      >
-                                        Responder
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
                                           handleDownloadMedia(message);
                                           setOpenMediaMenuId(null);
                                         }}
@@ -1775,23 +1758,6 @@ export default function Conversations() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          setOpenMediaMenuId(null);
-                                        }}
-                                        style={{
-                                          width: '100%',
-                                          padding: '6px 14px',
-                                          background: 'none',
-                                          border: 'none',
-                                          textAlign: 'left',
-                                          fontSize: '13px',
-                                          cursor: 'pointer',
-                                        }}
-                                      >
-                                        Responder
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
                                           handleDownloadMedia(message);
                                           setOpenMediaMenuId(null);
                                         }}
@@ -2030,23 +1996,6 @@ export default function Conversations() {
                                         zIndex: 50,
                                       }}
                                     >
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setOpenMediaMenuId(null);
-                                        }}
-                                        style={{
-                                          width: '100%',
-                                          padding: '6px 14px',
-                                          background: 'none',
-                                          border: 'none',
-                                          textAlign: 'left',
-                                          fontSize: '13px',
-                                          cursor: 'pointer',
-                                        }}
-                                      >
-                                        Responder
-                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => {

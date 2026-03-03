@@ -195,6 +195,26 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
     const messageType = message.type;
     const timestamp = new Date(parseInt(message.timestamp) * 1000);
 
+    // Tentar obter o nome de perfil enviado pelo WhatsApp Official
+    // Estrutura padrão: entry[0].changes[0].value.contacts[0].profile.name
+    let profileName: string | null = null;
+    try {
+      const contacts = Array.isArray((value as any)?.contacts)
+        ? (value as any).contacts
+        : [];
+      if (contacts.length > 0) {
+        const firstContact = contacts[0] || {};
+        profileName =
+          (firstContact.profile && firstContact.profile.name) ||
+          (typeof firstContact.wa_id === 'string' ? firstContact.wa_id : null);
+      }
+    } catch (profileError) {
+      console.warn(
+        '[WhatsAppOfficial] ⚠️ Não foi possível extrair profile.name do payload:',
+        (profileError as any)?.message,
+      );
+    }
+
     // Buscar ou criar contato
     let contact = await prisma.contact.findFirst({
       where: {
@@ -246,7 +266,8 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       // Criar contato
       contact = await prisma.contact.create({
         data: {
-          name: phoneNumber, // Nome padrão, pode ser atualizado depois
+          // Usar profile.name se disponível, senão fallback para número
+          name: profileName || phoneNumber,
           phone: phoneNumber,
           channelId: whatsappChannel.id,
           channelIdentifier: phoneNumber, // Usar phone como identifier
@@ -255,6 +276,25 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
           channel: true,
         },
       });
+    } else if (profileName && profileName.trim().length > 0 && contact.name !== profileName) {
+      // Se o contato já existe e temos um profile.name mais "bonito",
+      // atualizar o nome salvo (sem alterar telefone/canal).
+      try {
+        contact = await prisma.contact.update({
+          where: { id: contact.id },
+          data: { name: profileName },
+          include: { channel: true },
+        });
+        console.log('[WhatsAppOfficial] ✅ Nome do contato atualizado a partir do profile.name:', {
+          contactId: contact.id,
+          name: contact.name,
+        });
+      } catch (updateError: any) {
+        console.warn(
+          '[WhatsAppOfficial] ⚠️ Falha ao atualizar nome do contato com profile.name:',
+          updateError.message,
+        );
+      }
     }
 
     // Verificar se contact foi criado/encontrado
