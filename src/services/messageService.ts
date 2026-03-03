@@ -5,6 +5,7 @@ import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
 import { WhatsAppOfficialService } from './whatsappOfficialService';
 import fs from 'fs';
 import path from 'path';
+import { convertOggToMp3 } from '../utils/audioConverter';
 
 export interface SendMessageData {
   conversationId: string;
@@ -156,13 +157,102 @@ export class MessageService {
             );
           }
 
-          result = await whatsappService.sendMediaMessage({
-            to: formattedPhone,
-            mediaUrl: fullMediaUrl,
-            type: mediaType,
-            caption: data.caption || data.content,
-            filename: data.fileName,
-          });
+          // Para áudio, fazer upload primeiro para obter media_id (recomendado pela API oficial)
+          // A API oficial do WhatsApp funciona melhor com media_id para áudio.
+          // Aqui vamos converter o OGG local para MP3 e subir o MP3 diretamente do disco,
+          // para maximizar compatibilidade com clientes mobile.
+          if (mediaType === 'audio') {
+            console.log('[MessageService] 🎵 Áudio detectado, preparando MP3 para WhatsApp Official...');
+            try {
+              // Extrair nome do arquivo a partir da URL local gerada pelo backend.
+              let audioFilename: string | undefined;
+
+              if (data.mediaUrl && data.mediaUrl.includes('/api/media/file/')) {
+                const parts = data.mediaUrl.split('/api/media/file/');
+                if (parts.length > 1) {
+                  audioFilename = parts[1].split('?')[0];
+                }
+              }
+
+              if (!audioFilename) {
+                console.warn('[MessageService] ⚠️ Não foi possível determinar o nome do arquivo OGG a partir de mediaUrl:', {
+                  mediaUrl: data.mediaUrl,
+                });
+              }
+
+              if (audioFilename) {
+                const uploadsDir = path.join(__dirname, '../../uploads');
+                const oggPath = path.join(uploadsDir, audioFilename);
+
+                if (!fs.existsSync(oggPath)) {
+                  console.warn('[MessageService] ⚠️ Arquivo OGG local não encontrado para conversão em MP3:', {
+                    oggPath,
+                  });
+                } else {
+                  const mp3Filename = audioFilename.replace(/\.ogg$/i, '.mp3');
+                  const mp3Path = path.join(uploadsDir, mp3Filename);
+
+                  // Converter apenas se ainda não existir (evita reconversões desnecessárias)
+                  if (!fs.existsSync(mp3Path)) {
+                    await convertOggToMp3(oggPath, mp3Path);
+                  } else {
+                    console.log('[MessageService] ℹ️ MP3 já existe, reutilizando:', {
+                      mp3Path,
+                    });
+                  }
+
+                  const uploadResult = await whatsappService.uploadMedia(mp3Path, 'audio', mp3Filename);
+                  console.log('[MessageService] ✅ Upload de áudio (MP3) concluído, media_id:', uploadResult.mediaId);
+                  
+                  // Usar media_id no envio
+                  result = await whatsappService.sendMediaMessage({
+                    to: formattedPhone,
+                    mediaId: uploadResult.mediaId,
+                    type: mediaType,
+                    caption: data.caption || data.content,
+                    filename: mp3Filename,
+                  });
+                }
+              }
+
+              // Se por algum motivo não conseguimos converter/enviar via MP3,
+              // caímos no fallback abaixo usando a URL pública (OGG).
+              if (!result) {
+                console.warn('[MessageService] ⚠️ Fallback: enviando áudio via URL pública (OGG) para WhatsApp Official');
+                result = await whatsappService.sendMediaMessage({
+                  to: formattedPhone,
+                  mediaUrl: fullMediaUrl,
+                  type: mediaType,
+                  caption: data.caption || data.content,
+                  filename: data.fileName,
+                });
+              }
+            } catch (uploadError: any) {
+              console.error('[MessageService] ❌ Erro no fluxo de upload de áudio MP3, tentando com URL direta:', {
+                error: uploadError.message,
+                status: uploadError.response?.status,
+                data: uploadError.response?.data,
+              });
+              
+              // Fallback: tentar com URL direta se upload falhar
+              result = await whatsappService.sendMediaMessage({
+                to: formattedPhone,
+                mediaUrl: fullMediaUrl,
+                type: mediaType,
+                caption: data.caption || data.content,
+                filename: data.fileName,
+              });
+            }
+          } else {
+            // Para outros tipos de mídia (imagem, vídeo, documento), usar URL direta
+            result = await whatsappService.sendMediaMessage({
+              to: formattedPhone,
+              mediaUrl: fullMediaUrl,
+              type: mediaType,
+              caption: data.caption || data.content,
+              filename: data.fileName,
+            });
+          }
         } else {
           // Enviar texto
           result = await whatsappService.sendTextMessage({

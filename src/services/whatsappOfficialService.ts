@@ -1,4 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
+import FormData from 'form-data';
+import fs from 'fs';
 
 interface WhatsAppConfig {
   token: string;
@@ -33,11 +35,13 @@ export class WhatsAppOfficialService {
   private phoneNumberId: string;
   private businessAccountId: string;
   private apiVersion: string;
+  private token: string;
 
   constructor(config: WhatsAppConfig) {
     this.phoneNumberId = config.phoneNumberId;
     this.businessAccountId = config.businessAccountId;
     this.apiVersion = config.apiVersion || 'v21.0';
+    this.token = config.token;
     
     this.client = axios.create({
       baseURL: `https://graph.facebook.com/${this.apiVersion}`,
@@ -230,45 +234,78 @@ export class WhatsAppOfficialService {
 
   /**
    * Faz upload de mídia para obter media_id
-   * Nota: Para usar este método, você precisa fazer upload do arquivo primeiro
-   * e depois usar o media_id retornado. Por enquanto, usamos URLs diretas.
+   * IMPORTANTE: Para áudio, é recomendado fazer upload primeiro para garantir formato correto
    */
-  async uploadMedia(fileUrl: string, type: 'image' | 'audio' | 'video' | 'document') {
+  async uploadMedia(fileUrl: string, type: 'image' | 'audio' | 'video' | 'document', filename?: string) {
     try {
       console.log('[WhatsAppOfficial] 📤 Fazendo upload de mídia:', {
         fileUrl,
         type,
+        filename,
       });
 
-      // Para Node.js, precisamos usar form-data ou fazer upload direto
-      // Por enquanto, vamos usar a URL direta (mais simples)
-      // Se precisar fazer upload real, use a biblioteca 'form-data'
-      
-      // Primeiro, baixar o arquivo
-      const fileResponse = await axios.get(fileUrl, {
-        responseType: 'stream',
-      });
+      const isHttpUrl = fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
+
+      // Extrair nome do arquivo da URL se não fornecido
+      let finalFilename = filename;
+      if (!finalFilename) {
+        try {
+          const urlPath = new URL(fileUrl).pathname;
+          finalFilename = urlPath.split('/').pop() || `file.${type === 'audio' ? 'ogg' : type === 'image' ? 'jpg' : type === 'video' ? 'mp4' : 'pdf'}`;
+        } catch {
+          finalFilename = `file.${type === 'audio' ? 'ogg' : type === 'image' ? 'jpg' : type === 'video' ? 'mp4' : 'pdf'}`;
+        }
+      }
 
       // Usar form-data para Node.js
-      const FormData = require('form-data');
       const formData = new FormData();
       
-      formData.append('file', fileResponse.data);
+      // Adicionar arquivo com nome correto
+      if (isHttpUrl) {
+        // Baixar via HTTP (caso imagem/vídeo/documento use URL pública)
+        const fileResponse = await axios.get(fileUrl, {
+          responseType: 'stream',
+        });
+
+        formData.append('file', fileResponse.data, {
+          filename: finalFilename,
+          contentType: this.getContentType(type, finalFilename),
+        });
+      } else {
+        // Tratar como caminho local no sistema de arquivos
+        if (!fs.existsSync(fileUrl)) {
+          throw new Error(`Arquivo local para upload não encontrado: ${fileUrl}`);
+        }
+
+        const fileStream = fs.createReadStream(fileUrl);
+        formData.append('file', fileStream, {
+          filename: finalFilename,
+          contentType: this.getContentType(type, finalFilename),
+        });
+      }
       formData.append('messaging_product', 'whatsapp');
       formData.append('type', type);
+
+      console.log('[WhatsAppOfficial] 📋 Dados do upload:', {
+        filename: finalFilename,
+        contentType: this.getContentType(type, finalFilename),
+        type,
+      });
 
       const response = await axios.post(
         `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/media`,
         formData,
         {
           headers: {
-            'Authorization': `Bearer ${this.client.defaults.headers['Authorization']}`,
+            'Authorization': `Bearer ${this.token}`,
             ...formData.getHeaders(),
           },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
         }
       );
 
-      console.log('[WhatsAppOfficial] ✅ Mídia enviada:', {
+      console.log('[WhatsAppOfficial] ✅ Upload concluído:', {
         mediaId: response.data.id,
       });
 
@@ -280,6 +317,7 @@ export class WhatsAppOfficialService {
       console.error('[WhatsAppOfficial] ❌ Erro ao fazer upload de mídia:', {
         fileUrl,
         type,
+        filename,
         error: error.message,
         status: error.response?.status,
         data: error.response?.data,
@@ -290,6 +328,40 @@ export class WhatsAppOfficialService {
         'Erro ao fazer upload de mídia'
       );
     }
+  }
+
+  /**
+   * Retorna o Content-Type apropriado baseado no tipo e nome do arquivo
+   */
+  private getContentType(type: 'image' | 'audio' | 'video' | 'document', filename: string): string {
+    const ext = filename.toLowerCase().split('.').pop();
+    
+    if (type === 'audio') {
+      if (ext === 'ogg' || ext === 'oga') return 'audio/ogg';
+      if (ext === 'mp3' || ext === 'mpeg') return 'audio/mpeg';
+      if (ext === 'wav') return 'audio/wav';
+      // A Cloud API oficial não documenta suporte a audio/webm, apenas ogg/mpeg/aac/amr.
+      // Muitos navegadores gravam em WEBM/Opus, mas nós já convertemos para OGG no backend.
+      // Portanto, mesmo que a extensão ainda seja .webm, vamos anunciar como audio/ogg.
+      if (ext === 'webm') return 'audio/ogg';
+      return 'audio/ogg'; // Padrão para áudio
+    }
+    
+    if (type === 'image') {
+      if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+      if (ext === 'png') return 'image/png';
+      if (ext === 'gif') return 'image/gif';
+      if (ext === 'webp') return 'image/webp';
+      return 'image/jpeg';
+    }
+    
+    if (type === 'video') {
+      if (ext === 'mp4') return 'video/mp4';
+      if (ext === 'webm') return 'video/webm';
+      return 'video/mp4';
+    }
+    
+    return 'application/octet-stream';
   }
 
   /**

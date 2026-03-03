@@ -97,3 +97,71 @@ export async function convertWebmToOgg(inputPath: string, outputPath: string): P
   });
 }
 
+/**
+ * Converte um áudio OGG (Opus) para MP3 (audio/mpeg).
+ * Essa conversão é pensada para compatibilidade máxima com clientes mobile
+ * quando usamos a API oficial do WhatsApp.
+ */
+export async function convertOggToMp3(inputPath: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log('[AudioConverter] 🔄 Convertendo OGG para MP3...', {
+        input: inputPath,
+        output: outputPath,
+      });
+
+      if (!fs.existsSync(inputPath)) {
+        return reject(new Error(`Arquivo de entrada não encontrado: ${inputPath}`));
+      }
+
+      const inputSize = fs.statSync(inputPath).size;
+
+      ffmpeg(inputPath)
+        .audioCodec('libmp3lame')
+        .audioBitrate('64k')
+        .audioChannels(1) // mono é suficiente para voz
+        .audioFrequency(44100)
+        .format('mp3')
+        .outputOptions([
+          '-map_metadata', '-1', // remover metadados
+        ])
+        .output(outputPath)
+        .on('start', (commandLine) => {
+          console.log('[AudioConverter] Comando FFmpeg (OGG->MP3):', commandLine);
+        })
+        .on('progress', (progress) => {
+          if (progress.percent) {
+            console.log('[AudioConverter] Progresso OGG->MP3:', Math.round(progress.percent) + '%');
+          }
+        })
+        .on('end', () => {
+          if (!fs.existsSync(outputPath)) {
+            return reject(new Error('Arquivo MP3 não foi criado'));
+          }
+          const outputSize = fs.statSync(outputPath).size;
+          if (outputSize === 0) {
+            return reject(new Error('Arquivo MP3 convertido está vazio'));
+          }
+
+          console.log('[AudioConverter] ✅ Conversão OGG->MP3 concluída:', {
+            inputSize,
+            outputSize,
+            reduction: ((1 - outputSize / inputSize) * 100).toFixed(1) + '%',
+            outputPath,
+          });
+
+          resolve();
+        })
+        .on('error', (error: Error) => {
+          console.error('[AudioConverter] ❌ Erro ao converter OGG para MP3:', error.message);
+          reject(new Error(`Erro ao converter OGG para MP3: ${error.message}`));
+        })
+        .run();
+    } catch (error: any) {
+      console.error('[AudioConverter] ❌ Erro ao iniciar conversão OGG->MP3:', error.message);
+      reject(new Error(`Erro ao converter OGG para MP3: ${error.message}`));
+    }
+  });
+}
+
+
