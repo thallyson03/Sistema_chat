@@ -484,6 +484,40 @@ export default function Conversations() {
   };
 
   const handleQuickReplySelect = (quickReply: any) => {
+    // Se for um template WhatsApp, disparar envio via endpoint específico
+    if (
+      quickReply.isTemplate &&
+      quickReply.templateName &&
+      selectedConversation &&
+      selectedConversation.channel.type === 'WHATSAPP'
+    ) {
+      const language = quickReply.templateLanguage || 'pt_BR';
+
+      api
+        .post('/api/whatsapp/templates/send', {
+          conversationId: selectedConversation.id,
+          templateName: quickReply.templateName,
+          language,
+        })
+        .then(() => {
+          // Mostrar o corpo do template no input apenas como visualização
+          setMessageInput(quickReply.previewContent || quickReply.content);
+          setShowQuickReplies(false);
+          if (selectedConversation) {
+            fetchMessages(selectedConversation.id);
+            fetchConversations();
+          }
+        })
+        .catch((error) => {
+          console.error('Erro ao enviar template WhatsApp:', error);
+          alert(
+            error.response?.data?.error ||
+              'Erro ao enviar template WhatsApp. Verifique se o template está aprovado e o canal está correto.',
+          );
+        });
+      return;
+    }
+
     // Se tiver mídia, enviar como mídia
     if (quickReply.mediaUrl && quickReply.type !== 'TEXT') {
       const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
@@ -695,6 +729,10 @@ export default function Conversations() {
 
             const { url, mimetype } = uploadResponse.data;
             
+            if (!selectedConversation) {
+              throw new Error('Nenhuma conversa selecionada para envio de áudio');
+            }
+
             // Enviar mensagem de áudio (incluindo mimetype)
             await api.post('/api/messages', {
               conversationId: selectedConversation.id,
@@ -1300,10 +1338,12 @@ export default function Conversations() {
                     },
                   }}
                 >
-                  {messages.map((message, index) => {
+                  {messages.map((message) => {
                     const isOwnMessage = message.userId !== null;
-                    const contactName = selectedConversation.contact.name;
-                    const contactAvatar = getContactAvatar(selectedConversation.contact);
+                    const contactName = selectedConversation?.contact.name || '';
+                    const contactAvatar = selectedConversation
+                      ? getContactAvatar(selectedConversation.contact)
+                      : getAvatarUrl('Contato', 40);
                     
                     return (
                       <motion.div
@@ -1318,17 +1358,12 @@ export default function Conversations() {
                           stiffness: 200
                         }}
                         className="flex items-end gap-2 mb-1"
-                      style={{
-                        justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
-                      }}
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ 
-                        duration: 0.2,
-                        type: "spring",
-                        stiffness: 200
-                      }}
-                    >
+                        style={{
+                          justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
+                        }}
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                      >
                       {/* Avatar do cliente (só aparece em mensagens do cliente) */}
                       {!isOwnMessage && (
                         <div
@@ -2269,6 +2304,7 @@ export default function Conversations() {
         onSelect={handleQuickReplySelect}
         contactId={selectedConversation?.contact.id}
         conversationId={selectedConversation?.id}
+        channelId={selectedConversation?.channelId}
       />
 
       {/* Modal de Transferência */}

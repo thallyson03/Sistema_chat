@@ -30,6 +30,13 @@ interface SendMediaMessageParams {
   filename?: string;
 }
 
+interface CreateTemplateParams {
+  name: string;
+  category: string;
+  language: string;
+  body: string;
+}
+
 export class WhatsAppOfficialService {
   private client: AxiosInstance;
   private phoneNumberId: string;
@@ -228,6 +235,133 @@ export class WhatsAppOfficialService {
         error.response?.data?.error?.message ||
         error.message ||
         'Erro ao enviar mídia via WhatsApp Official'
+      );
+    }
+  }
+
+  /**
+   * Lista templates de mensagem cadastrados na WABA
+   */
+  async listTemplates(limit: number = 100, after?: string) {
+    try {
+      const params: any = { limit };
+      if (after) {
+        params.after = after;
+      }
+
+      console.log('[WhatsAppOfficial] 📋 Listando templates de mensagem...', {
+        businessAccountId: this.businessAccountId,
+        limit,
+        after,
+      });
+
+      const response = await this.client.get(
+        `/${this.businessAccountId}/message_templates`,
+        { params },
+      );
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[WhatsAppOfficial] ❌ Erro ao listar templates:', {
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(
+        error.response?.data?.error?.message ||
+          error.message ||
+          'Erro ao listar templates de mensagem'
+      );
+    }
+  }
+
+  /**
+   * Cria um template simples (apenas BODY) na WABA
+   * A aprovação ainda depende da análise da Meta.
+   */
+  async createTemplate(params: CreateTemplateParams) {
+    try {
+      console.log('[WhatsAppOfficial] 📤 Criando template de mensagem...', {
+        name: params.name,
+        category: params.category,
+        language: params.language,
+      });
+
+      const payload: any = {
+        name: params.name,
+        category: params.category,
+        language: params.language,
+        components: [
+          {
+            type: 'BODY',
+            text: params.body,
+          },
+        ],
+      };
+
+      const response = await this.client.post(
+        `/${this.businessAccountId}/message_templates`,
+        payload,
+      );
+
+      console.log('[WhatsAppOfficial] ✅ Template criado (aguardando aprovação da Meta):', {
+        id: response.data?.id,
+        status: response.data?.status,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[WhatsAppOfficial] ❌ Erro ao criar template:', {
+        name: params.name,
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(
+        error.response?.data?.error?.message ||
+          error.message ||
+          'Erro ao criar template de mensagem'
+      );
+    }
+  }
+
+  /**
+   * Remove um template de mensagem (por nome + idioma)
+   */
+  async deleteTemplate(name: string, language: string) {
+    try {
+      console.log('[WhatsAppOfficial] 🗑️ Removendo template de mensagem...', {
+        name,
+        language,
+      });
+
+      const response = await this.client.delete(
+        `/${this.businessAccountId}/message_templates`,
+        {
+          params: {
+            name,
+            language,
+          },
+        },
+      );
+
+      console.log('[WhatsAppOfficial] ✅ Template removido:', {
+        success: response.data?.success,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[WhatsAppOfficial] ❌ Erro ao remover template:', {
+        name,
+        language,
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(
+        error.response?.data?.error?.message ||
+          error.message ||
+          'Erro ao remover template de mensagem'
       );
     }
   }

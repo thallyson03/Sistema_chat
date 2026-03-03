@@ -18,6 +18,7 @@ import ContactImport from './pages/ContactImport';
 import Campaigns from './pages/Campaigns';
 import Journeys from './pages/Journeys';
 import ContactLists from './pages/ContactLists';
+import Templates from './pages/Templates';
 import Layout from './components/Layout';
 
 // Componente para proteger rotas
@@ -68,6 +69,7 @@ function App() {
           <Route path="campaigns" element={<Campaigns />} />
           <Route path="journeys" element={<Journeys />} />
           <Route path="contact-lists" element={<ContactLists />} />
+          <Route path="templates" element={<Templates />} />
           <Route path="bots" element={<Bots />} />
           <Route path="bots/:botId/flows" element={<BotFlowBuilder />} />
           <Route path="bots/:botId/flows/visual" element={<BotFlowBuilderVisual />} />

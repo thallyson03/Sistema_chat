@@ -11,6 +11,18 @@ interface QuickReply {
   category?: string;
   isGlobal: boolean;
   previewContent?: string;
+  isTemplate?: boolean;
+  templateName?: string;
+  templateLanguage?: string;
+}
+
+interface WhatsappTemplate {
+  id?: string;
+  name: string;
+  language: string;
+  category: string;
+  status?: string;
+  body?: string;
 }
 
 interface QuickRepliesModalProps {
@@ -19,6 +31,7 @@ interface QuickRepliesModalProps {
   onSelect: (quickReply: QuickReply) => void;
   contactId?: string;
   conversationId?: string;
+  channelId?: string;
 }
 
 export default function QuickRepliesModal({
@@ -27,19 +40,27 @@ export default function QuickRepliesModal({
   onSelect,
   contactId,
   conversationId,
+  channelId,
 }: QuickRepliesModalProps) {
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState<WhatsappTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       fetchQuickReplies();
       fetchCategories();
+      if (channelId) {
+        fetchTemplates(channelId);
+      } else {
+        setTemplates([]);
+      }
     }
-  }, [isOpen, selectedCategory]);
+  }, [isOpen, selectedCategory, channelId]);
 
   const fetchQuickReplies = async () => {
     try {
@@ -55,6 +76,39 @@ export default function QuickRepliesModal({
       console.error('Erro ao carregar respostas rápidas:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTemplates = async (channelIdValue: string) => {
+    try {
+      setLoadingTemplates(true);
+      const response = await api.get('/api/whatsapp/templates', {
+        params: {
+          limit: 100,
+          channelId: channelIdValue,
+        },
+      });
+
+      const items = response.data?.data || [];
+      const mapped: WhatsappTemplate[] = items.map((item: any) => {
+        const bodyComponent =
+          (item.components || []).find((c: any) => c.type === 'BODY') || null;
+        return {
+          id: item.id,
+          name: item.name,
+          language: item.language,
+          category: item.category,
+          status: item.status,
+          body: bodyComponent?.text || '',
+        };
+      });
+
+      setTemplates(mapped);
+    } catch (error) {
+      console.error('Erro ao carregar templates WhatsApp:', error);
+      setTemplates([]);
+    } finally {
+      setLoadingTemplates(false);
     }
   };
 
@@ -84,6 +138,25 @@ export default function QuickRepliesModal({
     } else {
       onSelect(quickReply);
     }
+    onClose();
+  };
+
+  const handleSelectTemplate = (tpl: WhatsappTemplate) => {
+    const syntheticQuickReply: QuickReply = {
+      id: tpl.id || tpl.name,
+      name: tpl.name,
+      content: tpl.body || '',
+      type: 'TEXT',
+      mediaUrl: undefined,
+      category: tpl.category,
+      isGlobal: true,
+      previewContent: tpl.body || '',
+      isTemplate: true,
+      templateName: tpl.name,
+      templateLanguage: tpl.language,
+    };
+
+    onSelect(syntheticQuickReply);
     onClose();
   };
 
@@ -317,6 +390,131 @@ export default function QuickRepliesModal({
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Templates WhatsApp Official (quando canalId for fornecido) */}
+          {channelId && (
+            <div style={{ marginTop: '16px', borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
+              <h3
+                style={{
+                  margin: '0 0 8px 0',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: '#111827',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                Templates WhatsApp
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    color: '#6b7280',
+                  }}
+                >
+                  (usados para iniciar conversa fora da janela de 24h)
+                </span>
+              </h3>
+
+              {loadingTemplates ? (
+                <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280', fontSize: '13px' }}>
+                  Carregando templates...
+                </div>
+              ) : templates.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '10px', color: '#9ca3af', fontSize: '12px' }}>
+                  Nenhum template encontrado para este canal.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {templates.map((tpl) => (
+                    <div
+                      key={tpl.id || `${tpl.name}-${tpl.language}`}
+                      onClick={() => handleSelectTemplate(tpl)}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb',
+                        cursor: 'pointer',
+                        backgroundColor: '#f9fafb',
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#eff6ff';
+                        e.currentTarget.style.borderColor = '#3b82f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f9fafb';
+                        e.currentTarget.style.borderColor = '#e5e7eb';
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '4px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 600, fontSize: '14px' }}>{tpl.name}</span>
+                          <span
+                            style={{
+                              padding: '2px 6px',
+                              borderRadius: '999px',
+                              backgroundColor: '#e5e7eb',
+                              fontSize: '11px',
+                            }}
+                          >
+                            {tpl.language}
+                          </span>
+                        </div>
+                        {tpl.status && (
+                          <span
+                            style={{
+                              padding: '2px 6px',
+                              borderRadius: '999px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              backgroundColor:
+                                tpl.status === 'APPROVED'
+                                  ? '#dcfce7'
+                                  : tpl.status === 'REJECTED'
+                                  ? '#fee2e2'
+                                  : '#fef9c3',
+                              color:
+                                tpl.status === 'APPROVED'
+                                  ? '#166534'
+                                  : tpl.status === 'REJECTED'
+                                  ? '#b91c1c'
+                                  : '#854d0e',
+                            }}
+                          >
+                            {tpl.status}
+                          </span>
+                        )}
+                      </div>
+                      {tpl.body && (
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: '12px',
+                            color: '#4b5563',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                          title={tpl.body}
+                        >
+                          {tpl.body}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
