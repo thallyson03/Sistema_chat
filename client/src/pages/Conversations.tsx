@@ -100,6 +100,7 @@ interface Message {
     mediaUrl?: string;
     fileName?: string;
     caption?: string;
+    fromBot?: boolean;
   };
 }
 
@@ -114,6 +115,9 @@ export default function Conversations() {
   const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [messageInput, setMessageInput] = useState('');
+  const [pendingTemplate, setPendingTemplate] = useState<{ name: string; language: string } | null>(
+    null,
+  );
   const [sending, setSending] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
@@ -450,9 +454,50 @@ export default function Conversations() {
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent, mediaUrl?: string, messageType?: string, fileName?: string, caption?: string) => {
+  const handleSendMessage = async (
+    e: React.FormEvent,
+    mediaUrl?: string,
+    messageType?: string,
+    fileName?: string,
+    caption?: string,
+  ) => {
     e.preventDefault();
-    if ((!messageInput.trim() && !mediaUrl) || !selectedConversation || sending) return;
+    if (!selectedConversation || sending) return;
+
+    // Se há um template pendente e não estamos enviando mídia, envia como template
+    if (
+      pendingTemplate &&
+      !mediaUrl &&
+      selectedConversation.channel.type === 'WHATSAPP'
+    ) {
+      try {
+        setSending(true);
+        await api.post('/api/whatsapp/templates/send', {
+          conversationId: selectedConversation.id,
+          templateName: pendingTemplate.name,
+          language: pendingTemplate.language,
+          body: messageInput.trim(),
+        });
+
+        setPendingTemplate(null);
+        setMessageInput('');
+        setShowEmojiPicker(false);
+        await fetchMessages(selectedConversation.id);
+        await fetchConversations();
+      } catch (error: any) {
+        console.error('Erro ao enviar template WhatsApp:', error);
+        alert(
+          error.response?.data?.error ||
+            'Erro ao enviar template WhatsApp. Verifique se o template está aprovado e o canal está correto.',
+        );
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // Fluxo normal de mensagem de texto/mídia
+    if (!messageInput.trim() && !mediaUrl) return;
 
     setSending(true);
     try {
@@ -465,6 +510,7 @@ export default function Conversations() {
         caption: messageInput.trim() || caption,
       });
 
+      setPendingTemplate(null);
       setMessageInput('');
       setShowEmojiPicker(false);
       // As mensagens serão atualizadas via Socket.IO
@@ -484,7 +530,7 @@ export default function Conversations() {
   };
 
   const handleQuickReplySelect = (quickReply: any) => {
-    // Se for um template WhatsApp, disparar envio via endpoint específico
+    // Se for um template WhatsApp, apenas preencher o input e marcar template pendente
     if (
       quickReply.isTemplate &&
       quickReply.templateName &&
@@ -492,29 +538,12 @@ export default function Conversations() {
       selectedConversation.channel.type === 'WHATSAPP'
     ) {
       const language = quickReply.templateLanguage || 'pt_BR';
-
-      api
-        .post('/api/whatsapp/templates/send', {
-          conversationId: selectedConversation.id,
-          templateName: quickReply.templateName,
-          language,
-        })
-        .then(() => {
-          // Mostrar o corpo do template no input apenas como visualização
-          setMessageInput(quickReply.previewContent || quickReply.content);
-          setShowQuickReplies(false);
-          if (selectedConversation) {
-            fetchMessages(selectedConversation.id);
-            fetchConversations();
-          }
-        })
-        .catch((error) => {
-          console.error('Erro ao enviar template WhatsApp:', error);
-          alert(
-            error.response?.data?.error ||
-              'Erro ao enviar template WhatsApp. Verifique se o template está aprovado e o canal está correto.',
-          );
-        });
+      setPendingTemplate({
+        name: quickReply.templateName,
+        language,
+      });
+      setMessageInput(quickReply.previewContent || quickReply.content);
+      setShowQuickReplies(false);
       return;
     }
 
@@ -1339,7 +1368,9 @@ export default function Conversations() {
                   }}
                 >
                   {messages.map((message) => {
-                    const isOwnMessage = message.userId !== null;
+                    const isBotMessage = message.metadata?.fromBot === true;
+                    const isFromCustomer = !isBotMessage && message.userId === null;
+                    const isOwnMessage = message.userId !== null || isBotMessage;
                     const contactName = selectedConversation?.contact.name || '';
                     const contactAvatar = selectedConversation
                       ? getContactAvatar(selectedConversation.contact)
@@ -1365,7 +1396,7 @@ export default function Conversations() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                       >
                       {/* Avatar do cliente (só aparece em mensagens do cliente) */}
-                      {!isOwnMessage && (
+                      {isFromCustomer && (
                         <div
                           style={{
                             width: '36px',
@@ -1407,7 +1438,7 @@ export default function Conversations() {
                         whileHover={{ scale: 1.0 }}
                         transition={{ duration: 0.2 }}
                       >
-                        {!isOwnMessage && (
+                        {isFromCustomer && (
                           <div
                             style={{
                               fontSize: '12px',
@@ -2097,6 +2128,11 @@ export default function Conversations() {
                         {message.content && message.type === 'TEXT' && (
                           <div
                             style={{
+                              display: 'inline-block',
+                              padding: '8px 12px',
+                              borderRadius: '16px',
+                              backgroundColor: isOwnMessage ? '#dcfce7' : '#ecfdf5', // verdes bem claros
+                              color: '#022c22',
                               fontSize: '15px',
                               lineHeight: '1.4',
                               whiteSpace: 'pre-wrap',   // preserva quebras de linha

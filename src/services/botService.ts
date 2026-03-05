@@ -412,56 +412,29 @@ export class BotService {
         } else {
           console.warn(`[BotService] Step MESSAGE sem resposta configurada`);
         }
-        // Avançar para próximo step automaticamente se houver
-        if (currentStep.nextStepId) {
-          // Se nextStepId é "END", finalizar fluxo
-          if (currentStep.nextStepId === 'END') {
-            console.log(`[BotService] Fluxo "${flow.name}" finalizado (step END)`);
-            await prisma.botSession.update({
-              where: { id: session.id },
-              data: {
-                currentFlowId: null,
-                currentStepId: null,
-              },
-            });
-          } else {
-            // Atualizar sessão com próximo step
-            await prisma.botSession.update({
-              where: { id: session.id },
-              data: {
-                currentStepId: currentStep.nextStepId,
-              },
-            });
-            
-            // Executar próximo step automaticamente se for MESSAGE
-            // Se for INPUT, apenas atualizar o currentStepId e aguardar resposta do usuário
-            const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
-            if (nextStep) {
-              if (nextStep.type === 'MESSAGE') {
-                // Executar próximo step MESSAGE automaticamente
-                const updatedSession = {
-                  ...session,
-                  currentStepId: currentStep.nextStepId,
-                };
-                await this.executeFlow(flow, updatedSession, input);
-              } else if (nextStep.type === 'INPUT' || nextStep.type === 'TEXT_INPUT' || nextStep.type === 'EMAIL_INPUT' || nextStep.type === 'NUMBER_INPUT' || nextStep.type === 'PHONE_INPUT') {
-                // Para steps INPUT, apenas atualizar o currentStepId e aguardar resposta do usuário
-                // Não executar automaticamente - o próximo processMessage vai processar o INPUT
-                console.log(`[BotService] Aguardando input do usuário no step ${nextStep.id} (tipo: ${nextStep.type})`);
-                // currentStepId já foi atualizado acima, então o próximo processMessage vai processar o INPUT
-              } else {
-                // Para outros tipos, executar automaticamente
-                const updatedSession = {
-                  ...session,
-                  currentStepId: currentStep.nextStepId,
-                };
-                await this.executeFlow(flow, updatedSession, input);
-              }
-            }
+        // Avançar para próximo step automaticamente se houver.
+        // 1) Preferir nextStepId explícito (via conexões do builder).
+        // 2) Se não existir, usar fallback pelo campo "order" (próximo step na sequência).
+        let nextStepId: string | null | undefined = currentStep.nextStepId;
+
+        if (!nextStepId) {
+          const orderedSteps = [...flow.steps].sort(
+            (a: any, b: any) => (a.order || 0) - (b.order || 0),
+          );
+          const currentIndex = orderedSteps.findIndex((s: any) => s.id === currentStep.id);
+          if (currentIndex >= 0 && currentIndex + 1 < orderedSteps.length) {
+            nextStepId = orderedSteps[currentIndex + 1].id;
+            console.log(
+              `[BotService] nextStepId não definido; usando fallback pelo order -> próximo step ${nextStepId}`,
+            );
           }
-        } else {
+        }
+
+        if (!nextStepId) {
           // Se não há próximo step, finalizar fluxo
-          console.log(`[BotService] Fluxo "${flow.name}" finalizado (sem próximo step)`);
+          console.log(
+            `[BotService] Fluxo "${flow.name}" finalizado (sem nextStepId e sem fallback pelo order)`,
+          );
           await prisma.botSession.update({
             where: { id: session.id },
             data: {
@@ -469,6 +442,60 @@ export class BotService {
               currentStepId: null,
             },
           });
+          break;
+        }
+
+        // Se nextStepId é "END", finalizar fluxo
+        if (nextStepId === 'END') {
+          console.log(`[BotService] Fluxo "${flow.name}" finalizado (step END)`);
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: {
+              currentFlowId: null,
+              currentStepId: null,
+            },
+          });
+        } else {
+          // Atualizar sessão com próximo step
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: {
+              currentStepId: nextStepId,
+            },
+          });
+
+          // Executar próximo step automaticamente se for MESSAGE
+          // Se for INPUT, apenas atualizar o currentStepId e aguardar resposta do usuário
+          const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
+          if (nextStep) {
+            if (nextStep.type === 'MESSAGE') {
+              // Executar próximo step MESSAGE automaticamente
+              const updatedSession = {
+                ...session,
+                currentStepId: nextStepId,
+              };
+              await this.executeFlow(flow, updatedSession, input);
+            } else if (
+              nextStep.type === 'INPUT' ||
+              nextStep.type === 'TEXT_INPUT' ||
+              nextStep.type === 'EMAIL_INPUT' ||
+              nextStep.type === 'NUMBER_INPUT' ||
+              nextStep.type === 'PHONE_INPUT'
+            ) {
+              // Para steps INPUT, apenas atualizar o currentStepId e aguardar resposta do usuário
+              // Não executar automaticamente - o próximo processMessage vai processar o INPUT
+              console.log(
+                `[BotService] Aguardando input do usuário no step ${nextStep.id} (tipo: ${nextStep.type})`,
+              );
+            } else {
+              // Para outros tipos, executar automaticamente
+              const updatedSession = {
+                ...session,
+                currentStepId: nextStepId,
+              };
+              await this.executeFlow(flow, updatedSession, input);
+            }
+          }
         }
         break;
 
@@ -779,11 +806,21 @@ export class BotService {
             });
           }
         } else {
-          const errorMsg = currentStep.config?.errorMessage || 'Resposta inválida. Por favor, tente novamente.';
+          const defaultErrorByType: Record<string, string> = {
+            NUMBER_INPUT: 'Informe um numero valido',
+            EMAIL_INPUT: 'Informe um e-mail válido.',
+            PHONE_INPUT: 'Informe um telefone válido.',
+            DATE_INPUT: 'Informe uma data válida.',
+          };
+          const errorMsg =
+            currentStep.config?.errorMessage ||
+            defaultErrorByType[currentStep.type] ||
+            'Resposta inválida. Por favor, tente novamente.';
           await this.sendBotResponse(session.conversationId, {
             type: 'TEXT',
             content: errorMsg,
           } as any, session.botId, inputContext);
+          // Não atualiza currentStepId: permanece no mesmo input para nova tentativa
         }
         break;
 
@@ -979,42 +1016,47 @@ export class BotService {
    * Valida input do usuário baseado nas regras do step
    */
   async validateInput(step: any, userInput: string): Promise<boolean> {
-    const validation = step.config?.validation;
-    if (!validation) return true;
+    const config = step.config || {};
+    const validation = config.validation;
+    const inputType = config.inputType || (step.type && step.type.replace('_INPUT', '')) || 'TEXT';
 
-    const inputType = step.config?.inputType || 'TEXT';
-
-    // Validação de obrigatório
-    if (validation.required && (!userInput || !userInput.trim())) {
-      return false;
+    // Validações específicas por tipo (sempre aplicadas quando o step é de número/email/telefone/data)
+    if (inputType === 'NUMBER') {
+      const trimmed = (userInput || '').trim();
+      if (!trimmed) return false;
+      const num = Number(trimmed);
+      if (Number.isNaN(num) || !Number.isFinite(num)) {
+        return false;
+      }
+      const min = config.min ?? validation?.min;
+      const max = config.max ?? validation?.max;
+      if (min !== undefined && min !== null && num < Number(min)) {
+        return false;
+      }
+      if (max !== undefined && max !== null && num > Number(max)) {
+        return false;
+      }
     }
 
-    // Validações específicas por tipo
     if (inputType === 'EMAIL') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(userInput)) {
+      if (!emailRegex.test((userInput || '').trim())) {
         return false;
       }
     }
 
     if (inputType === 'PHONE') {
       const phoneRegex = /^\+?[\d\s\-\(\)]+$/;
-      if (!phoneRegex.test(userInput)) {
+      if (!phoneRegex.test((userInput || '').trim())) {
         return false;
       }
     }
 
-    if (inputType === 'NUMBER') {
-      const num = Number(userInput);
-      if (isNaN(num)) {
-        return false;
-      }
-      if (validation.min !== undefined && num < validation.min) {
-        return false;
-      }
-      if (validation.max !== undefined && num > validation.max) {
-        return false;
-      }
+    if (!validation) return true;
+
+    // Validação de obrigatório
+    if (validation.required && (!userInput || !userInput.trim())) {
+      return false;
     }
 
     // Validações de comprimento
@@ -1110,9 +1152,13 @@ export class BotService {
 
       await this.messageService.sendMessage({
         conversationId,
-        userId: '', // Bot não tem userId
+        userId: '', // Bot não tem userId (será normalizado para null no MessageService)
         content,
         type: response.type || 'TEXT',
+        mediaUrl: response.mediaUrl || undefined,
+        fileName: response.metadata?.fileName || undefined,
+        caption: content,
+        fromBot: true,
       });
 
       console.log(`[BotService] Resposta do bot enviada para conversa ${conversationId}`);

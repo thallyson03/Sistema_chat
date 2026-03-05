@@ -16,6 +16,7 @@ export interface SendMessageData {
   fileName?: string;
   caption?: string;
   mimetype?: string; // Mimetype do arquivo (ex: audio/webm, audio/ogg)
+  fromBot?: boolean; // Flag opcional para identificar mensagens enviadas pelo bot
 }
 
 export class MessageService {
@@ -569,7 +570,7 @@ export class MessageService {
       });
     }
 
-    // Preparar metadata para mídias
+    // Preparar metadata para mídias e flags auxiliares
     const metadata: any = {};
     if (data.mediaUrl) {
       metadata.mediaUrl = data.mediaUrl;
@@ -585,10 +586,17 @@ export class MessageService {
       }
     }
 
+    if (data.fromBot) {
+      metadata.fromBot = true;
+    }
+
+    // Se userId vier como string vazia (caso de mensagens de bot), converter para null
+    const normalizedUserId = data.userId && data.userId.trim().length > 0 ? data.userId : null;
+
     const message = await prisma.message.create({
       data: {
         conversationId: data.conversationId,
-        userId: data.userId,
+        userId: normalizedUserId,
         content: data.content,
         type: (data.type as MessageType) || MessageType.TEXT,
         status: status,
@@ -612,7 +620,7 @@ export class MessageService {
       lastMessageAt: new Date(),
     };
 
-    if (data.userId) {
+    if (normalizedUserId) {
       updateData.lastAgentMessageAt = new Date();
     }
 

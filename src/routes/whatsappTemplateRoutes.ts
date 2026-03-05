@@ -83,7 +83,8 @@ router.post(
   authorizeRoles('ADMIN', 'SUPERVISOR', 'AGENT'),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { conversationId, templateName, language, components, channelId } = req.body || {};
+      const { conversationId, templateName, language, components, channelId, body } =
+        req.body || {};
 
       if (!conversationId || !templateName || !language) {
         return res.status(400).json({
@@ -139,7 +140,7 @@ router.post(
         data: {
           conversationId: conversation.id,
           userId: req.user?.id || null,
-          content: `[TEMPLATE] ${templateName}`,
+          content: typeof body === 'string' && body.trim().length > 0 ? body.trim() : '',
           type: 'TEXT',
           status: 'SENT',
           externalId: result.messageId || null,
@@ -147,6 +148,7 @@ router.post(
             templateName,
             language,
             components,
+            bodyPreview: body,
             provider: 'whatsapp_official',
             kind: 'template',
           },

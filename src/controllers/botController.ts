@@ -594,12 +594,20 @@ export class BotController {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
 
-      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR') {
-        return res.status(403).json({ error: 'Apenas administradores e supervisores podem atualizar steps' });
-      }
-
       const { stepId } = req.params;
-      const { type, order, config, intentId, nextStepId, responseId } = req.body;
+      const body = req.body || {};
+      const { type, order, config, intentId, nextStepId, responseId } = body;
+      const bodyKeys = Object.keys(body).filter(k => body[k] !== undefined);
+
+      const isOnlyNextStepId = bodyKeys.length === 1 && bodyKeys[0] === 'nextStepId';
+      const canUpdate =
+        req.user.role === 'ADMIN' ||
+        req.user.role === 'SUPERVISOR' ||
+        (req.user.role === 'AGENT' && isOnlyNextStepId);
+
+      if (!canUpdate) {
+        return res.status(403).json({ error: 'Apenas administradores e supervisores podem atualizar steps (ou agente apenas para conexões)' });
+      }
 
       const step = await botService.updateFlowStep(stepId, {
         type,

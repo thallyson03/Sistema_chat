@@ -1723,6 +1723,8 @@ export default function BotFlowBuilderVisual() {
   const [previewWaitingInput, setPreviewWaitingInput] = useState<{ stepId: string, inputType: string, placeholder?: string } | null>(null);
   const [previewInputValue, setPreviewInputValue] = useState('');
   const [availableVariables, setAvailableVariables] = useState<string[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
 
   // Função para substituir variáveis no preview
   const parsePreviewVariables = useCallback((text: string, context?: Record<string, any>): string => {
@@ -1804,9 +1806,13 @@ export default function BotFlowBuilderVisual() {
   const fetchFlows = async () => {
     try {
       const response = await api.get(`/api/bots/${botId}/flows`);
-      setFlows(response.data || []);
-      if (response.data && response.data.length > 0 && !selectedFlow) {
-        setSelectedFlow(response.data[0]);
+      const flowList = response.data || [];
+      setFlows(flowList);
+      if (flowList.length > 0) {
+        // Restaurar fluxo selecionado após F5 (persistido em sessionStorage)
+        const savedFlowId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(`bot-${botId}-selectedFlowId`) : null;
+        const flowToSelect = savedFlowId ? flowList.find((f: Flow) => f.id === savedFlowId) : null;
+        setSelectedFlow(flowToSelect || flowList[0]);
       }
     } catch (error) {
       console.error('Erro ao carregar fluxos:', error);
@@ -1881,6 +1887,8 @@ export default function BotFlowBuilderVisual() {
   const loadFlowToCanvas = useCallback((flow: Flow) => {
     const newNodes: Node[] = [];
     const newEdges: Edge[] = [];
+    const steps = Array.isArray(flow?.steps) ? flow.steps : [];
+    let edgesToSet: Edge[] = newEdges;
 
     // Nó de início
     newNodes.push({
@@ -1891,8 +1899,8 @@ export default function BotFlowBuilderVisual() {
     });
 
     // Carregar steps como nós
-    if (flow.steps && flow.steps.length > 0) {
-      flow.steps.forEach((step, index) => {
+    if (steps.length > 0) {
+      steps.forEach((step, index) => {
         const nodeType = step.type === 'MESSAGE' ? 'message' :
                          step.type === 'CONDITION' ? 'condition' :
                          step.type === 'HANDOFF' ? 'handoff' :
@@ -1917,10 +1925,9 @@ export default function BotFlowBuilderVisual() {
                          step.type === 'JUMP' ? 'jump' :
                          step.type === 'PICTURE_CHOICE' ? 'pictureChoice' : 'message';
 
-        const position = step.position || {
-          x: 250,
-          y: 150 + (index * 150),
-        };
+        const position = (step.config?.position && typeof step.config.position === 'object' && 'x' in step.config.position && 'y' in step.config.position)
+          ? { x: Number(step.config.position.x), y: Number(step.config.position.y) }
+          : (step.position || { x: 250, y: 150 + (index * 150) });
 
         newNodes.push({
           id: step.id,
@@ -1936,43 +1943,31 @@ export default function BotFlowBuilderVisual() {
             buttons: step.config?.buttons || [],
             stepId: step.id,
             config: step.config || {},
+            order: step.order,
             onDelete: handleDeleteNode,
           },
         });
 
-        // Criar conexões
-        if (index === 0) {
-          // Conectar início ao primeiro step
-          newEdges.push({
-            id: `start-${step.id}`,
-            source: 'start',
-            target: step.id,
-          });
-        }
-
-        if (step.nextStepId) {
-          // Se nextStepId for "END", criar edge para o nó "end"
-          if (step.nextStepId === 'END') {
+        // Conexões: nextStepId e condições (para montar o set de "destinos")
+        const nextId = step.nextStepId != null ? String(step.nextStepId).trim() : '';
+        if (nextId) {
+          if (nextId === 'END') {
             newEdges.push({
               id: `${step.id}-end`,
               source: step.id,
               target: 'end',
             });
           } else {
-            // Caso contrário, criar edge para o step correspondente
             newEdges.push({
-              id: `${step.id}-${step.nextStepId}`,
+              id: `${step.id}-${nextId}`,
               source: step.id,
-              target: step.nextStepId,
+              target: nextId,
             });
           }
         }
-
-        // Conexões de condição
         if (step.conditions && step.conditions.length > 0) {
           const condition = step.conditions[0];
           if (condition.trueStepId) {
-            // Se trueStepId for "END", criar edge para o nó "end"
             const trueTarget = condition.trueStepId === 'END' ? 'end' : condition.trueStepId;
             newEdges.push({
               id: `${step.id}-true-${trueTarget}`,
@@ -1986,7 +1981,6 @@ export default function BotFlowBuilderVisual() {
             });
           }
           if (condition.falseStepId) {
-            // Se falseStepId for "END", criar edge para o nó "end"
             const falseTarget = condition.falseStepId === 'END' ? 'end' : condition.falseStepId;
             newEdges.push({
               id: `${step.id}-false-${falseTarget}`,
@@ -2002,11 +1996,40 @@ export default function BotFlowBuilderVisual() {
         }
       });
 
+      // Steps que são destino de alguma conexão (não são "entrada")
+      const targetStepIds = new Set<string>();
+      newEdges.forEach((e) => {
+        if (e.target && e.target !== 'end') targetStepIds.add(e.target);
+      });
+
+      // Conectar Início a todos os steps de entrada (que não são alvo de nenhuma outra conexão)
+      steps.forEach((step) => {
+        if (!targetStepIds.has(step.id)) {
+          newEdges.push({
+            id: `start-${step.id}`,
+            source: 'start',
+            target: step.id,
+          });
+        }
+      });
+
+      // Remover duplicatas de edges start-> (caso já existissem no loop acima)
+      const seen = new Set<string>();
+      const deduped: Edge[] = [];
+      newEdges.forEach((e) => {
+        const key = `${e.source}-${e.target}${e.sourceHandle ? `-${e.sourceHandle}` : ''}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(e);
+        }
+      });
+      edgesToSet = deduped.length ? deduped : newEdges;
+
       // Nó de fim
       newNodes.push({
         id: 'end',
         type: 'end',
-        position: { x: 250, y: 150 + (flow.steps.length * 150) },
+        position: { x: 250, y: 150 + (steps.length * 150) },
         data: { label: 'Fim' },
       });
     } else {
@@ -2020,26 +2043,27 @@ export default function BotFlowBuilderVisual() {
     }
 
     setNodes(newNodes);
-    setEdges(newEdges);
+    setEdges(edgesToSet);
   }, [handleDeleteNode]);
 
   useEffect(() => {
     if (selectedFlow) {
-      // Recarregar o fluxo do backend para garantir que temos os dados mais recentes
       const reloadFlow = async () => {
         try {
-          const response = await api.get(`/api/bots/flows/${selectedFlow.id}`);
-          const updatedFlow = response.data;
+          const flowResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`, {
+            params: { _: Date.now() },
+          });
+          const updatedFlow = flowResponse.data;
           loadFlowToCanvas(updatedFlow);
+          setSelectedFlow(updatedFlow);
         } catch (error) {
           console.error('Erro ao recarregar fluxo:', error);
-          // Se falhar, usar o fluxo que já temos
           loadFlowToCanvas(selectedFlow);
         }
       };
       reloadFlow();
     }
-  }, [selectedFlow, loadFlowToCanvas]);
+  }, [selectedFlow?.id, loadFlowToCanvas]);
 
   const onConnect = useCallback(
     async (params: Connection) => {
@@ -2052,10 +2076,16 @@ export default function BotFlowBuilderVisual() {
       console.log('📦 sourceNode:', sourceNode);
       console.log('📦 targetNode:', targetNode);
       
-      // Ignorar apenas conexões do start (não tem stepId)
-      // Permitir conexões para o end
+      // Conexões saindo do Início: apenas adicionar a edge na tela (não há step no backend para salvar)
       if (params.source === 'start') {
-        console.log('⚠️ Ignorando conexão do start');
+        const targetNodeId = params.target;
+        const newEdge = {
+          ...params,
+          id: `start-${targetNodeId}-${Date.now()}`,
+          style: { stroke: '#10b981', strokeWidth: 2 },
+        };
+        setEdges((eds) => [...eds, newEdge]);
+        console.log('✅ Conexão do Início adicionada na tela');
         return;
       }
       
@@ -2148,8 +2178,11 @@ export default function BotFlowBuilderVisual() {
             nextStepId: nextStepIdValue,
           });
           console.log('✅ nextStepId salvo com sucesso');
-        } catch (error) {
+        } catch (error: any) {
           console.error('❌ Erro ao salvar conexão:', error);
+          const msg = error?.response?.data?.error || error?.message || 'Falha ao salvar conexão';
+          alert(`Conexão não salva: ${msg}. Verifique permissões ou tente novamente.`);
+          return;
         }
         
         if (sourceNode?.type === 'message' && sourceNode.data.buttons) {
@@ -2180,13 +2213,15 @@ export default function BotFlowBuilderVisual() {
         return updated;
       });
       
-      // Recarregar o fluxo para garantir que as conexões sejam salvas
+      // Recarregar o fluxo para exibir as conexões salvas
       if (selectedFlow) {
         try {
-          const flowResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`);
+          const flowResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`, {
+            params: { _: Date.now() },
+          });
           const updatedFlow = flowResponse.data;
+          loadFlowToCanvas(updatedFlow);
           setSelectedFlow(updatedFlow);
-          // loadFlowToCanvas será chamado automaticamente pelo useEffect
         } catch (error) {
           console.error('Erro ao recarregar fluxo:', error);
         }
@@ -2396,10 +2431,15 @@ export default function BotFlowBuilderVisual() {
       config = { choices: [], variableName: '', multiple: false, layout: 'grid' };
     }
     
+    const isNewNode = !node.data?.stepId || String(node.data.stepId).startsWith('step-');
+    const existingStep = selectedFlow?.steps?.find((s: any) => s.id === (node.data?.stepId || node.id));
+    const stepOrder = isNewNode
+      ? (selectedFlow?.steps?.length ?? 0)
+      : (node.data?.order ?? existingStep?.order ?? 0);
     setStepFormData({
       type: stepType,
       content: node.data.content || '',
-      order: 0,
+      order: stepOrder,
       intentId: '',
       config: config,
       buttons: node.data.buttons || [],
@@ -2421,13 +2461,15 @@ export default function BotFlowBuilderVisual() {
         // Tentar atualizar step existente
         stepId = stepIdValue;
         try {
+          const configWithPosition = {
+            ...stepFormData.config,
+            buttons: stepFormData.buttons,
+            position: editingNode.position || undefined,
+          };
           await api.put(`/api/bots/steps/${stepId}`, {
             type: stepFormData.type,
             order: stepFormData.order,
-            config: {
-              ...stepFormData.config,
-              buttons: stepFormData.buttons,
-            },
+            config: configWithPosition,
             intentId: stepFormData.intentId || null,
           });
         } catch (updateError: any) {
@@ -2445,13 +2487,15 @@ export default function BotFlowBuilderVisual() {
       
       if (shouldCreateNew) {
         // Criar novo step
+        const configWithPosition = {
+          ...stepFormData.config,
+          buttons: stepFormData.buttons,
+          position: editingNode.position || undefined,
+        };
         const stepResponse = await api.post(`/api/bots/flows/${selectedFlow.id}/steps`, {
           type: stepFormData.type,
           order: stepFormData.order,
-          config: {
-            ...stepFormData.config,
-            buttons: stepFormData.buttons,
-          },
+          config: configWithPosition,
           intentId: stepFormData.intentId || null,
           responseId: null,
         });
@@ -2529,7 +2573,8 @@ export default function BotFlowBuilderVisual() {
         }
       }
 
-      // Atualizar nó com dados do step
+      // Atualizar nó com dados do step (incluir posição atual para não perder ao recarregar)
+      const positionToSave = editingNode.position || { x: 250, y: 250 };
       setNodes((nds) =>
         nds.map((node) =>
           node.id === editingNode.id
@@ -2544,6 +2589,7 @@ export default function BotFlowBuilderVisual() {
                   delay: stepFormData.config.delay,
                   buttons: stepFormData.buttons,
                   stepId: stepId,
+                  config: { ...stepFormData.config, position: positionToSave },
                   onDelete: node.data.onDelete || handleDeleteNode,
                 },
               }
@@ -3215,6 +3261,11 @@ export default function BotFlowBuilderVisual() {
             onChange={(e) => {
               const flow = flows.find(f => f.id === e.target.value);
               setSelectedFlow(flow || null);
+              if (botId && flow?.id) {
+                try {
+                  sessionStorage.setItem(`bot-${botId}-selectedFlowId`, flow.id);
+                } catch (_) {}
+              }
             }}
             style={{
               padding: '6px 12px',
@@ -4041,6 +4092,18 @@ export default function BotFlowBuilderVisual() {
             }}
             nodeTypes={nodeTypes}
             onNodeDoubleClick={handleNodeDoubleClick}
+            onNodeDragStop={async (_, node) => {
+              const stepId = node.data?.stepId;
+              if (!stepId || stepId.startsWith('step-') || !selectedFlow) return;
+              try {
+                const currentConfig = node.data?.config || {};
+                await api.put(`/api/bots/steps/${stepId}`, {
+                  config: { ...currentConfig, position: node.position },
+                });
+              } catch (e) {
+                console.error('Erro ao salvar posição do bloco:', e);
+              }
+            }}
             fitView
             style={{ backgroundColor: 'transparent' }}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
@@ -4993,7 +5056,55 @@ export default function BotFlowBuilderVisual() {
               <>
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
-                    URL da Imagem *
+                    Imagem do bubble *
+                  </label>
+                  {/* Upload de arquivo de imagem */}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      try {
+                        setUploadingImage(true);
+                        const formData = new FormData();
+                        formData.append('file', file);
+
+                        const uploadResponse = await api.post('/api/media/upload', formData, {
+                          headers: {
+                            'Content-Type': 'multipart/form-data',
+                          },
+                        });
+
+                        const { url } = uploadResponse.data;
+
+                        setStepFormData((prev) => ({
+                          ...prev,
+                          config: {
+                            ...prev.config,
+                            imageUrl: url,
+                          },
+                        }));
+                      } catch (error) {
+                        console.error('Erro ao fazer upload da imagem do bot:', error);
+                        alert('Erro ao enviar imagem. Tente novamente.');
+                      } finally {
+                        setUploadingImage(false);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      marginBottom: '10px',
+                    }}
+                  />
+                  <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>
+                    Você pode enviar um arquivo de imagem do seu computador. O sistema irá gerar a URL automaticamente.
+                  </p>
+                </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
+                    URL da Imagem (opcional)
                   </label>
                   <input
                     type="text"
@@ -5002,8 +5113,7 @@ export default function BotFlowBuilderVisual() {
                       ...stepFormData,
                       config: { ...stepFormData.config, imageUrl: e.target.value },
                     })}
-                    placeholder="https://exemplo.com/imagem.jpg"
-                    required
+                    placeholder="https://exemplo.com/imagem.jpg ou /api/media/file/xxx.jpg"
                     style={{
                       width: '100%',
                       padding: '10px',
@@ -5012,6 +5122,11 @@ export default function BotFlowBuilderVisual() {
                       fontSize: '14px',
                     }}
                   />
+                  {uploadingImage && (
+                    <p style={{ marginTop: '6px', fontSize: '12px', color: '#6b7280' }}>
+                      Enviando imagem...
+                    </p>
+                  )}
                 </div>
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
@@ -5062,7 +5177,55 @@ export default function BotFlowBuilderVisual() {
               <>
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
-                    URL do Vídeo *
+                    Vídeo do bubble *
+                  </label>
+                  {/* Upload de arquivo de vídeo */}
+                  <input
+                    type="file"
+                    accept="video/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      try {
+                        setUploadingVideo(true);
+                        const formData = new FormData();
+                        formData.append('file', file);
+
+                        const uploadResponse = await api.post('/api/media/upload', formData, {
+                          headers: {
+                            'Content-Type': 'multipart/form-data',
+                          },
+                        });
+
+                        const { url } = uploadResponse.data;
+
+                        setStepFormData((prev) => ({
+                          ...prev,
+                          config: {
+                            ...prev.config,
+                            videoUrl: url,
+                          },
+                        }));
+                      } catch (error) {
+                        console.error('Erro ao fazer upload do vídeo do bot:', error);
+                        alert('Erro ao enviar vídeo. Tente novamente.');
+                      } finally {
+                        setUploadingVideo(false);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      marginBottom: '10px',
+                    }}
+                  />
+                  <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>
+                    Você pode enviar um arquivo de vídeo do seu computador. O sistema irá gerar a URL automaticamente.
+                  </p>
+                </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
+                    URL do Vídeo (opcional)
                   </label>
                   <input
                     type="text"
@@ -5071,8 +5234,7 @@ export default function BotFlowBuilderVisual() {
                       ...stepFormData,
                       config: { ...stepFormData.config, videoUrl: e.target.value },
                     })}
-                    placeholder="https://youtube.com/watch?v=... ou https://vimeo.com/..."
-                    required
+                    placeholder="https://exemplo.com/video.mp4 ou /api/media/file/xxx.mp4"
                     style={{
                       width: '100%',
                       padding: '10px',
@@ -5081,6 +5243,11 @@ export default function BotFlowBuilderVisual() {
                       fontSize: '14px',
                     }}
                   />
+                  {uploadingVideo && (
+                    <p style={{ marginTop: '6px', fontSize: '12px', color: '#6b7280' }}>
+                      Enviando vídeo...
+                    </p>
+                  )}
                 </div>
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
@@ -5125,7 +5292,57 @@ export default function BotFlowBuilderVisual() {
               <>
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
-                    URL do Áudio *
+                    Áudio do bubble *
+                  </label>
+                  {/* Upload de arquivo de áudio */}
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      try {
+                        // Podemos reutilizar o mesmo indicador de upload de imagem,
+                        // ou criar um específico caso queira diferenciar depois.
+                        setUploadingImage(true);
+                        const formData = new FormData();
+                        formData.append('file', file);
+
+                        const uploadResponse = await api.post('/api/media/upload', formData, {
+                          headers: {
+                            'Content-Type': 'multipart/form-data',
+                          },
+                        });
+
+                        const { url } = uploadResponse.data;
+
+                        setStepFormData((prev) => ({
+                          ...prev,
+                          config: {
+                            ...prev.config,
+                            audioUrl: url,
+                          },
+                        }));
+                      } catch (error) {
+                        console.error('Erro ao fazer upload do áudio do bot:', error);
+                        alert('Erro ao enviar áudio. Tente novamente.');
+                      } finally {
+                        setUploadingImage(false);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      marginBottom: '10px',
+                    }}
+                  />
+                  <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>
+                    Você pode enviar um arquivo de áudio do seu computador. O sistema irá gerar a URL automaticamente.
+                  </p>
+                </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
+                    URL do Áudio (opcional)
                   </label>
                   <input
                     type="text"
@@ -5134,8 +5351,7 @@ export default function BotFlowBuilderVisual() {
                       ...stepFormData,
                       config: { ...stepFormData.config, audioUrl: e.target.value },
                     })}
-                    placeholder="https://exemplo.com/audio.mp3"
-                    required
+                    placeholder="https://exemplo.com/audio.mp3 ou /api/media/file/xxx.ogg"
                     style={{
                       width: '100%',
                       padding: '10px',
@@ -5144,6 +5360,11 @@ export default function BotFlowBuilderVisual() {
                       fontSize: '14px',
                     }}
                   />
+                  {uploadingImage && (
+                    <p style={{ marginTop: '6px', fontSize: '12px', color: '#6b7280' }}>
+                      Enviando áudio...
+                    </p>
+                  )}
                 </div>
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
