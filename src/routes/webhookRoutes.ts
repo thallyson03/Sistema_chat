@@ -400,9 +400,21 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
     });
 
     // Processar com bot se houver
-    if (messageContent && messageType === 'text') {
+    // - Para texto: usa o próprio conteúdo
+    // - Para mídia (imagem, documento, áudio, vídeo...): usa caption/nome ou um marcador padrão
+    const normalizedInput =
+      messageType === 'text'
+        ? messageContent
+        : messageContent || `[${messageType.toUpperCase()}]`;
+
+    if (normalizedInput) {
       try {
-        await botService.processMessage(messageContent, conversation.id);
+        await botService.processMessage(normalizedInput, conversation.id, {
+          messageType,
+          mediaUrl,
+          mediaId,
+          provider: 'whatsapp_official',
+        });
       } catch (botError: any) {
         console.error('[WhatsAppOfficial] ❌ Erro ao processar com bot:', botError);
       }
@@ -987,7 +999,10 @@ async function handleNewMessage(data: any) {
       // Verificar se há bot ativo e processar mensagem
       if (!fromMe && messageContent) {
         try {
-          const botResult = await botService.processMessage(messageContent, conversation.id);
+          const botResult = await botService.processMessage(messageContent, conversation.id, {
+            messageType,
+            provider: 'evolution',
+          });
           if (botResult) {
             console.log('🤖 [handleNewMessage] Bot processou mensagem:', botResult);
             // Se o bot respondeu, não precisa emitir para n8n (ou pode emitir também)

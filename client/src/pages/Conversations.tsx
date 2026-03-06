@@ -1452,7 +1452,7 @@ export default function Conversations() {
                         )}
                         
                         {/* Exibir mídia se houver */}
-                        {['IMAGE', 'VIDEO', 'AUDIO'].includes(message.type) && message.id && (
+                        {['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(message.type) && message.id && (
                           <div style={{ marginBottom: '8px' }}>
                             {message.type === 'IMAGE' && (
                               <div style={{ position: 'relative', display: 'inline-block' }}>

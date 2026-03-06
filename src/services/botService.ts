@@ -184,8 +184,15 @@ export class BotService {
 
   /**
    * Processa uma mensagem recebida e verifica se há bot ativo
+   * @param messageContent Conteúdo textual normalizado da mensagem
+   * @param conversationId ID da conversa
+   * @param inputMeta Metadados da entrada (ex: tipo da mensagem, url de mídia, etc.)
    */
-  async processMessage(messageContent: string, conversationId: string) {
+  async processMessage(
+    messageContent: string,
+    conversationId: string,
+    inputMeta?: { messageType?: string; [key: string]: any },
+  ) {
     // Buscar conversa com canal
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -259,8 +266,11 @@ export class BotService {
       })) as any;
     }
 
-    // Tentar fazer match de intent
-    const matchedIntent = await this.matchIntent(messageContent, bot.id);
+    // Tentar fazer match de intent (apenas para mensagens de texto)
+    const matchedIntent =
+      !inputMeta?.messageType || inputMeta.messageType === 'text'
+        ? await this.matchIntent(messageContent, bot.id)
+        : null;
 
     if (matchedIntent) {
       // Enviar resposta do intent
@@ -276,7 +286,7 @@ export class BotService {
     if (session && (session as any).currentFlowId) {
       const flow = (bot as any).flows?.find((f: any) => f.id === (session as any).currentFlowId);
       if (flow && session) {
-        await this.executeFlow(flow, session as any, messageContent);
+        await this.executeFlow(flow, session as any, messageContent, inputMeta);
         return { flow: flow.id };
       }
     }
@@ -291,9 +301,11 @@ export class BotService {
       
       if (alwaysFlow) {
         console.log(`[BotService] Iniciando fluxo automático "${alwaysFlow.name}" (trigger: ${alwaysFlow.trigger || 'always'})`);
-        
-        // Atualizar sessão com o fluxo ativo
-        const firstStep = alwaysFlow.steps?.find((s: any) => s.order === 0) || alwaysFlow.steps?.[0];
+        // Usar o step de ENTRADA do fluxo (conectado ao Início no builder)
+        const entryStep = this.getFlowEntryStep(alwaysFlow);
+        const firstStep = entryStep?.type === 'MESSAGE'
+          ? entryStep
+          : [...(alwaysFlow.steps || [])].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0)).find((s: any) => s.type === 'MESSAGE') || entryStep;
         
         if (firstStep) {
           await prisma.botSession.update({
@@ -312,7 +324,7 @@ export class BotService {
           };
           
           // Executar o primeiro step imediatamente
-          await this.executeFlow(alwaysFlow, updatedSession as any, '');
+          await this.executeFlow(alwaysFlow, updatedSession as any, '', inputMeta);
           return { flow: alwaysFlow.id, autoStarted: true };
         } else {
           console.warn(`[BotService] Fluxo "${alwaysFlow.name}" não tem steps configurados`);
@@ -387,9 +399,44 @@ export class BotService {
   }
 
   /**
+   * Verifica se o texto é uma saudação ou pedido de reinício (reiniciar fluxo do começo)
+   */
+  private isGreetingOrRestart(text: string): boolean {
+    if (!text || typeof text !== 'string') return false;
+    const t = text.trim().toLowerCase();
+    const greetings = [
+      'olá', 'ola', 'oi', 'hey', 'hi', 'hello', 'bom dia', 'boa tarde', 'boa noite',
+      'menu', 'início', 'inicio', 'começar', 'comecar', 'start', 'reiniciar', 'voltar',
+    ];
+    return greetings.some((g) => t === g || t.startsWith(g + ' ') || t === g + '!');
+  }
+
+  /**
+   * Retorna o step de entrada do fluxo (o que nenhum outro step aponta = conectado ao Início no builder).
+   * Assim respeitamos a ordem visual do fluxo, não apenas o campo "order" do banco.
+   */
+  private getFlowEntryStep(flow: any): any {
+    const steps = flow.steps || [];
+    if (steps.length === 0) return null;
+    // Entrada = step que nunca é alvo de nextStepId de outro step
+    const entryStep = steps.find(
+      (step: any) => !steps.some((s: any) => s.nextStepId === step.id)
+    );
+    if (entryStep) return entryStep;
+    // Fallback: menor order (comportamento antigo)
+    const ordered = [...steps].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+    return ordered[0];
+  }
+
+  /**
    * Executa um fluxo
    */
-  async executeFlow(flow: any, session: any, input: string) {
+  async executeFlow(
+    flow: any,
+    session: any,
+    input: string,
+    inputMeta?: { messageType?: string; [key: string]: any },
+  ) {
     console.log(`[BotService] Executando fluxo "${flow.name}", step atual: ${session.currentStepId || 'nenhum'}`);
     
     // Implementação básica - pode ser expandida
@@ -398,6 +445,29 @@ export class BotService {
     if (!currentStep) {
       console.warn(`[BotService] Nenhum step encontrado no fluxo "${flow.name}"`);
       return;
+    }
+
+    // Se estamos em um step que espera imagem (PICTURE_CHOICE) e o usuário mandou TEXTO que parece saudação,
+    // reiniciar o fluxo no step de ENTRADA real (conectado ao Início), para enviar a primeira mensagem.
+    const messageType = inputMeta?.messageType;
+    const isTextMessage = !messageType || messageType === 'text';
+    const inputSteps = ['PICTURE_CHOICE', 'INPUT', 'TEXT_INPUT', 'EMAIL_INPUT', 'NUMBER_INPUT', 'PHONE_INPUT'];
+    if (
+      inputSteps.includes(currentStep.type) &&
+      isTextMessage &&
+      this.isGreetingOrRestart(input)
+    ) {
+      const entryStep = this.getFlowEntryStep(flow);
+      if (entryStep && entryStep.id !== currentStep.id) {
+        console.log(`[BotService] Saudação/reinício detectado ("${input?.substring(0, 30)}"), reiniciando no step de entrada (tipo: ${entryStep.type})`);
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: { currentStepId: entryStep.id },
+        });
+        const updatedSession = { ...session, currentStepId: entryStep.id };
+        await this.executeFlow(flow, updatedSession, '', inputMeta);
+        return;
+      }
     }
 
     console.log(`[BotService] Processando step tipo: ${currentStep.type}, order: ${currentStep.order}`);
@@ -464,8 +534,8 @@ export class BotService {
             },
           });
 
-          // Executar próximo step automaticamente se for MESSAGE
-          // Se for INPUT, apenas atualizar o currentStepId e aguardar resposta do usuário
+        // Executar próximo step automaticamente se for MESSAGE
+        // Se for INPUT/PICTURE_CHOICE, apenas atualizar o currentStepId e aguardar resposta do usuário
           const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
           if (nextStep) {
             if (nextStep.type === 'MESSAGE') {
@@ -474,18 +544,19 @@ export class BotService {
                 ...session,
                 currentStepId: nextStepId,
               };
-              await this.executeFlow(flow, updatedSession, input);
+              await this.executeFlow(flow, updatedSession, input, inputMeta);
             } else if (
               nextStep.type === 'INPUT' ||
               nextStep.type === 'TEXT_INPUT' ||
               nextStep.type === 'EMAIL_INPUT' ||
               nextStep.type === 'NUMBER_INPUT' ||
-              nextStep.type === 'PHONE_INPUT'
+              nextStep.type === 'PHONE_INPUT' ||
+              nextStep.type === 'PICTURE_CHOICE'
             ) {
-              // Para steps INPUT, apenas atualizar o currentStepId e aguardar resposta do usuário
+              // Para steps INPUT/PICTURE_CHOICE, apenas atualizar o currentStepId e aguardar resposta do usuário
               // Não executar automaticamente - o próximo processMessage vai processar o INPUT
               console.log(
-                `[BotService] Aguardando input do usuário no step ${nextStep.id} (tipo: ${nextStep.type})`,
+                `[BotService] Aguardando input/imagem do usuário no step ${nextStep.id} (tipo: ${nextStep.type})`,
               );
             } else {
               // Para outros tipos, executar automaticamente
@@ -493,7 +564,7 @@ export class BotService {
                 ...session,
                 currentStepId: nextStepId,
               };
-              await this.executeFlow(flow, updatedSession, input);
+              await this.executeFlow(flow, updatedSession, input, inputMeta);
             }
           }
         }
@@ -824,12 +895,40 @@ export class BotService {
         }
         break;
 
-      case 'PICTURE_CHOICE':
-        // Aguardar escolha de imagem
+      case 'PICTURE_CHOICE': {
+        // Para WhatsApp / canais com imagem: só avançar automaticamente quando a mensagem for de imagem.
+        // Em outros canais (sem messageType), manter comportamento antigo (qualquer input é aceito).
+        const messageType = inputMeta?.messageType;
+        const isImageMessage =
+          !messageType || messageType.toLowerCase() === 'image';
+
+        if (!isImageMessage) {
+          const choiceError =
+            currentStep.config?.errorMessage ||
+            'Envie uma imagem válida para continuar.';
+          const choiceContext = (session.context as Record<string, any>) || {};
+          await this.sendBotResponse(
+            session.conversationId,
+            {
+              type: 'TEXT',
+              content: choiceError,
+            } as any,
+            session.botId,
+            choiceContext,
+          );
+          // Não avança de step
+          break;
+        }
+
+        // Aguardar escolha de imagem (ou input válido) e salvar em variável
         const choiceContext = (session.context as Record<string, any>) || {};
         const choiceVariableName = currentStep.config?.variableName;
         if (choiceVariableName && input) {
-          const updatedChoiceContext = this.variableService.setVariableValue(choiceContext, choiceVariableName, input);
+          const updatedChoiceContext = this.variableService.setVariableValue(
+            choiceContext,
+            choiceVariableName,
+            input,
+          );
           await prisma.botSession.update({
             where: { id: session.id },
             data: { context: updatedChoiceContext },
@@ -841,8 +940,19 @@ export class BotService {
             where: { id: session.id },
             data: { currentStepId: currentStep.nextStepId },
           });
+
+          // Se o próximo step for MESSAGE, executa imediatamente para o bot responder
+          const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
+          if (nextStep && nextStep.type === 'MESSAGE') {
+            const updatedSession = {
+              ...session,
+              currentStepId: currentStep.nextStepId,
+            };
+            await this.executeFlow(flow, updatedSession, input, inputMeta);
+          }
         }
         break;
+      }
 
       case 'REDIRECT':
         // Redirecionamento é tratado no frontend/cliente
