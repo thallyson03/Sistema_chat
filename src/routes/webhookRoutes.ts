@@ -420,30 +420,37 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       }
     }
 
-    // Emitir evento para n8n (webhooks configurados)
-    try {
-      await webhookService.emitEvent(
-        'message.received',
-        {
-          messageId: createdMessage.id,
-          conversationId: conversation.id,
-          contactId: contact.id,
-          channelId: contact.channelId,
-          content: messageContent,
-          type: messageTypeDb,
-          fromMe: false,
-          metadata: {
-            phone: contact.phone,
-            contactName: contact.name,
-            provider: 'whatsapp_official',
+    // Emitir evento para n8n (webhooks configurados) apenas se a conversa não estiver atribuída a um humano
+    if (!conversation.assignedToId) {
+      try {
+        await webhookService.emitEvent(
+          'message.received',
+          {
+            messageId: createdMessage.id,
+            conversationId: conversation.id,
+            contactId: contact.id,
+            channelId: contact.channelId,
+            content: messageContent,
+            type: messageTypeDb,
+            fromMe: false,
+            metadata: {
+              phone: contact.phone,
+              contactName: contact.name,
+              provider: 'whatsapp_official',
+            },
           },
-        },
-        contact.channelId || undefined,
-      );
-    } catch (webhookError: any) {
-      console.error(
-        '[WhatsAppOfficial] ❌ Erro ao emitir evento para n8n (WhatsApp Official):',
-        webhookError.message,
+          contact.channelId || undefined,
+        );
+      } catch (webhookError: any) {
+        console.error(
+          '[WhatsAppOfficial] ❌ Erro ao emitir evento para n8n (WhatsApp Official):',
+          webhookError.message,
+        );
+      }
+    } else {
+      console.log(
+        '[WhatsAppOfficial] ℹ️ Conversa atribuída a humano, não emitir evento para n8n:',
+        conversation.id,
       );
     }
 

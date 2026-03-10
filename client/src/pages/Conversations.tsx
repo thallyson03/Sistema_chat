@@ -1450,7 +1450,29 @@ export default function Conversations() {
                     },
                   }}
                 >
-                  {messages.map((message) => {
+                  {messages.map((message, index) => {
+                    const messageDate = new Date(message.createdAt);
+                    const dateLabel = messageDate.toLocaleDateString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                    });
+
+                    let showDateDivider = false;
+                    if (index === 0) {
+                      showDateDivider = true;
+                    } else {
+                      const prev = messages[index - 1];
+                      const prevDate = new Date(prev.createdAt);
+                      const prevLabel = prevDate.toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                      });
+                      if (prevLabel !== dateLabel) {
+                        showDateDivider = true;
+                      }
+                    }
                     const isBotMessage = message.metadata?.fromBot === true;
                     const isFromCustomer = !isBotMessage && message.userId === null;
                     const isOwnMessage = message.userId !== null || isBotMessage;
@@ -1460,8 +1482,31 @@ export default function Conversations() {
                       : getAvatarUrl('Contato', 40);
                     
                     return (
+                      <div key={message.id}>
+                        {showDateDivider && (
+                          <div
+                            style={{
+                              textAlign: 'center',
+                              margin: '12px 0',
+                              position: 'relative',
+                              fontSize: '11px',
+                              color: '#6b7280',
+                            }}
+                          >
+                            <span
+                              style={{
+                                backgroundColor: '#f9fafb',
+                                padding: '2px 10px',
+                                borderRadius: '999px',
+                                border: '1px solid #e5e7eb',
+                              }}
+                            >
+                              {dateLabel}
+                            </span>
+                          </div>
+                        )}
+
                       <motion.div
-                        key={message.id}
                         variants={{
                           hidden: { opacity: 0, y: 10, scale: 0.95 },
                           visible: { opacity: 1, y: 0, scale: 1 },
@@ -2267,9 +2312,10 @@ export default function Conversations() {
                             }}
                           />
                         </div>
-                      )}
-                    </motion.div>
-                  );
+                        )}
+                      </motion.div>
+                      </div>
+                    );
                 })}
                 </motion.div>
               )}
