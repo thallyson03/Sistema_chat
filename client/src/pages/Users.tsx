@@ -252,15 +252,15 @@ export default function Users() {
                               key={us.sector.id}
                               className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
                               style={{
-                                backgroundColor: `${us.sector.sector.color}20`,
-                                color: us.sector.sector.color,
+                                backgroundColor: `${us.sector.color}20`,
+                                color: us.sector.color,
                               }}
                             >
                               <span
                                 className="h-1.5 w-1.5 rounded-full"
-                                style={{ backgroundColor: us.sector.sector.color }}
+                                style={{ backgroundColor: us.sector.color }}
                               />
-                              {us.sector.sector.name}
+                              {us.sector.name}
                             </span>
                           ))}
                         </div>

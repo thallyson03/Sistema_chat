@@ -66,6 +66,7 @@ const getContactAvatar = (contact: { name: string; profilePicture?: string }, si
 interface Conversation {
   id: string;
   channelId: string;
+  assignedToId?: string | null;
   contact: {
     id: string;
     name: string;
@@ -82,6 +83,7 @@ interface Conversation {
     name: string;
     type: string;
   };
+  inBot?: boolean;
 }
 
 interface Message {
@@ -150,11 +152,18 @@ export default function Conversations() {
   const currentConversationIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const statusFilterRef = useRef<string>('ALL');
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
 
   // Atualizar o ref sempre que a conversa selecionada mudar
   useEffect(() => {
     currentConversationIdRef.current = selectedConversation?.id || null;
   }, [selectedConversation]);
+
+  // Manter filtro atual em um ref para uso em handlers de socket
+  useEffect(() => {
+    statusFilterRef.current = statusFilter;
+  }, [statusFilter]);
 
   useEffect(() => {
     fetchConversations();
@@ -238,6 +247,19 @@ export default function Conversations() {
     };
   }, []);
 
+  // Buscar usuário atual para poder assumir conversas do bot
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await api.get('/api/auth/me');
+        setCurrentUser(response.data);
+      } catch (error) {
+        console.error('Erro ao buscar usuário atual:', error);
+      }
+    };
+    fetchCurrentUser();
+  }, []);
+
   useEffect(() => {
     // Scroll para última mensagem quando mensagens mudarem
     if (messagesEndRef.current) {
@@ -254,14 +276,17 @@ export default function Conversations() {
 
   useEffect(() => {
     // Recarregar conversas quando o filtro mudar
-    fetchConversations();
+    fetchConversations(statusFilter);
   }, [statusFilter]);
 
-  const fetchConversations = async () => {
+  const fetchConversations = async (filterOverride?: string) => {
     try {
+      const effectiveFilter = filterOverride ?? statusFilterRef.current;
       const params = new URLSearchParams();
-      if (statusFilter !== 'ALL') {
-        params.append('status', statusFilter);
+      if (effectiveFilter === 'BOT') {
+        params.append('inBot', 'true');
+      } else if (effectiveFilter !== 'ALL') {
+        params.append('status', effectiveFilter);
       }
 
       const response = await api.get(`/api/conversations?${params.toString()}`);
@@ -1068,6 +1093,7 @@ export default function Conversations() {
             <option value="WAITING">Aguardando</option>
             <option value="CLOSED">Fechadas</option>
             <option value="ARCHIVED">Arquivadas</option>
+            <option value="BOT">Conversa em bot</option>
           </select>
         </div>
 
@@ -1244,7 +1270,64 @@ export default function Conversations() {
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '8px', marginLeft: '15px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginLeft: '15px', alignItems: 'center' }}>
+                {/* Ícone de bot/integração vs humano */}
+                {selectedConversation && (
+                  <button
+                    disabled={!currentUser}
+                    onClick={async () => {
+                      if (!selectedConversation || !currentUser) return;
+                      try {
+                        if (selectedConversation.inBot) {
+                          // Bot/integração -> humano assume
+                          await api.post(
+                            `/api/conversations/${selectedConversation.id}/assign`,
+                            { userId: currentUser.id },
+                          );
+                        } else {
+                          // Humano -> voltar para fila/bot (remover atribuição)
+                          await api.put(`/api/conversations/${selectedConversation.id}`, {
+                            assignedToId: null,
+                          });
+                        }
+
+                        // Buscar conversa atualizada (inclui campo inBot calculado no backend)
+                        const convResp = await api.get(
+                          `/api/conversations/${selectedConversation.id}`,
+                        );
+                        setSelectedConversation(convResp.data as any);
+                        await fetchConversations(statusFilterRef.current);
+                      } catch (error: any) {
+                        console.error('Erro ao alternar bot/humano na conversa:', error);
+                        alert(
+                          error.response?.data?.error ||
+                            'Erro ao alternar entre bot e humano nesta conversa',
+                        );
+                      }
+                    }}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: '999px',
+                      border: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: currentUser ? 'pointer' : 'default',
+                      backgroundColor: selectedConversation.inBot ? '#10b981' : '#111827',
+                      color: 'white',
+                      fontSize: '16px',
+                    }}
+                    title={
+                      selectedConversation.inBot
+                        ? 'Bot/integração ativo - clique para assumir atendimento'
+                        : 'Atendimento humano - clique para devolver ao bot/integração'
+                    }
+                  >
+                    🤖
+                  </button>
+                )}
+
                 {selectedConversation.status === 'CLOSED' || selectedConversation.status === 'ARCHIVED' ? (
                   <button
                     onClick={async () => {

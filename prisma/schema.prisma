@@ -551,6 +551,10 @@ model Bot {
   isActive        Boolean  @default(true)
   welcomeMessage  String?
   fallbackMessage String?  // Mensagem quando não entende
+  // Configuração de encerramento automático por inatividade
+  autoCloseEnabled      Boolean  @default(false) // Se true, encerra conversas inativas automaticamente
+  autoCloseAfterMinutes Int?               // Quantos minutos sem mensagem do cliente para encerrar
+  autoCloseMessage      String?           // Mensagem enviada ao encerrar automaticamente
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -645,11 +649,12 @@ model FlowStep {
 model FlowCondition {
   id          String   @id @default(cuid())
   stepId      String
-  condition   String   // Campo a verificar (ex: "message.content", "context.variable")
+  condition   String   // Campo a verificar (ex: "message.content", "context.nomeVariavel")
   operator    String   // EQUALS, CONTAINS, GREATER_THAN, LESS_THAN, REGEX
   value       String   // Valor a comparar
   trueStepId  String?  // Próximo passo se verdadeiro
   falseStepId String?  // Próximo passo se falso
+  order       Int      @default(0) // Ordem quando há múltiplas condições
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -8,6 +8,9 @@ interface Bot {
   description?: string;
   channelId: string;
   isActive: boolean;
+  autoCloseEnabled?: boolean;
+  autoCloseAfterMinutes?: number | null;
+  autoCloseMessage?: string | null;
   channel?: {
     id: string;
     name: string;
@@ -48,6 +51,9 @@ export default function Bots() {
     channelId: '',
     welcomeMessage: '',
     fallbackMessage: '',
+    autoCloseEnabled: false,
+    autoCloseAfterMinutes: 0,
+    autoCloseMessage: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [showVariablesModal, setShowVariablesModal] = useState(false);
@@ -113,6 +119,9 @@ export default function Bots() {
         channelId: '',
         welcomeMessage: '',
         fallbackMessage: '',
+        autoCloseEnabled: false,
+        autoCloseAfterMinutes: 0,
+        autoCloseMessage: '',
       });
       fetchBots();
       alert('Bot criado com sucesso!');
@@ -121,6 +130,19 @@ export default function Bots() {
       alert(error.response?.data?.error || 'Erro ao criar bot');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleToggleBotActive = async (bot: Bot) => {
+    try {
+      await api.put(`/api/bots/${bot.id}`, {
+        isActive: !bot.isActive,
+      });
+      await fetchBots();
+      alert(!bot.isActive ? 'Bot retomado com sucesso!' : 'Bot pausado com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao pausar/retomar bot:', error);
+      alert(error.response?.data?.error || 'Erro ao atualizar status do bot');
     }
   };
 
@@ -214,7 +236,7 @@ export default function Bots() {
                         fontWeight: 'bold',
                       }}
                     >
-                      {bot.isActive ? 'Ativo' : 'Inativo'}
+                      {bot.isActive ? 'Ativo' : 'Pausado'}
                     </span>
                   </div>
                   {bot.description && (
@@ -234,6 +256,20 @@ export default function Bots() {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+                  <button
+                    onClick={() => handleToggleBotActive(bot)}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: bot.isActive ? '#f59e0b' : '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
+                    {bot.isActive ? 'Pausar Bot' : 'Retomar Bot'}
+                  </button>
                   <button
                     onClick={() => navigate(`/bots/${bot.id}/flows/visual`)}
                     style={{
@@ -418,42 +454,77 @@ export default function Bots() {
                 </select>
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
-                  Mensagem de Boas-vindas
+              {/* Configuração de encerramento automático */}
+              <div style={{ marginBottom: '15px', padding: '12px', borderRadius: '6px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '14px', marginBottom: '8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.autoCloseEnabled}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        autoCloseEnabled: e.target.checked,
+                      })
+                    }
+                  />
+                  Encerrar atendimento automaticamente por inatividade
                 </label>
-                <input
-                  type="text"
-                  value={formData.welcomeMessage}
-                  onChange={(e) => setFormData({ ...formData, welcomeMessage: e.target.value })}
-                  placeholder="Ex: Olá! Como posso ajudar?"
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '5px',
-                    fontSize: '14px',
-                  }}
-                />
-              </div>
-
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
-                  Mensagem de Fallback
-                </label>
-                <input
-                  type="text"
-                  value={formData.fallbackMessage}
-                  onChange={(e) => setFormData({ ...formData, fallbackMessage: e.target.value })}
-                  placeholder="Ex: Desculpe, não entendi. Pode reformular?"
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '5px',
-                    fontSize: '14px',
-                  }}
-                />
+                {formData.autoCloseEnabled && (
+                  <>
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: 'bold' }}>
+                        Minutos sem resposta do cliente *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={formData.autoCloseAfterMinutes || ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            autoCloseAfterMinutes: Number(e.target.value) || 0,
+                          })
+                        }
+                        placeholder="Ex: 15"
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '5px',
+                          fontSize: '14px',
+                        }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: 'bold' }}>
+                        Mensagem de encerramento *
+                      </label>
+                      <textarea
+                        value={formData.autoCloseMessage}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            autoCloseMessage: e.target.value,
+                          })
+                        }
+                        placeholder="Ex: Encerramos este atendimento por inatividade. Se precisar, é só mandar uma nova mensagem."
+                        rows={3}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '5px',
+                          fontSize: '14px',
+                        }}
+                        required
+                      />
+                      <small style={{ color: '#6b7280', fontSize: '12px' }}>
+                        Você pode usar variáveis do bot, por exemplo: {'{{Nome}}'}.
+                      </small>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>

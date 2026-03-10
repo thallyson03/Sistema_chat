@@ -41,12 +41,17 @@ router.delete('/steps/:stepId', botController.deleteFlowStep.bind(botController)
 
 // Condições
 router.post('/steps/:stepId/conditions', botController.createFlowCondition.bind(botController));
+router.put('/conditions/:conditionId', botController.updateFlowCondition.bind(botController));
+router.delete('/conditions/:conditionId', botController.deleteFlowCondition.bind(botController));
 
 // Variáveis
 router.post('/:botId/variables', botController.createVariable.bind(botController));
 router.get('/:botId/variables', botController.listVariables.bind(botController));
 router.put('/variables/:id', botController.updateVariable.bind(botController));
 router.delete('/variables/:id', botController.deleteVariable.bind(botController));
+
+// Teste de HTTP Request (Webhook) via backend
+router.post('/http-test', botController.testHttpRequest.bind(botController));
 
 export default router;
 

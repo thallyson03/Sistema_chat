@@ -85,7 +85,10 @@ export class WebhookService {
   /**
    * Atualiza um webhook
    */
-  async updateWebhook(webhookId: string, data: Partial<RegisterWebhookData>) {
+  async updateWebhook(
+    webhookId: string,
+    data: Partial<RegisterWebhookData> & { isActive?: boolean },
+  ) {
     const updateData: any = {};
 
     if (data.name) updateData.name = data.name;
@@ -93,13 +96,17 @@ export class WebhookService {
     if (data.events) updateData.events = data.events;
     if (data.secret) updateData.secret = data.secret;
     if (data.channelId !== undefined) updateData.channelId = data.channelId;
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
     const webhook = await prisma.webhookConfig.update({
       where: { id: webhookId },
       data: updateData,
     });
 
-    console.log('[WebhookService] Webhook atualizado:', webhookId);
+    console.log('[WebhookService] Webhook atualizado:', {
+      id: webhookId,
+      isActive: updateData.isActive,
+    });
 
     return webhook;
   }
@@ -119,6 +126,12 @@ export class WebhookService {
    * Emite um evento para todos os webhooks configurados
    */
   async emitEvent(event: string, data: any, channelId?: string) {
+    console.log('[WebhookService] emitEvent chamado:', {
+      event,
+      hasChannelId: !!channelId,
+      channelId,
+    });
+
     const where: any = {
       isActive: true,
       events: {
@@ -126,20 +139,25 @@ export class WebhookService {
       },
     };
 
-    if (channelId) {
+    // IMPORTANTE: se channelId vier vazio (''), não filtrar por canal
+    const effectiveChannelId = channelId && channelId.trim() !== '' ? channelId : undefined;
+
+    if (effectiveChannelId) {
+      // Webhooks específicos do canal OU globais
       where.OR = [
-        { channelId: channelId },
-        { channelId: null }, // Webhooks globais (sem canal específico)
+        { channelId: effectiveChannelId },
+        { channelId: null },
       ];
-    } else {
-      where.channelId = null; // Apenas webhooks globais
     }
 
-    const webhooks = await prisma.webhookConfig.findMany({
-      where,
-    });
+    const webhooks = await prisma.webhookConfig.findMany({ where });
 
-    console.log(`[WebhookService] Emitindo evento "${event}" para ${webhooks.length} webhook(s)`);
+    console.log('[WebhookService] Webhooks encontrados para evento:', {
+      event,
+      total: webhooks.length,
+      ids: webhooks.map((w) => w.id),
+      urls: webhooks.map((w) => w.url),
+    });
 
     const promises = webhooks.map(async (webhook) => {
       try {
@@ -148,6 +166,12 @@ export class WebhookService {
           timestamp: new Date().toISOString(),
           data,
         };
+
+        console.log('[WebhookService] Enviando evento para webhook:', {
+          id: webhook.id,
+          name: webhook.name,
+          url: webhook.url,
+        });
 
         const response = await axios.post(webhook.url, payload, {
           headers: {
@@ -182,7 +206,12 @@ export class WebhookService {
           },
         });
 
-        console.error(`[WebhookService] ❌ Erro ao enviar evento "${event}" para ${webhook.name}:`, error.message);
+        console.error(
+          `[WebhookService] ❌ Erro ao enviar evento "${event}" para ${webhook.name}:`,
+          error.message,
+          error.response?.status,
+          error.response?.data,
+        );
         return { webhookId: webhook.id, status: 'FAILED', error: error.message };
       }
     });

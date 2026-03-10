@@ -13,6 +13,10 @@ export class ConversationController {
         status: req.query.status as any,
         search: req.query.search as string | undefined,
         contactId: req.query.contactId as string | undefined,
+        inBot:
+          typeof req.query.inBot === 'string'
+            ? (req.query.inBot as string).toLowerCase() === 'true'
+            : undefined,
       };
 
       const limit = parseInt(req.query.limit as string) || 50;
@@ -81,6 +85,29 @@ export class ConversationController {
       }
 
       const conversation = await conversationService.assignConversation(id, userId);
+      res.json(conversation);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Transfere conversa para um setor (fila), opcionalmente redistribuindo
+   * automaticamente para um atendente desse setor.
+   */
+  async transferToSector(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { sectorId, autoAssign } = req.body || {};
+
+      if (!sectorId) {
+        return res.status(400).json({ error: 'ID do setor (sectorId) é obrigatório' });
+      }
+
+      const conversation = await conversationService.transferToSector(id, sectorId, {
+        autoAssign: !!autoAssign,
+      });
+
       res.json(conversation);
     } catch (error: any) {
       res.status(400).json({ error: error.message });

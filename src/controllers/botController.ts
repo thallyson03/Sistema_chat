@@ -22,7 +22,18 @@ export class BotController {
         return res.status(403).json({ error: 'Apenas administradores e supervisores podem criar bots' });
       }
 
-      const { name, description, avatar, channelId, language, welcomeMessage, fallbackMessage } = req.body;
+      const {
+        name,
+        description,
+        avatar,
+        channelId,
+        language,
+        welcomeMessage,
+        fallbackMessage,
+        autoCloseEnabled,
+        autoCloseAfterMinutes,
+        autoCloseMessage,
+      } = req.body;
 
       if (!name || !channelId) {
         return res.status(400).json({ error: 'Nome e channelId são obrigatórios' });
@@ -36,6 +47,9 @@ export class BotController {
         language,
         welcomeMessage,
         fallbackMessage,
+        autoCloseEnabled,
+        autoCloseAfterMinutes,
+        autoCloseMessage,
       });
 
       res.status(201).json(bot);
@@ -106,7 +120,18 @@ export class BotController {
       }
 
       const { id } = req.params;
-      const { name, description, avatar, language, welcomeMessage, fallbackMessage, isActive } = req.body;
+      const {
+        name,
+        description,
+        avatar,
+        language,
+        welcomeMessage,
+        fallbackMessage,
+        isActive,
+        autoCloseEnabled,
+        autoCloseAfterMinutes,
+        autoCloseMessage,
+      } = req.body;
 
       const bot = await botService.updateBot(id, {
         name,
@@ -116,6 +141,9 @@ export class BotController {
         welcomeMessage,
         fallbackMessage,
         isActive,
+        autoCloseEnabled,
+        autoCloseAfterMinutes,
+        autoCloseMessage,
       });
 
       res.json(bot);
@@ -663,7 +691,7 @@ export class BotController {
       }
 
       const { stepId } = req.params;
-      const { condition, operator, value, trueStepId, falseStepId } = req.body;
+      const { condition, operator, value, trueStepId, falseStepId, order } = req.body;
 
       if (!condition || !operator || value === undefined) {
         return res.status(400).json({ error: 'condition, operator e value são obrigatórios' });
@@ -675,11 +703,60 @@ export class BotController {
         value,
         trueStepId,
         falseStepId,
+        order,
       });
 
       res.status(201).json(flowCondition);
     } catch (error: any) {
       console.error('[BotController] Erro ao criar condição:', error);
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Atualiza uma condição
+   */
+  async updateFlowCondition(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR') {
+        return res.status(403).json({ error: 'Apenas administradores e supervisores podem editar condições' });
+      }
+      const { conditionId } = req.params;
+      const { condition, operator, value, trueStepId, falseStepId, order } = req.body;
+      const flowCondition = await botService.updateFlowCondition(conditionId, {
+        condition,
+        operator,
+        value,
+        trueStepId,
+        falseStepId,
+        order,
+      });
+      res.status(200).json(flowCondition);
+    } catch (error: any) {
+      console.error('[BotController] Erro ao atualizar condição:', error);
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Remove uma condição
+   */
+  async deleteFlowCondition(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR') {
+        return res.status(403).json({ error: 'Apenas administradores e supervisores podem excluir condições' });
+      }
+      const { conditionId } = req.params;
+      await botService.deleteFlowCondition(conditionId);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error('[BotController] Erro ao excluir condição:', error);
       res.status(400).json({ error: error.message });
     }
   }
@@ -795,6 +872,28 @@ export class BotController {
     } catch (error: any) {
       console.error('[BotController] Erro ao deletar variável:', error);
       res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Testa uma requisição HTTP do bloco Webhook/HTTP_REQUEST via backend
+   */
+  async testHttpRequest(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+
+      const { config } = req.body || {};
+      if (!config || !config.url) {
+        return res.status(400).json({ error: 'Configuração inválida. URL é obrigatória.' });
+      }
+
+      const data = await botService.testHttpRequest(config, {});
+      res.json({ data });
+    } catch (error: any) {
+      console.error('[BotController] Erro ao testar HTTP Request:', error);
+      res.status(400).json({ error: error.message || 'Erro ao testar requisição HTTP' });
     }
   }
 }

@@ -420,6 +420,33 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       }
     }
 
+    // Emitir evento para n8n (webhooks configurados)
+    try {
+      await webhookService.emitEvent(
+        'message.received',
+        {
+          messageId: createdMessage.id,
+          conversationId: conversation.id,
+          contactId: contact.id,
+          channelId: contact.channelId,
+          content: messageContent,
+          type: messageTypeDb,
+          fromMe: false,
+          metadata: {
+            phone: contact.phone,
+            contactName: contact.name,
+            provider: 'whatsapp_official',
+          },
+        },
+        contact.channelId || undefined,
+      );
+    } catch (webhookError: any) {
+      console.error(
+        '[WhatsAppOfficial] ❌ Erro ao emitir evento para n8n (WhatsApp Official):',
+        webhookError.message,
+      );
+    }
+
     // Emitir evento via Socket.IO
     if (io) {
       // Evento específico da sala da conversa (usado por outras telas/detalhes)

@@ -1,6 +1,7 @@
 import prisma from '../config/database';
 import { MessageService } from './messageService';
 import { BotVariableService } from './botVariableService';
+import vm from 'vm';
 
 export interface CreateBotData {
   name: string;
@@ -10,6 +11,10 @@ export interface CreateBotData {
   language?: string;
   welcomeMessage?: string;
   fallbackMessage?: string;
+   // Configuração de encerramento automático por inatividade
+  autoCloseEnabled?: boolean;
+  autoCloseAfterMinutes?: number;
+  autoCloseMessage?: string;
 }
 
 export interface CreateIntentData {
@@ -103,6 +108,9 @@ export class BotService {
         welcomeMessage: data.welcomeMessage,
         fallbackMessage: data.fallbackMessage || 'Desculpe, não entendi. Pode reformular sua pergunta?',
         isActive: true,
+        autoCloseEnabled: data.autoCloseEnabled ?? false,
+        autoCloseAfterMinutes: data.autoCloseAfterMinutes ?? null,
+        autoCloseMessage: data.autoCloseMessage ?? null,
       },
     });
 
@@ -324,7 +332,12 @@ export class BotService {
           };
           
           // Executar o primeiro step imediatamente
-          await this.executeFlow(alwaysFlow, updatedSession as any, '', inputMeta);
+          await this.executeFlow(
+            alwaysFlow,
+            updatedSession as any,
+            '',
+            { ...(inputMeta || {}), _fromFlow: true } as any,
+          );
           return { flow: alwaysFlow.id, autoStarted: true };
         } else {
           console.warn(`[BotService] Fluxo "${alwaysFlow.name}" não tem steps configurados`);
@@ -418,10 +431,29 @@ export class BotService {
   private getFlowEntryStep(flow: any): any {
     const steps = flow.steps || [];
     if (steps.length === 0) return null;
-    // Entrada = step que nunca é alvo de nextStepId de outro step
-    const entryStep = steps.find(
-      (step: any) => !steps.some((s: any) => s.nextStepId === step.id)
-    );
+
+    // Construir conjunto de IDs que são alvo de alguma conexão:
+    // - nextStepId de qualquer step
+    // - trueStepId / falseStepId das condições
+    const referencedIds = new Set<string>();
+    for (const s of steps) {
+      if (s.nextStepId && s.nextStepId !== 'END') {
+        referencedIds.add(s.nextStepId);
+      }
+      if (Array.isArray(s.conditions)) {
+        for (const c of s.conditions) {
+          if (c.trueStepId && c.trueStepId !== 'END') {
+            referencedIds.add(c.trueStepId);
+          }
+          if (c.falseStepId && c.falseStepId !== 'END') {
+            referencedIds.add(c.falseStepId);
+          }
+        }
+      }
+    }
+
+    // Entrada = step que não é alvo de nenhuma conexão
+    const entryStep = steps.find((step: any) => !referencedIds.has(step.id));
     if (entryStep) return entryStep;
     // Fallback: menor order (comportamento antigo)
     const ordered = [...steps].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
@@ -447,8 +479,9 @@ export class BotService {
       return;
     }
 
-    // Se estamos em um step que espera imagem (PICTURE_CHOICE) e o usuário mandou TEXTO que parece saudação,
-    // reiniciar o fluxo no step de ENTRADA real (conectado ao Início), para enviar a primeira mensagem.
+    // Se estamos em um step que espera input do usuário (INPUT, etc.) e ele mandou
+    // uma saudação/pedido de reinício (ex: "oi", "menu"), reiniciar o fluxo no
+    // step de ENTRADA real (conectado ao Início no builder) para respeitar o desenho.
     const messageType = inputMeta?.messageType;
     const isTextMessage = !messageType || messageType === 'text';
     const inputSteps = ['PICTURE_CHOICE', 'INPUT', 'TEXT_INPUT', 'EMAIL_INPUT', 'NUMBER_INPUT', 'PHONE_INPUT'];
@@ -459,13 +492,23 @@ export class BotService {
     ) {
       const entryStep = this.getFlowEntryStep(flow);
       if (entryStep && entryStep.id !== currentStep.id) {
-        console.log(`[BotService] Saudação/reinício detectado ("${input?.substring(0, 30)}"), reiniciando no step de entrada (tipo: ${entryStep.type})`);
+        console.log(
+          `[BotService] Saudação/reinício detectado ("${input?.substring(
+            0,
+            30,
+          )}"), reiniciando no step de entrada (tipo: ${entryStep.type})`,
+        );
         await prisma.botSession.update({
           where: { id: session.id },
           data: { currentStepId: entryStep.id },
         });
         const updatedSession = { ...session, currentStepId: entryStep.id };
-        await this.executeFlow(flow, updatedSession, '', inputMeta);
+        await this.executeFlow(
+          flow,
+          updatedSession,
+          '',
+          { ...(inputMeta || {}), _fromFlow: true } as any,
+        );
         return;
       }
     }
@@ -486,8 +529,10 @@ export class BotService {
         // 1) Preferir nextStepId explícito (via conexões do builder).
         // 2) Se não existir, usar fallback pelo campo "order" (próximo step na sequência).
         let nextStepId: string | null | undefined = currentStep.nextStepId;
+        const autoAdvanceAllowed =
+          !inputMeta?.['_fromWait'] && !inputMeta?.['_fromJump'];
 
-        if (!nextStepId) {
+        if (!nextStepId && autoAdvanceAllowed) {
           const orderedSteps = [...flow.steps].sort(
             (a: any, b: any) => (a.order || 0) - (b.order || 0),
           );
@@ -544,7 +589,12 @@ export class BotService {
                 ...session,
                 currentStepId: nextStepId,
               };
-              await this.executeFlow(flow, updatedSession, input, inputMeta);
+              await this.executeFlow(
+                flow,
+                updatedSession,
+                input,
+                { ...(inputMeta || {}), _fromFlow: true } as any,
+              );
             } else if (
               nextStep.type === 'INPUT' ||
               nextStep.type === 'TEXT_INPUT' ||
@@ -564,7 +614,12 @@ export class BotService {
                 ...session,
                 currentStepId: nextStepId,
               };
-              await this.executeFlow(flow, updatedSession, input, inputMeta);
+              await this.executeFlow(
+                flow,
+                updatedSession,
+                input,
+                { ...(inputMeta || {}), _fromFlow: true } as any,
+              );
             }
           }
         }
@@ -574,23 +629,56 @@ export class BotService {
         await this.handoffToHuman(session.id, currentStep.config?.userId);
         break;
 
-      case 'CONDITION':
-        // Processar condições
-        const condition = currentStep.conditions[0];
-        if (condition) {
-          const result = this.evaluateCondition(condition, input, session.context || {});
-          const nextStepId = result ? condition.trueStepId : condition.falseStepId;
+      case 'CONDITION': {
+        // Múltiplas condições: avaliar todas e combinar com AND ou OR (config.logicOperator)
+        const conditionsList = (currentStep.conditions || []).slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+        const logicOperator = (currentStep.config?.logicOperator || 'AND').toUpperCase();
+        let result = false;
 
-          if (nextStepId) {
-            await prisma.botSession.update({
-              where: { id: session.id },
-              data: {
+        if (conditionsList.length === 0) {
+          console.warn(`[BotService] Step CONDITION sem condições definidas`);
+          break;
+        }
+
+        const resultList = conditionsList.map((c: any) =>
+          this.evaluateCondition(c, input, session.context || {})
+        );
+
+        if (logicOperator === 'OR') {
+          result = resultList.some(Boolean);
+        } else {
+          result = resultList.every(Boolean);
+        }
+
+        // trueStepId e falseStepId vêm da primeira condição (todas apontam para os mesmos ramos no fluxo)
+        const firstCondition = conditionsList[0];
+        const nextStepId = result ? firstCondition.trueStepId : firstCondition.falseStepId;
+
+        if (nextStepId) {
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: { currentStepId: nextStepId },
+          });
+
+          // Executar automaticamente o próximo step se for MESSAGE ou CONDITION
+          if (nextStepId !== 'END') {
+            const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
+            if (nextStep && (nextStep.type === 'MESSAGE' || nextStep.type === 'CONDITION')) {
+              const updatedSession = {
+                ...session,
                 currentStepId: nextStepId,
-              },
-            });
+              };
+              await this.executeFlow(
+                flow,
+                updatedSession as any,
+                input,
+                { ...(inputMeta || {}), _fromFlow: true } as any,
+              );
+            }
           }
         }
         break;
+      }
 
       case 'DELAY':
         // Aguardar tempo especificado
@@ -641,7 +729,7 @@ export class BotService {
                 },
               });
             } else {
-              // Atualizar para próximo step e executar se for MESSAGE
+              // Atualizar para próximo step e executar automaticamente se for MESSAGE ou CONDITION
               await prisma.botSession.update({
                 where: { id: session.id },
                 data: {
@@ -649,15 +737,25 @@ export class BotService {
                 },
               });
               
-              // Executar próximo step se for MESSAGE
+              // Executar próximo step automaticamente se for MESSAGE, CONDITION ou SCRIPT
               const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
-              if (nextStep && nextStep.type === 'MESSAGE') {
+              if (
+                nextStep &&
+                (nextStep.type === 'MESSAGE' ||
+                 nextStep.type === 'CONDITION' ||
+                 nextStep.type === 'SCRIPT')
+              ) {
                 const updatedSession = {
                   ...session,
                   currentStepId: currentStep.nextStepId,
                   context: updatedContext,
                 };
-                await this.executeFlow(flow, updatedSession, input);
+                await this.executeFlow(
+                  flow,
+                  updatedSession,
+                  input,
+                  { ...(inputMeta || {}), _fromFlow: true } as any,
+                );
               }
             }
           } else {
@@ -712,23 +810,24 @@ export class BotService {
             },
           });
         }
-      case 'HTTP_REQUEST':
+      case 'HTTP_REQUEST': {
         // Fazer chamada HTTP e salvar resultado em variável
         const httpConfig = currentStep.config;
+        let updatedContext: Record<string, any> = { ...(session.context as Record<string, any>) || {} };
+
         if (httpConfig?.url) {
           try {
-            const response = await this.executeHttpRequest(httpConfig, (session.context as Record<string, any>) || {});
-            let updatedContext = { ...(session.context as Record<string, any>) || {} };
-            
+            const response = await this.executeHttpRequest(httpConfig, updatedContext);
+
             // Salvar resposta completa em variável se especificado
             if (httpConfig.variableName) {
               updatedContext = this.variableService.setVariableValue(
                 updatedContext,
                 httpConfig.variableName,
-                response
+                response,
               );
             }
-            
+
             // Mapear campos específicos para variáveis separadas
             if (httpConfig.fieldMappings && Array.isArray(httpConfig.fieldMappings)) {
               for (const mapping of httpConfig.fieldMappings) {
@@ -738,50 +837,96 @@ export class BotService {
                     updatedContext = this.variableService.setVariableValue(
                       updatedContext,
                       mapping.variableName,
-                      fieldValue
+                      fieldValue,
                     );
                   }
                 }
               }
             }
-            
+
             await prisma.botSession.update({
               where: { id: session.id },
               data: {
                 context: updatedContext,
               },
             });
-            
+
+            // Atualizar contexto em memória
+            (session as any).context = updatedContext;
+
             // Enviar mensagem com o resultado (opcional)
             if (httpConfig.showResponse) {
-              const responseMessage = typeof response === 'object' 
-                ? JSON.stringify(response, null, 2)
-                : String(response);
-              await this.sendBotResponse(session.conversationId, {
-                type: 'TEXT',
-                content: `Resposta da API:\n${responseMessage}`,
-              } as any, session.botId, updatedContext);
+              const responseMessage =
+                typeof response === 'object' ? JSON.stringify(response, null, 2) : String(response);
+              await this.sendBotResponse(
+                session.conversationId,
+                {
+                  type: 'TEXT',
+                  content: `Resposta da API:\n${responseMessage}`,
+                } as any,
+                session.botId,
+                updatedContext,
+              );
             }
           } catch (error: any) {
             console.error('[BotService] Erro ao executar HTTP Request:', error);
             const errorMessage = httpConfig.errorMessage || `Erro ao chamar API: ${error.message}`;
-            await this.sendBotResponse(session.conversationId, {
-              type: 'TEXT',
-              content: errorMessage,
-            } as any, session.botId, (session.context as Record<string, any>) || {});
+            await this.sendBotResponse(
+              session.conversationId,
+              {
+                type: 'TEXT',
+                content: errorMessage,
+              } as any,
+              session.botId,
+              (session.context as Record<string, any>) || {},
+            );
           }
         }
-        
+
         // Avançar para próximo step
-        if (currentStep.nextStepId) {
+        const nextStepId = currentStep.nextStepId;
+        if (!nextStepId) {
+          break;
+        }
+
+        if (nextStepId === 'END') {
+          // Finalizar fluxo explicitamente
+          console.log(`[BotService] Fluxo "${flow.name}" finalizado após HTTP_REQUEST (step END)`);
           await prisma.botSession.update({
             where: { id: session.id },
             data: {
-              currentStepId: currentStep.nextStepId,
+              currentFlowId: null,
+              currentStepId: null,
             },
           });
+          break;
+        }
+
+        // Atualizar sessão com próximo step
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: {
+            currentStepId: nextStepId,
+          },
+        });
+
+        // Executar automaticamente o próximo step se for MESSAGE, CONDITION ou SCRIPT
+        const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
+        if (nextStep && (nextStep.type === 'MESSAGE' || nextStep.type === 'CONDITION' || nextStep.type === 'SCRIPT')) {
+          const updatedSession = {
+            ...session,
+            currentStepId: nextStepId,
+            context: (session as any).context,
+          };
+          await this.executeFlow(
+            flow,
+            updatedSession as any,
+            input,
+            { ...(inputMeta || {}), _fromFlow: true } as any,
+          );
         }
         break;
+      }
 
       case 'IMAGE':
         // Enviar imagem
@@ -948,15 +1093,46 @@ export class BotService {
               ...session,
               currentStepId: currentStep.nextStepId,
             };
-            await this.executeFlow(flow, updatedSession, input, inputMeta);
+            await this.executeFlow(
+              flow,
+              updatedSession,
+              input,
+              { ...(inputMeta || {}), _fromFlow: true } as any,
+            );
           }
         }
         break;
       }
 
       case 'REDIRECT':
-        // Redirecionamento é tratado no frontend/cliente
-        // Aqui apenas avançamos o fluxo
+        // Enviar URL de redirecionamento como mensagem (link clicável)
+        try {
+          const redirectContext = (session.context as Record<string, any>) || {};
+          const rawUrl = currentStep.config?.url || '';
+          const redirectUrl = this.parseVariables(rawUrl, redirectContext);
+
+          if (redirectUrl) {
+            await this.sendBotResponse(
+              session.conversationId,
+              {
+                type: 'TEXT',
+                content: redirectUrl,
+                metadata: {
+                  redirectUrl,
+                  openInNewTab: !!currentStep.config?.openInNewTab,
+                },
+              } as any,
+              session.botId,
+              redirectContext,
+            );
+          } else {
+            console.warn('[BotService] Step REDIRECT sem URL definida');
+          }
+        } catch (error: any) {
+          console.error('[BotService] Erro ao processar REDIRECT:', error.message);
+        }
+
+        // Avançar o fluxo normalmente após o redirect
         if (currentStep.nextStepId) {
           await prisma.botSession.update({
             where: { id: session.id },
@@ -966,30 +1142,179 @@ export class BotService {
         break;
 
       case 'SCRIPT':
-        // Executar script JavaScript (em ambiente seguro)
-        // Por segurança, scripts são executados apenas no frontend
-        // Aqui apenas avançamos o fluxo
+        try {
+          const scriptCode: string = currentStep.config?.code || currentStep.config?.script || '';
+          const sessionContext = (session.context as Record<string, any>) || {};
+
+          if (scriptCode && typeof scriptCode === 'string') {
+            // Substituir {{variavel}} no código usando o contexto atual
+            const parsedCode = this.parseVariables(scriptCode, sessionContext);
+
+            let updatedContext: Record<string, any> = { ...sessionContext };
+            const setVariable = (name: string, value: any) => {
+              const cleanName = typeof name === 'string' ? name.trim() : name;
+              if (!cleanName) return;
+              updatedContext = this.variableService.setVariableValue(updatedContext, cleanName, value);
+            };
+
+            const sandbox = {
+              context: updatedContext,
+              input,
+              message: input,
+              setVariable,
+            };
+
+            const result = vm.runInNewContext(parsedCode, sandbox, {
+              timeout: 5000,
+            });
+
+            // Se saveResultInVariable estiver definido, salvar o retorno do script
+            const rawSaveVarName = currentStep.config?.saveResultInVariable;
+            const saveVarName =
+              typeof rawSaveVarName === 'string' ? rawSaveVarName.trim() : rawSaveVarName;
+            if (saveVarName && result !== undefined) {
+              updatedContext = this.variableService.setVariableValue(updatedContext, saveVarName, result);
+            }
+
+            // Persistir contexto atualizado na sessão
+            await prisma.botSession.update({
+              where: { id: session.id },
+              data: {
+                context: updatedContext,
+              },
+            });
+
+            // Atualizar contexto também no objeto de sessão em memória
+            (session as any).context = updatedContext;
+          } else {
+            console.warn('[BotService] Step SCRIPT sem código definido');
+          }
+        } catch (scriptError: any) {
+          console.error('[BotService] Erro ao executar SCRIPT:', scriptError.message);
+        }
+
+        // Avançar fluxo após executar script
         if (currentStep.nextStepId) {
           await prisma.botSession.update({
             where: { id: session.id },
             data: { currentStepId: currentStep.nextStepId },
           });
+
+          const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
+          if (nextStep && (nextStep.type === 'MESSAGE' || nextStep.type === 'CONDITION')) {
+            const updatedSession = {
+              ...session,
+              currentStepId: currentStep.nextStepId,
+              context: (session as any).context,
+            };
+            await this.executeFlow(
+              flow,
+              updatedSession as any,
+              input,
+              { ...(inputMeta || {}), _fromFlow: true } as any,
+            );
+          }
         }
         break;
 
-      case 'WAIT':
-        // Aguardar evento específico (implementação depende do tipo de wait)
-        // Por enquanto, apenas avançamos após delay
-        const waitTime = currentStep.config?.waitTime || 1000;
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        
-        if (currentStep.nextStepId) {
+      case 'WAIT': {
+        // WAIT é um passo automático: só deve rodar quando chamado internamente pelo fluxo,
+        // não quando o usuário envia uma nova mensagem enquanto o WAIT está ativo.
+        if (!inputMeta?.['_fromFlow']) {
+          console.log(
+            `[BotService] WAIT chamado por mensagem do usuário; ignorando execução automática (step ${currentStep.id})`,
+          );
+          break;
+        }
+
+        // Aguardar um tempo e depois avançar automaticamente no fluxo
+        // Suporta:
+        // - waitTimeMs (milissegundos)
+        // - waitTimeSeconds (segundos)
+        // - waitTime (fallback genérico, em ms)
+        const config = currentStep.config || {};
+        const waitTimeMs =
+          typeof config.waitTimeMs === 'number'
+            ? config.waitTimeMs
+            : typeof config.waitTimeSeconds === 'number'
+            ? config.waitTimeSeconds * 1000
+            : typeof config.waitTime === 'number'
+            ? config.waitTime
+            : 1000;
+
+        await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
+
+        const nextStepId = currentStep.nextStepId;
+
+        if (!nextStepId) {
+          console.log(
+            `[BotService] Fluxo "${flow.name}" finalizado após WAIT (sem nextStepId configurado)`,
+          );
           await prisma.botSession.update({
             where: { id: session.id },
-            data: { currentStepId: currentStep.nextStepId },
+            data: {
+              currentFlowId: null,
+              currentStepId: null,
+            },
           });
+          break;
         }
+
+        if (nextStepId === 'END') {
+          console.log(`[BotService] Fluxo "${flow.name}" finalizado após WAIT (step END)`);
+          await prisma.botSession.update({
+            where: { id: session.id },
+            data: {
+              currentFlowId: null,
+              currentStepId: null,
+            },
+          });
+          break;
+        }
+
+        // Atualizar sessão para o próximo step
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: { currentStepId: nextStepId },
+        });
+
+        const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
+        if (!nextStep) {
+          console.warn(
+            `[BotService] Step WAIT apontou para nextStepId inexistente: ${nextStepId}`,
+          );
+          break;
+        }
+
+        // Se o próximo step espera input (INPUT, TEXT_INPUT, etc.), apenas atualiza e para aqui.
+        const inputSteps = [
+          'PICTURE_CHOICE',
+          'INPUT',
+          'TEXT_INPUT',
+          'EMAIL_INPUT',
+          'NUMBER_INPUT',
+          'PHONE_INPUT',
+        ];
+        if (inputSteps.includes(nextStep.type)) {
+          console.log(
+            `[BotService] WAIT concluído, aguardando input do usuário no step ${nextStep.id} (tipo: ${nextStep.type})`,
+          );
+          break;
+        }
+
+        // Para outros tipos (MESSAGE, CONDITION, SCRIPT, JUMP, HTTP_REQUEST, etc.) executar automaticamente
+        const updatedSession = {
+          ...session,
+          currentStepId: nextStepId,
+        };
+        await this.executeFlow(
+          flow,
+          updatedSession as any,
+          input,
+          { ...(inputMeta || {}), _fromFlow: true, _fromWait: true } as any,
+        );
         break;
+      }
 
       case 'TYPEBOT_LINK':
         // Link para outro bot (sub-bot)
@@ -1023,16 +1348,71 @@ export class BotService {
         }
         break;
 
-      case 'JUMP':
-        // Pular para step específico
+      case 'JUMP': {
+        // JUMP também é um passo automático: evitar executar em mensagens do usuário
+        // quando o fluxo já está parado neste step.
+        if (!inputMeta?.['_fromFlow']) {
+          console.log(
+            `[BotService] JUMP chamado por mensagem do usuário; ignorando execução automática (step ${currentStep.id})`,
+          );
+          break;
+        }
+
+        // Pular para step específico definido na configuração (config.targetStepId)
         const targetStepId = currentStep.config?.targetStepId;
-        if (targetStepId) {
+
+        if (!targetStepId) {
+          console.warn('[BotService] Step JUMP sem targetStepId definido');
+          break;
+        }
+
+        // Se o destino for END, finalizar o fluxo
+        if (targetStepId === 'END') {
+          console.log(`[BotService] Fluxo "${flow.name}" finalizado via JUMP (step END)`);
           await prisma.botSession.update({
             where: { id: session.id },
-            data: { currentStepId: targetStepId },
+            data: {
+              currentFlowId: null,
+              currentStepId: null,
+            },
           });
+          break;
         }
+
+        // Evitar loop direto para o mesmo step
+        if (targetStepId === currentStep.id) {
+          console.warn('[BotService] Step JUMP apontando para ele mesmo, ignorando para evitar loop');
+          break;
+        }
+
+        // Atualizar sessão para o step de destino
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: { currentStepId: targetStepId },
+        });
+
+        // Encontrar o step de destino no fluxo
+        const targetStep = flow.steps.find((s: any) => s.id === targetStepId);
+        if (!targetStep) {
+          console.warn(
+            `[BotService] Step JUMP apontou para targetStepId inexistente: ${targetStepId}`,
+          );
+          break;
+        }
+
+        // Executar automaticamente o step de destino
+        const updatedSession = {
+          ...session,
+          currentStepId: targetStepId,
+        };
+        await this.executeFlow(
+          flow,
+          updatedSession as any,
+          input,
+          { ...(inputMeta || {}), _fromFlow: true, _fromJump: true } as any,
+        );
         break;
+      }
 
       default:
         // Tipo desconhecido - apenas avançar se houver próximo step
@@ -1097,6 +1477,13 @@ export class BotService {
     } else {
       return await response.text();
     }
+  }
+
+  /**
+   * Expõe teste de requisição HTTP para o frontend (sem afetar fluxo).
+   */
+  async testHttpRequest(config: any, context: Record<string, any> = {}): Promise<any> {
+    return this.executeHttpRequest(config, context);
   }
 
   /**
@@ -1201,12 +1588,11 @@ export class BotService {
   }
 
   /**
-   * Avalia uma condição
+   * Avalia uma condição (campo pode ser message.content ou context.nomeVariavel)
    */
   private evaluateCondition(condition: any, input: string, context: any): boolean {
     let value: any;
 
-    // Obter valor baseado no campo
     if (condition.condition.startsWith('context.')) {
       const key = condition.condition.replace('context.', '');
       value = context[key];
@@ -1216,12 +1602,11 @@ export class BotService {
       value = input;
     }
 
-    // Comparar baseado no operador
     switch (condition.operator) {
       case 'EQUALS':
-        return String(value) === condition.value;
+        return String(value ?? '') === condition.value;
       case 'CONTAINS':
-        return String(value).toLowerCase().includes(condition.value.toLowerCase());
+        return String(value ?? '').toLowerCase().includes((condition.value || '').toLowerCase());
       case 'GREATER_THAN':
         return Number(value) > Number(condition.value);
       case 'LESS_THAN':
@@ -1229,7 +1614,7 @@ export class BotService {
       case 'REGEX':
         try {
           const regex = new RegExp(condition.value, 'i');
-          return regex.test(String(value));
+          return regex.test(String(value ?? ''));
         } catch {
           return false;
         }
@@ -1474,7 +1859,7 @@ export class BotService {
   }
 
   /**
-   * Cria uma condição para um step
+   * Cria uma condição para um step (permite múltiplas condições por step)
    */
   async createFlowCondition(stepId: string, data: {
     condition: string;
@@ -1482,39 +1867,53 @@ export class BotService {
     value: string;
     trueStepId?: string;
     falseStepId?: string;
+    order?: number;
   }) {
-    // Verificar se já existe uma condição para este step
-    const existingCondition = await prisma.flowCondition.findFirst({
-      where: { stepId },
+    return await prisma.flowCondition.create({
+      data: {
+        stepId,
+        condition: data.condition,
+        operator: data.operator,
+        value: data.value,
+        trueStepId: data.trueStepId ?? null,
+        falseStepId: data.falseStepId ?? null,
+        order: data.order ?? 0,
+      } as any,
     });
+  }
 
-    if (existingCondition) {
-      // Atualizar condição existente
-      const condition = await prisma.flowCondition.update({
-        where: { id: existingCondition.id },
-        data: {
-          condition: data.condition,
-          operator: data.operator,
-          value: data.value,
-          trueStepId: data.trueStepId !== undefined ? data.trueStepId : existingCondition.trueStepId,
-          falseStepId: data.falseStepId !== undefined ? data.falseStepId : existingCondition.falseStepId,
-        },
-      });
-      return condition;
-    } else {
-      // Criar nova condição
-      const condition = await prisma.flowCondition.create({
-        data: {
-          stepId,
-          condition: data.condition,
-          operator: data.operator,
-          value: data.value,
-          trueStepId: data.trueStepId,
-          falseStepId: data.falseStepId,
-        },
-      });
-      return condition;
-    }
+  /**
+   * Atualiza uma condição existente
+   */
+  async updateFlowCondition(conditionId: string, data: {
+    condition?: string;
+    operator?: string;
+    value?: string;
+    trueStepId?: string | null;
+    falseStepId?: string | null;
+    order?: number;
+  }) {
+    const updateData: any = {};
+    if (data.condition !== undefined) updateData.condition = data.condition;
+    if (data.operator !== undefined) updateData.operator = data.operator;
+    if (data.value !== undefined) updateData.value = data.value;
+    if (data.trueStepId !== undefined) updateData.trueStepId = data.trueStepId;
+    if (data.falseStepId !== undefined) updateData.falseStepId = data.falseStepId;
+    if (data.order !== undefined) updateData.order = data.order;
+
+    return await prisma.flowCondition.update({
+      where: { id: conditionId },
+      data: updateData,
+    });
+  }
+
+  /**
+   * Remove uma condição
+   */
+  async deleteFlowCondition(conditionId: string) {
+    return await prisma.flowCondition.delete({
+      where: { id: conditionId },
+    });
   }
 
   /**
@@ -1528,6 +1927,9 @@ export class BotService {
     welcomeMessage?: string;
     fallbackMessage?: string;
     isActive?: boolean;
+    autoCloseEnabled?: boolean;
+    autoCloseAfterMinutes?: number | null;
+    autoCloseMessage?: string | null;
   }) {
     const updateData: any = {};
     if (data.name) updateData.name = data.name;
@@ -1537,6 +1939,9 @@ export class BotService {
     if (data.welcomeMessage !== undefined) updateData.welcomeMessage = data.welcomeMessage;
     if (data.fallbackMessage !== undefined) updateData.fallbackMessage = data.fallbackMessage;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    if (data.autoCloseEnabled !== undefined) updateData.autoCloseEnabled = data.autoCloseEnabled;
+    if (data.autoCloseAfterMinutes !== undefined) updateData.autoCloseAfterMinutes = data.autoCloseAfterMinutes;
+    if (data.autoCloseMessage !== undefined) updateData.autoCloseMessage = data.autoCloseMessage;
 
     const bot = await prisma.bot.update({
       where: { id: botId },
@@ -1553,6 +1958,109 @@ export class BotService {
     await prisma.bot.delete({
       where: { id: botId },
     });
+  }
+
+  /**
+   * Encerra automaticamente conversas inativas com base na configuração do bot.
+   * - Considera lastCustomerMessageAt da Conversation vinculada à BotSession.
+   * - Envia mensagem de encerramento e marca a conversa como CLOSED.
+   */
+  async autoCloseInactiveConversations() {
+    try {
+      const bots = await prisma.bot.findMany({
+        where: {
+          autoCloseEnabled: true,
+          autoCloseAfterMinutes: {
+            not: null,
+          },
+        },
+      });
+
+      if (!bots.length) {
+        return;
+      }
+
+      const now = new Date();
+
+      for (const bot of bots) {
+        const minutes = bot.autoCloseAfterMinutes || 0;
+        if (!minutes || minutes <= 0) continue;
+
+        const threshold = new Date(now.getTime() - minutes * 60 * 1000);
+
+        const sessions = await prisma.botSession.findMany({
+          where: {
+            botId: bot.id,
+            isActive: true,
+            conversation: {
+              status: 'OPEN',
+              lastCustomerMessageAt: {
+                not: null,
+                lte: threshold,
+              },
+            },
+          },
+          include: {
+            conversation: true,
+          },
+        });
+
+        if (!sessions.length) continue;
+
+        const closeMessage =
+          bot.autoCloseMessage ||
+          'Encerramos este atendimento por inatividade. Se precisar de algo, é só mandar uma nova mensagem.';
+
+        for (const session of sessions) {
+          try {
+            const context = (session.context as Record<string, any>) || {};
+
+            // Enviar mensagem de encerramento via bot
+            await this.sendBotResponse(
+              session.conversationId,
+              {
+                type: 'TEXT',
+                content: closeMessage,
+              } as any,
+              bot.id,
+              context,
+            );
+
+            // Marcar conversa como fechada
+            await prisma.conversation.update({
+              where: { id: session.conversationId },
+              data: {
+                status: 'CLOSED',
+                lastAgentMessageAt: now,
+              },
+            });
+
+            // Encerrar sessão do bot
+            await prisma.botSession.update({
+              where: { id: session.id },
+              data: {
+                isActive: false,
+                currentFlowId: null,
+                currentStepId: null,
+              },
+            });
+
+            console.log(
+              `[BotService] Conversa ${session.conversationId} encerrada automaticamente por inatividade (bot ${bot.id})`,
+            );
+          } catch (e: any) {
+            console.error(
+              '[BotService] Erro ao encerrar conversa automaticamente:',
+              e.message,
+              'conversa:',
+              session.conversationId,
+            );
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('[BotService] Erro geral no autoCloseInactiveConversations:', error.message);
+    }
   }
 }
 

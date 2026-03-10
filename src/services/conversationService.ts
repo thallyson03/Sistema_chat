@@ -1,5 +1,6 @@
 import prisma from '../config/database';
 import { ConversationStatus, Priority } from '@prisma/client';
+import { ConversationDistributionService } from './conversationDistributionService';
 
 export interface ConversationFilters {
   channelId?: string;
@@ -7,6 +8,7 @@ export interface ConversationFilters {
   status?: string;
   search?: string;
   contactId?: string;
+  inBot?: boolean;
 }
 
 export class ConversationService {
@@ -62,41 +64,81 @@ export class ConversationService {
 
   async getConversations(filters: ConversationFilters, limit: number, offset: number) {
     const where: any = {};
+    const andConditions: any[] = [];
 
     if (filters.channelId) {
-      where.channelId = filters.channelId;
+      andConditions.push({ channelId: filters.channelId });
     }
 
     if (filters.assignedToId) {
-      where.assignedToId = filters.assignedToId;
+      andConditions.push({ assignedToId: filters.assignedToId });
     }
 
     if (filters.contactId) {
-      where.contactId = filters.contactId;
+      andConditions.push({ contactId: filters.contactId });
     }
 
     if (filters.status) {
-      where.status = filters.status as ConversationStatus;
+      andConditions.push({ status: filters.status as ConversationStatus });
+    }
+
+    // Conversas que estão em automação (bot interno ou integrações n8n ativas sem humano)
+    if (filters.inBot === true) {
+      andConditions.push({
+        OR: [
+          // Sessão de bot ativa para esta conversa
+          {
+            botSession: {
+              is: {
+                isActive: true,
+              },
+            },
+          },
+          // Ou canal com webhook ativo E conversa ainda não atribuída a humano
+          {
+            AND: [
+              { assignedToId: null },
+              {
+                channel: {
+                  is: {
+                    webhooks: {
+                      some: {
+                        isActive: true,
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      });
     }
 
     if (filters.search) {
-      where.OR = [
-        {
-          contact: {
-            name: {
-              contains: filters.search,
-              mode: 'insensitive',
+      andConditions.push({
+        OR: [
+          {
+            contact: {
+              name: {
+                contains: filters.search,
+                mode: 'insensitive',
+              },
             },
           },
-        },
-        {
-          contact: {
-            phone: {
-              contains: filters.search,
+          {
+            contact: {
+              phone: {
+                contains: filters.search,
+              },
             },
           },
-        },
-      ];
+        ],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     const [conversations, total] = await Promise.all([
@@ -104,10 +146,13 @@ export class ConversationService {
         where,
         include: {
           channel: {
-            select: {
-              id: true,
-              name: true,
-              type: true,
+            include: {
+              webhooks: {
+                select: {
+                  id: true,
+                  isActive: true,
+                },
+              },
             },
           },
           contact: {
@@ -123,6 +168,11 @@ export class ConversationService {
               id: true,
               name: true,
               email: true,
+            },
+          },
+          botSession: {
+            select: {
+              isActive: true,
             },
           },
           messages: {
@@ -146,27 +196,49 @@ export class ConversationService {
     ]);
 
     return {
-      conversations: conversations.map((conv) => ({
-        ...conv,
-        lastMessage: conv.messages[0]?.content || '',
-        lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
-        lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
-      })),
+      conversations: conversations.map((conv) => {
+        const hasActiveBotSession = !!(conv as any).botSession?.isActive;
+        const hasActiveWebhook =
+          !!(conv as any).channel?.webhooks?.some((w: any) => w.isActive);
+        const inBot = hasActiveBotSession || (hasActiveWebhook && !conv.assignedToId);
+
+        return {
+          ...conv,
+          lastMessage: conv.messages[0]?.content || '',
+          lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
+          lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
+          inBot,
+        };
+      }),
       total,
     };
   }
 
   async getConversationById(id: string) {
-    return await prisma.conversation.findUnique({
+    const conv = await prisma.conversation.findUnique({
       where: { id },
       include: {
-        channel: true,
+        channel: {
+          include: {
+            webhooks: {
+              select: {
+                id: true,
+                isActive: true,
+              },
+            },
+          },
+        },
         contact: true,
         assignedTo: {
           select: {
             id: true,
             name: true,
             email: true,
+          },
+        },
+        botSession: {
+          select: {
+            isActive: true,
           },
         },
         messages: {
@@ -185,6 +257,20 @@ export class ConversationService {
         },
       },
     });
+
+    if (!conv) return null;
+
+    const hasActiveBotSession = !!(conv as any).botSession?.isActive;
+    const hasActiveWebhook =
+      !!(conv as any).channel?.webhooks?.some((w: any) => w.isActive);
+    const inBot = hasActiveBotSession || (hasActiveWebhook && !conv.assignedToId);
+
+    return {
+      ...conv,
+      lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
+      lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
+      inBot,
+    } as any;
   }
 
   async updateConversation(
@@ -240,7 +326,7 @@ export class ConversationService {
       updateData.priority = data.priority as Priority;
     }
 
-    return await prisma.conversation.update({
+    const updated = await prisma.conversation.update({
       where: { id },
       data: updateData,
       include: {
@@ -255,6 +341,98 @@ export class ConversationService {
         },
       },
     });
+
+    // Se a conversa foi atribuída a um usuário, desativar qualquer sessão de bot ativa
+    if (data.assignedToId) {
+      await prisma.botSession.updateMany({
+        where: {
+          conversationId: id,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+          handoffToUserId: data.assignedToId,
+          handoffAt: new Date(),
+        },
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Transfere a conversa para um setor (fila), opcionalmente redistribuindo
+   * para um atendente elegível desse setor.
+   */
+  async transferToSector(
+    id: string,
+    sectorId: string,
+    options: { autoAssign?: boolean } = {},
+  ) {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: {
+        channel: true,
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversa não encontrada');
+    }
+
+    if (!conversation.channelId || !conversation.channel) {
+      throw new Error('Conversa não possui canal associado');
+    }
+
+    // Limpar atendente atual (volta para a fila)
+    let updated = await prisma.conversation.update({
+      where: { id },
+      data: {
+        assignedToId: null,
+      },
+      include: {
+        channel: true,
+        contact: true,
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    // Se autoAssign, redistribuir imediatamente para um usuário do setor informado
+    if (options.autoAssign) {
+      const distributionService = new ConversationDistributionService();
+      const newUserId = await distributionService.distributeConversation(id, {
+        channelId: conversation.channelId,
+        sectorId,
+      });
+
+      if (newUserId) {
+        updated = await prisma.conversation.update({
+          where: { id },
+          data: {
+            assignedToId: newUserId,
+          },
+          include: {
+            channel: true,
+            contact: true,
+            assignedTo: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        });
+      }
+    }
+
+    return updated;
   }
 
   async assignConversation(id: string, userId: string, validateSector: boolean = true) {
@@ -292,7 +470,7 @@ export class ConversationService {
       }
     }
 
-    return await prisma.conversation.update({
+    const updated = await prisma.conversation.update({
       where: { id },
       data: {
         assignedToId: userId,
@@ -309,6 +487,21 @@ export class ConversationService {
         },
       },
     });
+
+    // Desativar qualquer sessão de bot ativa ao atribuir para humano
+    await prisma.botSession.updateMany({
+      where: {
+        conversationId: id,
+        isActive: true,
+      },
+      data: {
+        isActive: false,
+        handoffToUserId: userId,
+        handoffAt: new Date(),
+      },
+    });
+
+    return updated;
   }
 
   async getUnreadCount(userId?: string) {

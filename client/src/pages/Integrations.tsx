@@ -288,7 +288,7 @@ export default function Integrations() {
                         fontWeight: 'bold',
                       }}
                     >
-                      {webhook.isActive ? 'Ativo' : 'Inativo'}
+                      {webhook.isActive ? 'Ativo' : 'Pausado'}
                     </span>
                   </div>
                   <p style={{ margin: '5px 0', color: '#6b7280', fontSize: '14px' }}>
@@ -341,7 +341,7 @@ export default function Integrations() {
                       fontSize: '12px',
                     }}
                   >
-                    {webhook.isActive ? 'Desativar' : 'Ativar'}
+                    {webhook.isActive ? 'Pausar' : 'Retomar'}
                   </button>
                   <button
                     onClick={() => handleOpenModal(webhook)}

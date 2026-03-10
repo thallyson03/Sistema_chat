@@ -194,7 +194,13 @@ const ConditionNode = ({ data, selected, id }: any) => {
       <Handle type="target" position={Position.Top} style={{ background: '#fbbf24', width: '16px', height: '16px', border: '2px solid white' }} />
       <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🔀 Condição</div>
       <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '10px' }}>
-        {data.condition ? `${data.condition} ${data.operator} ${data.value}` : 'Nova condição'}
+        {data.conditionsList?.length > 0
+          ? data.conditionsList.length === 1
+            ? `${data.condition || 'message.content'} ${data.operator || ''} ${data.value || '?'}`
+            : `${data.conditionsList.length} condições (${data.logicOperator === 'OR' ? 'OU' : 'E'})`
+          : data.condition
+            ? `${data.condition} ${data.operator} ${data.value}`
+            : 'Nova condição'}
       </div>
       <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
         <div style={{
@@ -1205,6 +1211,11 @@ const RedirectNode = ({ data, selected, id }: any) => {
           Nova aba
         </div>
       )}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{ background: '#818cf8', width: '16px', height: '16px', border: '2px solid white' }}
+      />
     </div>
   );
 };
@@ -1688,7 +1699,6 @@ const nodeTypes: NodeTypes = {
   script: ScriptNode,
   wait: WaitNode,
   typebotLink: TypebotLinkNode,
-  abTest: ABTestNode,
   jump: JumpNode,
   pictureChoice: PictureChoiceNode,
   start: StartNode,
@@ -1782,6 +1792,10 @@ export default function BotFlowBuilderVisual() {
           // Variável principal do HTTP Request
           if (step.config.variableName && step.type === 'HTTP_REQUEST') {
             variablesFromSteps.push(step.config.variableName);
+          }
+          // Variáveis definidas por SCRIPT (saveResultInVariable)
+          if (step.type === 'SCRIPT' && step.config.saveResultInVariable) {
+            variablesFromSteps.push(String(step.config.saveResultInVariable).trim());
           }
         }
       });
@@ -1919,10 +1933,9 @@ export default function BotFlowBuilderVisual() {
                          step.type === 'FILE_UPLOAD' ? 'fileUpload' :
                          step.type === 'REDIRECT' ? 'redirect' :
                          step.type === 'SCRIPT' ? 'script' :
-                         step.type === 'WAIT' ? 'wait' :
-                         step.type === 'TYPEBOT_LINK' ? 'typebotLink' :
-                         step.type === 'AB_TEST' ? 'abTest' :
-                         step.type === 'JUMP' ? 'jump' :
+                        step.type === 'WAIT' ? 'wait' :
+                        step.type === 'TYPEBOT_LINK' ? 'typebotLink' :
+                        step.type === 'JUMP' ? 'jump' :
                          step.type === 'PICTURE_CHOICE' ? 'pictureChoice' : 'message';
 
         const position = (step.config?.position && typeof step.config.position === 'object' && 'x' in step.config.position && 'y' in step.config.position)
@@ -1939,6 +1952,8 @@ export default function BotFlowBuilderVisual() {
             condition: step.conditions?.[0]?.condition || '',
             operator: step.conditions?.[0]?.operator || '',
             value: step.conditions?.[0]?.value || '',
+            conditionsList: (step.conditions || []).slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0)),
+            logicOperator: step.config?.logicOperator || 'AND',
             delay: step.config?.delay || '',
             buttons: step.config?.buttons || [],
             stepId: step.id,
@@ -2117,26 +2132,33 @@ export default function BotFlowBuilderVisual() {
           label = 'Sim';
           edgeStyle = { stroke: '#10b981', strokeWidth: 2 };
           labelColor = '#10b981';
-          
-          // Salvar trueStepId na condição
+
           try {
-            // Buscar step para verificar condições existentes
             const stepResponse = await api.get(`/api/bots/flows/${selectedFlow?.id}`);
             const flow = stepResponse.data;
             const step = flow?.steps?.find((s: any) => s.id === sourceStepId);
-            const existingCondition = step?.conditions?.[0];
-            
-            // Se o destino for "end", usar "END" como valor especial
+            const sorted = (step?.conditions || []).slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+            const firstCondition = sorted[0];
             const finalTrueStepId = params.target === 'end' ? 'END' : targetStepId;
-            
-            // Criar ou atualizar condição (o backend faz upsert)
-            await api.post(`/api/bots/steps/${sourceStepId}/conditions`, {
-              condition: existingCondition?.condition || 'message.content',
-              operator: existingCondition?.operator || 'CONTAINS',
-              value: existingCondition?.value || '',
-              trueStepId: finalTrueStepId,
-              falseStepId: existingCondition?.falseStepId || null,
-            });
+
+            if (firstCondition?.id) {
+              await api.put(`/api/bots/conditions/${firstCondition.id}`, {
+                condition: firstCondition.condition,
+                operator: firstCondition.operator,
+                value: firstCondition.value,
+                order: firstCondition.order,
+                trueStepId: finalTrueStepId,
+                falseStepId: firstCondition.falseStepId ?? undefined,
+              });
+            } else {
+              await api.post(`/api/bots/steps/${sourceStepId}/conditions`, {
+                condition: 'message.content',
+                operator: 'CONTAINS',
+                value: '',
+                order: 0,
+                trueStepId: finalTrueStepId,
+              });
+            }
           } catch (error) {
             console.error('Erro ao salvar conexão de condição (true):', error);
           }
@@ -2144,26 +2166,33 @@ export default function BotFlowBuilderVisual() {
           label = 'Não';
           edgeStyle = { stroke: '#ef4444', strokeWidth: 2 };
           labelColor = '#ef4444';
-          
-          // Salvar falseStepId na condição
+
           try {
-            // Buscar step para verificar condições existentes
             const stepResponse = await api.get(`/api/bots/flows/${selectedFlow?.id}`);
             const flow = stepResponse.data;
             const step = flow?.steps?.find((s: any) => s.id === sourceStepId);
-            const existingCondition = step?.conditions?.[0];
-            
-            // Se o destino for "end", usar "END" como valor especial
+            const sorted = (step?.conditions || []).slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+            const firstCondition = sorted[0];
             const finalFalseStepId = params.target === 'end' ? 'END' : targetStepId;
-            
-            // Criar ou atualizar condição (o backend faz upsert)
-            await api.post(`/api/bots/steps/${sourceStepId}/conditions`, {
-              condition: existingCondition?.condition || 'message.content',
-              operator: existingCondition?.operator || 'CONTAINS',
-              value: existingCondition?.value || '',
-              trueStepId: existingCondition?.trueStepId || null,
-              falseStepId: finalFalseStepId,
-            });
+
+            if (firstCondition?.id) {
+              await api.put(`/api/bots/conditions/${firstCondition.id}`, {
+                condition: firstCondition.condition,
+                operator: firstCondition.operator,
+                value: firstCondition.value,
+                order: firstCondition.order,
+                trueStepId: firstCondition.trueStepId ?? undefined,
+                falseStepId: finalFalseStepId,
+              });
+            } else {
+              await api.post(`/api/bots/steps/${sourceStepId}/conditions`, {
+                condition: 'message.content',
+                operator: 'CONTAINS',
+                value: '',
+                order: 0,
+                falseStepId: finalFalseStepId,
+              });
+            }
           } catch (error) {
             console.error('Erro ao salvar conexão de condição (false):', error);
           }
@@ -2232,25 +2261,9 @@ export default function BotFlowBuilderVisual() {
 
   const handleCreateFlow = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!flowFormData.name) {
-      alert('Preencha o nome do fluxo');
-      return;
-    }
-
-    try {
-      const response = await api.post(`/api/bots/${botId}/flows`, {
-        name: flowFormData.name,
-        description: flowFormData.description || null,
-      });
-      setFlows([...flows, response.data]);
-      setSelectedFlow(response.data);
-      setShowFlowModal(false);
-      setFlowFormData({ name: '', description: '' });
-      alert('Fluxo criado com sucesso!');
-    } catch (error: any) {
-      console.error('Erro ao criar fluxo:', error);
-      alert(error.response?.data?.error || 'Erro ao criar fluxo');
-    }
+    // Restrição: apenas um fluxo por bot
+    alert('Este bot já possui um fluxo. Só é permitido um fluxo por bot.');
+    return;
   };
 
   const handleAddNode = (type: string) => {
@@ -2293,8 +2306,6 @@ export default function BotFlowBuilderVisual() {
           return { waitFor: 'user', message: 'Aguardando...' };
         case 'typebotLink':
           return { botId: '', passVariables: true };
-        case 'abTest':
-          return { variants: [{ percent: 50, blockId: '' }, { percent: 50, blockId: '' }], splitPercent: 50 };
         case 'jump':
           return { targetStepId: '' };
         case 'pictureChoice':
@@ -2360,6 +2371,8 @@ export default function BotFlowBuilderVisual() {
         condition: node.data.condition,
         operator: node.data.operator,
         value: node.data.value,
+        logicOperator: node.data.config?.logicOperator || 'AND',
+        conditionsList: node.data.conditionsList || [],
       };
     } else if (node.data.config) {
       config = { ...node.data.config };
@@ -2436,6 +2449,22 @@ export default function BotFlowBuilderVisual() {
     const stepOrder = isNewNode
       ? (selectedFlow?.steps?.length ?? 0)
       : (node.data?.order ?? existingStep?.order ?? 0);
+
+    if (stepType === 'CONDITION' && existingStep?.conditions?.length) {
+      const sorted = existingStep.conditions.slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+      config.conditionsList = sorted.map((c: any) => ({
+        id: c.id,
+        condition: c.condition,
+        operator: c.operator,
+        value: c.value,
+      }));
+      config.logicOperator = config.logicOperator || existingStep.config?.logicOperator || 'AND';
+    }
+    if (stepType === 'CONDITION' && (!config.conditionsList || config.conditionsList.length === 0)) {
+      config.conditionsList = [{ id: null, condition: 'message.content', operator: 'CONTAINS', value: '' }];
+      config.logicOperator = config.logicOperator || 'AND';
+    }
+
     setStepFormData({
       type: stepType,
       content: node.data.content || '',
@@ -2466,6 +2495,9 @@ export default function BotFlowBuilderVisual() {
             buttons: stepFormData.buttons,
             position: editingNode.position || undefined,
           };
+          if (stepFormData.type === 'CONDITION') {
+            (configWithPosition as any).logicOperator = stepFormData.config.logicOperator || 'AND';
+          }
           await api.put(`/api/bots/steps/${stepId}`, {
             type: stepFormData.type,
             order: stepFormData.order,
@@ -2481,6 +2513,32 @@ export default function BotFlowBuilderVisual() {
             throw updateError;
           }
         }
+
+        if (stepFormData.type === 'CONDITION' && !shouldCreateNew && (stepFormData.config.conditionsList || []).length > 0) {
+          const existingStep = selectedFlow?.steps?.find((s: any) => s.id === stepId);
+          const existingIds = (existingStep?.conditions || []).map((c: any) => c.id);
+          const list = stepFormData.config.conditionsList as any[];
+          const firstCondition = existingStep?.conditions?.[0];
+          for (let i = 0; i < list.length; i++) {
+            const c = list[i];
+            const payload: any = { condition: c.condition || 'message.content', operator: c.operator || 'CONTAINS', value: c.value ?? '', order: i };
+            if (i === 0 && firstCondition && (firstCondition.trueStepId || firstCondition.falseStepId)) {
+              payload.trueStepId = firstCondition.trueStepId;
+              payload.falseStepId = firstCondition.falseStepId;
+            }
+            if (c.id) {
+              await api.put(`/api/bots/conditions/${c.id}`, payload);
+            } else {
+              await api.post(`/api/bots/steps/${stepId}/conditions`, payload);
+            }
+          }
+          const keepIds = list.filter((x: any) => x.id).map((x: any) => x.id);
+          for (const id of existingIds) {
+            if (!keepIds.includes(id)) {
+              try { await api.delete(`/api/bots/conditions/${id}`); } catch (_) {}
+            }
+          }
+        }
       } else {
         shouldCreateNew = true;
       }
@@ -2492,6 +2550,9 @@ export default function BotFlowBuilderVisual() {
           buttons: stepFormData.buttons,
           position: editingNode.position || undefined,
         };
+        if (stepFormData.type === 'CONDITION') {
+          (configWithPosition as any).logicOperator = stepFormData.config.logicOperator || 'AND';
+        }
         const stepResponse = await api.post(`/api/bots/flows/${selectedFlow.id}/steps`, {
           type: stepFormData.type,
           order: stepFormData.order,
@@ -2500,6 +2561,18 @@ export default function BotFlowBuilderVisual() {
           responseId: null,
         });
         stepId = stepResponse.data.id;
+
+        if (stepFormData.type === 'CONDITION' && (stepFormData.config.conditionsList || []).length > 0) {
+          for (let i = 0; i < stepFormData.config.conditionsList.length; i++) {
+            const c = stepFormData.config.conditionsList[i];
+            await api.post(`/api/bots/steps/${stepId}/conditions`, {
+              condition: c.condition || 'message.content',
+              operator: c.operator || 'CONTAINS',
+              value: c.value ?? '',
+              order: i,
+            });
+          }
+        }
       }
 
       // Criar ou atualizar resposta se for tipo MESSAGE ou mídia
@@ -2583,9 +2656,11 @@ export default function BotFlowBuilderVisual() {
                 data: {
                   ...node.data,
                   content: stepFormData.content,
-                  condition: stepFormData.config.condition,
-                  operator: stepFormData.config.operator,
-                  value: stepFormData.config.value,
+                  condition: stepFormData.config.conditionsList?.[0]?.condition ?? stepFormData.config.condition,
+                  operator: stepFormData.config.conditionsList?.[0]?.operator ?? stepFormData.config.operator,
+                  value: stepFormData.config.conditionsList?.[0]?.value ?? stepFormData.config.value,
+                  conditionsList: stepFormData.config.conditionsList || [],
+                  logicOperator: stepFormData.config.logicOperator,
                   delay: stepFormData.config.delay,
                   buttons: stepFormData.buttons,
                   stepId: stepId,
@@ -2985,33 +3060,6 @@ export default function BotFlowBuilderVisual() {
         }
         break;
 
-      case 'abTest':
-        // Teste A/B
-        const splitPercent = stepData.config?.splitPercent || 50;
-        setPreviewMessages(prev => [...prev, {
-          type: 'bot',
-          content: `🧪 Teste A/B: ${splitPercent}% / ${100 - splitPercent}% (simulado)`,
-          timestamp: new Date(),
-        }]);
-        
-        // Escolher variante aleatoriamente
-        const random = Math.random() * 100;
-        const selectedVariant = random < splitPercent ? 'variantA' : 'variantB';
-        const abEdge = edges.find(e => e.source === stepId && e.sourceHandle === selectedVariant);
-        if (abEdge) {
-          setTimeout(() => {
-            executePreviewStep(abEdge.target);
-          }, 500);
-        } else {
-          const abDefaultEdge = edges.find(e => e.source === stepId);
-          if (abDefaultEdge) {
-            setTimeout(() => {
-              executePreviewStep(abDefaultEdge.target);
-            }, 500);
-          }
-        }
-        break;
-
       case 'jump':
         // Pular para step específico
         const targetStepId = stepData.config?.targetStepId || '';
@@ -3283,20 +3331,6 @@ export default function BotFlowBuilderVisual() {
             ))}
           </select>
           <button
-            onClick={() => setShowFlowModal(true)}
-            style={{
-              padding: '6px 12px',
-              backgroundColor: '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '13px',
-            }}
-          >
-            + Novo
-          </button>
-          <button
             onClick={() => {
               if (showPreview) {
                 setShowPreview(false);
@@ -3351,19 +3385,7 @@ export default function BotFlowBuilderVisual() {
             <div style={{ fontSize: '14px', fontWeight: '600', color: '#1f2937', marginBottom: '5px' }}>
               {selectedFlow?.name || 'Selecione um fluxo'}
             </div>
-            <button
-              onClick={() => setShowFlowModal(true)}
-              style={{
-                padding: '4px 8px',
-                backgroundColor: 'transparent',
-                color: '#3b82f6',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '12px',
-              }}
-            >
-              + Criar novo fluxo
-            </button>
+            {/* Apenas um fluxo por bot: não exibir botão de criar novo fluxo */}
           </div>
 
           {/* Bubbles Section */}
@@ -3881,32 +3903,6 @@ export default function BotFlowBuilderVisual() {
                 <span>Typebot</span>
               </button>
               <button
-                onClick={() => handleAddNode('abTest')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#9333ea';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🧪</span>
-                <span>AB Test</span>
-              </button>
-              <button
                 onClick={() => handleAddNode('jump')}
                 style={{
                   padding: '10px 12px',
@@ -4051,20 +4047,19 @@ export default function BotFlowBuilderVisual() {
                 if (sourceStepId && !sourceStepId.startsWith('step-') && selectedFlow) {
                   try {
                     if (sourceNode?.type === 'condition') {
-                      // Para condições, atualizar removendo trueStepId ou falseStepId
                       const stepResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`);
                       const flow = stepResponse.data;
                       const step = flow?.steps?.find((s: any) => s.id === sourceStepId);
-                      const existingCondition = step?.conditions?.[0];
-                      
-                      if (existingCondition) {
-                        // Atualizar condição removendo o stepId correspondente
-                        await api.post(`/api/bots/steps/${sourceStepId}/conditions`, {
-                          condition: existingCondition.condition || 'message.content',
-                          operator: existingCondition.operator || 'CONTAINS',
-                          value: existingCondition.value || '',
-                          trueStepId: edge.sourceHandle === 'true' ? null : existingCondition.trueStepId,
-                          falseStepId: edge.sourceHandle === 'false' ? null : existingCondition.falseStepId,
+                      const sorted = (step?.conditions || []).slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+                      const firstCondition = sorted[0];
+                      if (firstCondition?.id) {
+                        await api.put(`/api/bots/conditions/${firstCondition.id}`, {
+                          condition: firstCondition.condition,
+                          operator: firstCondition.operator,
+                          value: firstCondition.value,
+                          order: firstCondition.order,
+                          trueStepId: edge.sourceHandle === 'true' ? null : firstCondition.trueStepId,
+                          falseStepId: edge.sourceHandle === 'false' ? null : firstCondition.falseStepId,
                         });
                       }
                     } else {
@@ -4460,70 +4455,166 @@ export default function BotFlowBuilderVisual() {
 
             {stepFormData.type === 'CONDITION' && (
               <div style={{ marginBottom: '15px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>Campo</label>
-                    <select
-                      value={stepFormData.config.condition || 'message.content'}
-                      onChange={(e) => setStepFormData({
-                        ...stepFormData,
-                        config: { ...stepFormData.config, condition: e.target.value },
-                      })}
-                      style={{
-                        width: '100%',
-                        padding: '8px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '5px',
-                        fontSize: '12px',
-                      }}
-                    >
-                      <option value="message.content">Conteúdo da Mensagem</option>
-                      <option value="context.variable">Variável do Contexto</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>Operador</label>
-                    <select
-                      value={stepFormData.config.operator || 'CONTAINS'}
-                      onChange={(e) => setStepFormData({
-                        ...stepFormData,
-                        config: { ...stepFormData.config, operator: e.target.value },
-                      })}
-                      style={{
-                        width: '100%',
-                        padding: '8px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '5px',
-                        fontSize: '12px',
-                      }}
-                    >
-                      <option value="EQUALS">Igual a</option>
-                      <option value="CONTAINS">Contém</option>
-                      <option value="GREATER_THAN">Maior que</option>
-                      <option value="LESS_THAN">Menor que</option>
-                      <option value="REGEX">Regex</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>Valor</label>
-                    <input
-                      type="text"
-                      value={stepFormData.config.value || ''}
-                      onChange={(e) => setStepFormData({
-                        ...stepFormData,
-                        config: { ...stepFormData.config, value: e.target.value },
-                      })}
-                      placeholder="Ex: preço"
-                      style={{
-                        width: '100%',
-                        padding: '8px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '5px',
-                        fontSize: '12px',
-                      }}
-                    />
-                  </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>Combinar condições</label>
+                  <select
+                    value={stepFormData.config.logicOperator || 'AND'}
+                    onChange={(e) => setStepFormData({
+                      ...stepFormData,
+                      config: { ...stepFormData.config, logicOperator: e.target.value },
+                    })}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '5px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <option value="AND">E (todas as condições devem ser verdadeiras)</option>
+                    <option value="OR">OU (qualquer condição verdadeira)</option>
+                  </select>
                 </div>
+                <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600 }}>Condições</div>
+                {(stepFormData.config.conditionsList || []).map((cond: any, idx: number) => (
+                  <div
+                    key={cond.id || `new-${idx}`}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr 1fr auto',
+                      gap: '8px',
+                      alignItems: 'end',
+                      marginBottom: '10px',
+                    }}
+                  >
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px' }}>Variável</label>
+                      <select
+                        value={cond.condition || 'message.content'}
+                        onChange={(e) => {
+                          const list = [...(stepFormData.config.conditionsList || [])];
+                          list[idx] = { ...list[idx], condition: e.target.value };
+                          setStepFormData({
+                            ...stepFormData,
+                            config: { ...stepFormData.config, conditionsList: list },
+                          });
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '6px 8px',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '5px',
+                          fontSize: '12px',
+                        }}
+                        title="Selecione a variável cujo resultado será comparado no campo Valor"
+                      >
+                        <option value="message.content">Mensagem do usuário</option>
+                        {(availableVariables || []).map((name: string) => (
+                          <option key={name} value={`context.${name}`}>{name}</option>
+                        ))}
+                      </select>
+                      {(!availableVariables || availableVariables.length === 0) && (
+                        <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px' }}>
+                          Para listar variáveis: crie em Configurações do bot ou use blocos de Entrada que salvam em variável.
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px' }}>Operador</label>
+                      <select
+                        value={cond.operator || 'CONTAINS'}
+                        onChange={(e) => {
+                          const list = [...(stepFormData.config.conditionsList || [])];
+                          list[idx] = { ...list[idx], operator: e.target.value };
+                          setStepFormData({
+                            ...stepFormData,
+                            config: { ...stepFormData.config, conditionsList: list },
+                          });
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '6px 8px',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '5px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <option value="EQUALS">Igual a</option>
+                        <option value="CONTAINS">Contém</option>
+                        <option value="GREATER_THAN">Maior que</option>
+                        <option value="LESS_THAN">Menor que</option>
+                        <option value="REGEX">Regex</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px' }}>Valor para comparar</label>
+                      <input
+                        type="text"
+                        value={cond.value || ''}
+                        onChange={(e) => {
+                          const list = [...(stepFormData.config.conditionsList || [])];
+                          list[idx] = { ...list[idx], value: e.target.value };
+                          setStepFormData({
+                            ...stepFormData,
+                            config: { ...stepFormData.config, conditionsList: list },
+                          });
+                        }}
+                        placeholder="Ex: preço, sim, 100"
+                        title="Valor com o qual o resultado da variável será comparado"
+                        style={{
+                          width: '100%',
+                          padding: '6px 8px',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '5px',
+                          fontSize: '12px',
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const list = (stepFormData.config.conditionsList || []).filter((_: any, i: number) => i !== idx);
+                        setStepFormData({
+                          ...stepFormData,
+                          config: { ...stepFormData.config, conditionsList: list.length ? list : [{ id: null, condition: 'message.content', operator: 'CONTAINS', value: '' }] },
+                        });
+                      }}
+                      style={{
+                        padding: '6px 10px',
+                        background: '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                      }}
+                      title="Remover condição"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const list = [...(stepFormData.config.conditionsList || []), { id: null, condition: 'message.content', operator: 'CONTAINS', value: '' }];
+                    setStepFormData({
+                      ...stepFormData,
+                      config: { ...stepFormData.config, conditionsList: list },
+                    });
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    background: '#f59e0b',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                  }}
+                >
+                  + Adicionar condição
+                </button>
               </div>
             )}
 
@@ -4860,39 +4951,12 @@ export default function BotFlowBuilderVisual() {
                           return;
                         }
                         try {
-                          // Fazer requisição de teste
-                          const testResponse = await fetch(stepFormData.config.url, {
-                            method: stepFormData.config.method || 'GET',
-                            headers: stepFormData.config.headers || {},
-                            body: stepFormData.config.body || undefined,
+                          const response = await api.post('/api/bots/http-test', {
+                            config: stepFormData.config,
                           });
-                          
-                          // Ler o body apenas uma vez - sempre ler como texto primeiro
-                          const contentType = testResponse.headers.get('content-type') || '';
-                          let data: any = null;
-                          
-                          try {
-                            // Sempre ler como texto primeiro (pode ser lido apenas uma vez)
-                            const textData = await testResponse.text();
-                            
-                            // Se o content-type indica JSON, tentar parsear
-                            if (contentType.includes('application/json') && textData) {
-                              try {
-                                data = JSON.parse(textData);
-                              } catch (parseError) {
-                                // Se falhar ao parsear, usar o texto direto
-                                data = textData;
-                              }
-                            } else {
-                              // Se não for JSON, usar o texto direto
-                              data = textData || null;
-                            }
-                          } catch (error) {
-                            // Se falhar completamente, data será null
-                            data = null;
-                            console.error('Erro ao ler resposta:', error);
-                          }
-                          
+
+                          const data = response.data?.data ?? null;
+
                           // Extrair campos disponíveis se for objeto
                           let availableFields: string[] = [];
                           if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
@@ -4900,17 +4964,17 @@ export default function BotFlowBuilderVisual() {
                           } else if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
                             availableFields = extractFieldsFromObject(data[0]);
                           }
-                          
+
                           // Atualizar preview no form e no nó
                           setStepFormData({
                             ...stepFormData,
-                            config: { 
-                              ...stepFormData.config, 
+                            config: {
+                              ...stepFormData.config,
                               lastResponse: data,
                               availableFields: availableFields,
                             },
                           });
-                          
+
                           // Atualizar nó visualmente
                           setNodes((nds) =>
                             nds.map((node) =>
@@ -4919,8 +4983,8 @@ export default function BotFlowBuilderVisual() {
                                     ...node,
                                     data: {
                                       ...node.data,
-                                      config: { 
-                                        ...node.data.config, 
+                                      config: {
+                                        ...node.data.config,
                                         lastResponse: data,
                                         availableFields: availableFields,
                                       },
@@ -4930,10 +4994,11 @@ export default function BotFlowBuilderVisual() {
                                 : node
                             )
                           );
-                          
+
                           alert('Requisição testada com sucesso! Veja o preview abaixo.');
                         } catch (error: any) {
-                          alert('Erro ao testar requisição: ' + error.message);
+                          const msg = error.response?.data?.error || error.message || 'Erro desconhecido';
+                          alert('Erro ao testar requisição: ' + msg);
                         }
                       }}
                       style={{
@@ -6067,6 +6132,53 @@ export default function BotFlowBuilderVisual() {
                       fontSize: '14px',
                     }}
                   />
+                </div>
+              </>
+            )}
+
+            {stepFormData.type === 'JUMP' && (
+              <>
+                <div style={{ marginBottom: '15px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '5px',
+                      fontWeight: 'bold',
+                      fontSize: '14px',
+                    }}
+                  >
+                    Bloco de destino *
+                  </label>
+                  <select
+                    value={stepFormData.config.targetStepId || ''}
+                    onChange={(e) =>
+                      setStepFormData({
+                        ...stepFormData,
+                        config: { ...stepFormData.config, targetStepId: e.target.value },
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '5px',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <option value="">Selecione um bloco</option>
+                    {selectedFlow?.steps?.map((s: any) => (
+                      <option key={s.id} value={s.id}>
+                        {s.type}{' '}
+                        {s.response?.content
+                          ? `- ${String(s.response.content).substring(0, 40)}`
+                          : ''}
+                      </option>
+                    ))}
+                    <option value="END">Fim do fluxo (END)</option>
+                  </select>
+                  <small style={{ color: '#6b7280', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                    O fluxo vai pular diretamente para o bloco selecionado quando chegar neste ponto.
+                  </small>
                 </div>
               </>
             )}
