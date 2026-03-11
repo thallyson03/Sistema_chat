@@ -154,6 +154,10 @@ export default function Conversations() {
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const statusFilterRef = useRef<string>('ALL');
   const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
+  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  const MESSAGES_PAGE_SIZE = 50;
 
   // Atualizar o ref sempre que a conversa selecionada mudar
   useEffect(() => {
@@ -210,7 +214,7 @@ export default function Conversations() {
 
       // Se a mensagem é da conversa atualmente selecionada, buscar novamente as mensagens
       if (currentId && data.conversationId === currentId) {
-        await fetchMessages(currentId);
+        await fetchMessages(currentId, { reset: true });
         // Se a conversa está aberta, marcar como lida automaticamente
         try {
           await api.put(`/api/messages/conversation/${currentId}/read`);
@@ -262,15 +266,17 @@ export default function Conversations() {
 
   useEffect(() => {
     // Scroll para última mensagem quando mensagens mudarem
-    if (messagesEndRef.current) {
+    if (shouldScrollToBottom && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages]);
+  }, [messages, shouldScrollToBottom]);
 
   useEffect(() => {
     // Carregar mensagens quando uma conversa for selecionada
     if (selectedConversation) {
-      fetchMessages(selectedConversation.id);
+      setHasMoreMessages(true);
+      setShouldScrollToBottom(true);
+      fetchMessages(selectedConversation.id, { reset: true });
     }
   }, [selectedConversation]);
 
@@ -440,17 +446,53 @@ export default function Conversations() {
     setPhoneNumber('');
   };
 
-  const fetchMessages = async (conversationId: string) => {
-    setLoadingMessages(true);
+  const fetchMessages = async (
+    conversationId: string,
+    options?: { reset?: boolean },
+  ) => {
+    const reset = options?.reset ?? false;
+
+    if (reset) {
+      setLoadingMessages(true);
+    } else {
+      setLoadingMoreMessages(true);
+    }
+
     try {
-      const response = await api.get(`/api/messages/conversation/${conversationId}`);
-      // Inverter ordem para mostrar mensagens mais antigas primeiro
+      const currentCount = reset ? 0 : messages.length;
+
+      const response = await api.get(`/api/messages/conversation/${conversationId}`, {
+        params: {
+          limit: MESSAGES_PAGE_SIZE,
+          offset: currentCount,
+        },
+      });
+
       const messagesData = response.data || [];
-      setMessages(messagesData.reverse());
+      // Backend retorna em ordem decrescente; inverter para mostrar antigas primeiro
+      const newMessages = messagesData.reverse();
+
+      if (reset) {
+        setMessages(newMessages);
+        setShouldScrollToBottom(true);
+      } else {
+        if (newMessages.length > 0) {
+          setMessages((prev) => [...newMessages, ...prev]);
+        }
+        setShouldScrollToBottom(false);
+      }
+
+      if (messagesData.length < MESSAGES_PAGE_SIZE) {
+        setHasMoreMessages(false);
+      }
     } catch (error) {
       console.error('Erro ao carregar mensagens:', error);
     } finally {
-      setLoadingMessages(false);
+      if (reset) {
+        setLoadingMessages(false);
+      } else {
+        setLoadingMoreMessages(false);
+      }
     }
   };
 
@@ -507,7 +549,7 @@ export default function Conversations() {
         setPendingTemplate(null);
         setMessageInput('');
         setShowEmojiPicker(false);
-        await fetchMessages(selectedConversation.id);
+      await fetchMessages(selectedConversation.id, { reset: true });
         await fetchConversations();
       } catch (error: any) {
         console.error('Erro ao enviar template WhatsApp:', error);
@@ -539,7 +581,7 @@ export default function Conversations() {
       setMessageInput('');
       setShowEmojiPicker(false);
       // As mensagens serão atualizadas via Socket.IO
-      await fetchMessages(selectedConversation.id);
+      await fetchMessages(selectedConversation.id, { reset: true });
       await fetchConversations();
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
@@ -630,7 +672,7 @@ export default function Conversations() {
       setMessageInput('');
       setShowEmojiPicker(false);
       // As mensagens serão atualizadas via Socket.IO
-      await fetchMessages(selectedConversation.id);
+      await fetchMessages(selectedConversation.id, { reset: true });
       await fetchConversations();
     } catch (error) {
       console.error('Erro ao fazer upload:', error);
@@ -799,7 +841,7 @@ export default function Conversations() {
             });
             
             // Atualizar mensagens
-            await fetchMessages(selectedConversation.id);
+            await fetchMessages(selectedConversation.id, { reset: true });
             await fetchConversations();
           } catch (error: any) {
             console.error('Erro ao fazer upload do áudio:', error);
@@ -1450,6 +1492,41 @@ export default function Conversations() {
                     },
                   }}
                 >
+                  {/* Paginação: carregar mensagens mais antigas */}
+                  {hasMoreMessages && !loadingMessages && !loadingMoreMessages && (
+                    <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                      <button
+                        onClick={() => {
+                          if (selectedConversation) {
+                            fetchMessages(selectedConversation.id, { reset: false });
+                          }
+                        }}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '999px',
+                          border: '1px solid #d1d5db',
+                          backgroundColor: '#f3f4f6',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Carregar mensagens anteriores
+                      </button>
+                    </div>
+                  )}
+                  {loadingMoreMessages && (
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        marginBottom: '8px',
+                        color: '#6b7280',
+                        fontSize: '12px',
+                      }}
+                    >
+                      Carregando mensagens anteriores...
+                    </div>
+                  )}
+
                   {messages.map((message, index) => {
                     const messageDate = new Date(message.createdAt);
                     const dateLabel = messageDate.toLocaleDateString('pt-BR', {
