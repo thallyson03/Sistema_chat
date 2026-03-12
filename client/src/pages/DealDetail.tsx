@@ -77,6 +77,7 @@ export default function DealDetail() {
   const navigate = useNavigate();
   const [deal, setDeal] = useState<Deal | null>(null);
   const [conversation, setConversation] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -90,6 +91,16 @@ export default function DealDetail() {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const [openMediaMenuId, setOpenMediaMenuId] = useState<string | null>(null);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  const MESSAGES_PAGE_SIZE = 50;
+  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const [audioState, setAudioState] = useState<
+    Record<string, { playing: boolean; currentTime: number; duration: number }>
+  >({});
   
   // Estados para campos personalizados do pipeline
   const [pipelineCustomFields, setPipelineCustomFields] = useState<any[]>([]);
@@ -101,6 +112,7 @@ export default function DealDetail() {
   // Estados para usuários
   const [users, setUsers] = useState<Array<{ id: string; name: string; email: string; isActive?: boolean }>>([]);
   const [updatingAssignedUser, setUpdatingAssignedUser] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
   
   // Campos comerciais fixos
   const fixedCommercialFields = [
@@ -117,6 +129,19 @@ export default function DealDetail() {
     }
   }, [id]);
 
+  // Buscar usuário atual (para controle de permissões, como exclusão de conversa)
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await api.get('/api/auth/me');
+        setCurrentUser(response.data);
+      } catch (error) {
+        console.error('Erro ao buscar usuário atual:', error);
+      }
+    };
+    fetchCurrentUser();
+  }, []);
+
   const fetchUsers = async () => {
     try {
       const response = await api.get('/api/users?includeInactive=true');
@@ -127,10 +152,10 @@ export default function DealDetail() {
   };
 
   useEffect(() => {
-    if (messagesEndRef.current) {
+    if (shouldScrollToBottom && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages]);
+  }, [messages, shouldScrollToBottom]);
 
   useEffect(() => {
     if (deal?.conversation?.id) {
@@ -142,7 +167,7 @@ export default function DealDetail() {
 
   useEffect(() => {
     if (conversation?.id) {
-      fetchMessages(conversation.id);
+      fetchMessages(conversation.id, { reset: true });
 
       // Conectar ao Socket.IO
       const socket: Socket = io('http://localhost:3007', {
@@ -151,7 +176,7 @@ export default function DealDetail() {
 
       socket.on('new_message', async (data: { conversationId: string }) => {
         if (data.conversationId === conversation.id) {
-          await fetchMessages(conversation.id);
+          await fetchMessages(conversation.id, { reset: true });
         }
       });
 
@@ -586,12 +611,52 @@ export default function DealDetail() {
     }
   };
 
-  const fetchMessages = async (conversationId: string) => {
+  const fetchMessages = async (
+    conversationId: string,
+    options?: { reset?: boolean },
+  ) => {
+    const reset = options?.reset ?? false;
+
+    if (reset) {
+      setLoadingMessages(true);
+    } else {
+      setLoadingMoreMessages(true);
+    }
+
     try {
-      const response = await api.get(`/api/messages/conversation/${conversationId}`);
-      setMessages((response.data || []).reverse());
+      const currentCount = reset ? 0 : messages.length;
+
+      const response = await api.get(`/api/messages/conversation/${conversationId}`, {
+        params: {
+          limit: MESSAGES_PAGE_SIZE,
+          offset: currentCount,
+        },
+      });
+
+      const messagesData = response.data || [];
+      const newMessages = messagesData.reverse();
+
+      if (reset) {
+        setMessages(newMessages);
+        setShouldScrollToBottom(true);
+      } else {
+        if (newMessages.length > 0) {
+          setMessages((prev) => [...newMessages, ...prev]);
+        }
+        setShouldScrollToBottom(false);
+      }
+
+      if (messagesData.length < MESSAGES_PAGE_SIZE) {
+        setHasMoreMessages(false);
+      }
     } catch (error: any) {
       console.error('Erro ao carregar mensagens:', error);
+    } finally {
+      if (reset) {
+        setLoadingMessages(false);
+      } else {
+        setLoadingMoreMessages(false);
+      }
     }
   };
 
@@ -620,7 +685,7 @@ export default function DealDetail() {
 
       setMessageInput('');
       setShowEmojiPicker(false);
-      await fetchMessages(conversation.id);
+      await fetchMessages(conversation.id, { reset: true });
     } catch (error: any) {
       console.error('Erro ao enviar mensagem:', error);
       alert(error.response?.data?.error || 'Erro ao enviar mensagem');
@@ -689,6 +754,45 @@ export default function DealDetail() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  const handleDownloadMedia = async (message: Message) => {
+    try {
+      const endpoint =
+        message.type === 'AUDIO'
+          ? `/api/media/download/${message.id}`
+          : `/api/media/${message.id}`;
+      const response = await api.get(endpoint, {
+        responseType: 'blob',
+      });
+
+      const contentType = response.headers['content-type'];
+      const blob = new Blob([response.data], { type: contentType || undefined });
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+
+      let filename =
+        message.metadata?.fileName ||
+        message.content ||
+        (message.type === 'AUDIO' ? 'audio' : 'arquivo');
+
+      if (message.type === 'AUDIO') {
+        filename = filename.replace(/\.[^/.]+$/, '');
+        filename += '.mp3';
+      }
+
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erro ao iniciar download da mídia:', error);
+      alert('Não foi possível baixar este arquivo. Tente novamente.');
     }
   };
 
@@ -1410,38 +1514,166 @@ export default function DealDetail() {
             borderBottom: '1px solid #e5e7eb',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: '12px',
           }}
         >
-          {deal.contact.profilePicture ? (
-            <img
-              src={deal.contact.profilePicture}
-              alt={deal.contact.name}
-              style={{ width: '40px', height: '40px', borderRadius: '50%' }}
-            />
-          ) : (
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                backgroundColor: '#3b82f6',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontWeight: '600',
-              }}
-            >
-              {deal.contact.name.charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div>
-            <div style={{ fontWeight: '600', fontSize: '16px' }}>{deal.contact.name}</div>
-            <div style={{ fontSize: '12px', color: '#6b7280' }}>
-              {deal.contact.phone || 'Sem telefone'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {deal.contact.profilePicture ? (
+              <img
+                src={deal.contact.profilePicture}
+                alt={deal.contact.name}
+                style={{ width: '40px', height: '40px', borderRadius: '50%' }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  backgroundColor: '#3b82f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontWeight: '600',
+                }}
+              >
+                {deal.contact.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <div style={{ fontWeight: '600', fontSize: '16px' }}>{deal.contact.name}</div>
+              <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                {deal.contact.phone || 'Sem telefone'}
+              </div>
             </div>
           </div>
+
+          {conversation && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div>
+                {conversation.status === 'CLOSED' ? (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api.put(`/api/conversations/${conversation.id}`, { status: 'OPEN' });
+                        setConversation((prev: any) =>
+                          prev ? { ...prev, status: 'OPEN' } : prev,
+                        );
+                      } catch (error: any) {
+                        alert(error.response?.data?.error || 'Erro ao abrir conversa');
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                    }}
+                    title="Abrir conversa"
+                  >
+                    Abrir
+                  </button>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Tem certeza que deseja fechar esta conversa?')) return;
+                      try {
+                        await api.put(`/api/conversations/${conversation.id}`, { status: 'CLOSED' });
+                        setConversation((prev: any) =>
+                          prev ? { ...prev, status: 'CLOSED' } : prev,
+                        );
+                      } catch (error: any) {
+                        alert(error.response?.data?.error || 'Erro ao fechar conversa');
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: '#6b7280',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                    }}
+                    title="Fechar conversa"
+                  >
+                    Fechar
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowTransferModal(true)}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    marginRight: '10px',
+                    marginLeft: '8px',
+                  }}
+                  title="Transferir conversa"
+                >
+                  Transferir
+                </button>
+              </div>
+              <span
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: '#e5e7eb',
+                  fontSize: '12px',
+                }}
+              >
+                {conversation.status}
+              </span>
+              {currentUser && currentUser.role === 'ADMIN' && (
+                <button
+                  onClick={async () => {
+                    if (!conversation) return;
+                    if (
+                      !confirm(
+                        'Tem certeza que deseja excluir definitivamente esta conversa? Esta ação não pode ser desfeita.',
+                      )
+                    ) {
+                      return;
+                    }
+                    try {
+                      await api.delete(`/api/conversations/${conversation.id}`);
+                      setConversation(null);
+                      setMessages([]);
+                    } catch (error: any) {
+                      console.error('Erro ao excluir conversa:', error);
+                      alert(error.response?.data?.error || 'Erro ao excluir conversa');
+                    }
+                  }}
+                  style={{
+                    marginLeft: '10px',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: '#ef4444',
+                    color: 'white',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                  title="Excluir conversa (apenas administradores)"
+                >
+                  Excluir
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Mensagens */}
@@ -1456,7 +1688,11 @@ export default function DealDetail() {
             gap: '12px',
           }}
         >
-          {messages.length === 0 ? (
+          {loadingMessages ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+              Carregando mensagens...
+            </div>
+          ) : messages.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
               <p>Nenhuma mensagem ainda.</p>
               <p style={{ fontSize: '14px', marginTop: '8px' }}>
@@ -1464,8 +1700,45 @@ export default function DealDetail() {
               </p>
             </div>
           ) : (
-            messages.map((message) => {
+            <>
+              {/* Paginação: carregar mensagens mais antigas */}
+              {hasMoreMessages && !loadingMessages && !loadingMoreMessages && (
+                <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                  <button
+                    onClick={() => {
+                      if (conversation?.id) {
+                        fetchMessages(conversation.id, { reset: false });
+                      }
+                    }}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '999px',
+                      border: '1px solid #d1d5db',
+                      backgroundColor: '#f3f4f6',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Carregar mensagens anteriores
+                  </button>
+                </div>
+              )}
+              {loadingMoreMessages && (
+                <div
+                  style={{
+                    textAlign: 'center',
+                    marginBottom: '8px',
+                    color: '#6b7280',
+                    fontSize: '12px',
+                  }}
+                >
+                  Carregando mensagens anteriores...
+                </div>
+              )}
+
+            {messages.map((message) => {
               const isOwnMessage = !!message.user;
+              const isMediaMessage = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(message.type);
               return (
                 <div
                   key={message.id}
@@ -1480,84 +1753,374 @@ export default function DealDetail() {
                   <div
                     style={{
                       maxWidth: '70%',
-                      padding: '10px 14px',
+                      padding: isMediaMessage ? 0 : '10px 14px',
                       borderRadius: '12px',
-                      backgroundColor: isOwnMessage ? '#3b82f6' : '#f3f4f6',
-                      color: isOwnMessage ? 'white' : '#1f2937',
+                      backgroundColor: isMediaMessage
+                        ? 'transparent'
+                        : isOwnMessage
+                        ? '#3b82f6'
+                        : 'white',
+                      color: isMediaMessage
+                        ? '#1f2937'
+                        : isOwnMessage
+                        ? 'white'
+                        : '#1f2937',
+                      border: isMediaMessage
+                        ? 'none'
+                        : isOwnMessage
+                        ? 'none'
+                        : '1px solid #e5e7eb',
                     }}
                   >
-                    {/* Exibir mídia se houver */}
-                    {['IMAGE', 'VIDEO', 'AUDIO'].includes(message.type) && message.id && (
+                    {/* Exibir mídia se houver (mesmo estilo de Conversations) */}
+                    {['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(message.type) && message.id && (
                       <div style={{ marginBottom: '8px' }}>
                         {message.type === 'IMAGE' && (
-                          <img
-                            src={`http://localhost:3007/api/media/${message.id}`}
-                            alt={message.content || 'Imagem'}
-                            style={{
-                              maxWidth: '100%',
-                              maxHeight: '300px',
-                              borderRadius: '8px',
-                              objectFit: 'contain',
-                              display: 'block',
-                            }}
-                            onError={(e) => {
-                              const imgEl = e.target as HTMLImageElement;
-                              if (message.metadata?.mediaUrl) {
-                                imgEl.src = message.metadata.mediaUrl.startsWith('http') 
-                                  ? message.metadata.mediaUrl 
-                                  : `http://localhost:3007${message.metadata.mediaUrl}`;
-                              }
-                            }}
-                          />
+                          <div style={{ position: 'relative', display: 'inline-block' }}>
+                            <img
+                              src={`http://localhost:3007/api/media/${message.id}`}
+                              alt={message.content || 'Imagem'}
+                              style={{
+                                maxWidth: '100%',
+                                maxHeight: '300px',
+                                borderRadius: '8px',
+                                objectFit: 'contain',
+                                display: 'block',
+                                cursor: 'pointer',
+                              }}
+                              onError={(e) => {
+                                const imgEl = e.target as HTMLImageElement;
+                                if (message.metadata?.mediaUrl) {
+                                  imgEl.src = message.metadata.mediaUrl.startsWith('http')
+                                    ? message.metadata.mediaUrl
+                                    : `http://localhost:3007${message.metadata.mediaUrl}`;
+                                }
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 8,
+                                right: 8,
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMediaMenuId(
+                                    openMediaMenuId === message.id ? null : message.id,
+                                  );
+                                }}
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: '999px',
+                                  border: 'none',
+                                  backgroundColor: 'rgba(0,0,0,0.6)',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  fontSize: '16px',
+                                }}
+                                title="Mais opções"
+                              >
+                                ⋮
+                              </button>
+                              {openMediaMenuId === message.id && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    marginTop: 4,
+                                    right: 0,
+                                    position: 'absolute',
+                                    minWidth: '160px',
+                                    backgroundColor: '#FFFFFF',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                    borderRadius: '8px',
+                                    padding: '6px 0',
+                                    zIndex: 50,
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleDownloadMedia(message);
+                                      setOpenMediaMenuId(null);
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 14px',
+                                      background: 'none',
+                                      border: 'none',
+                                      textAlign: 'left',
+                                      fontSize: '13px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Baixar
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         )}
                         {message.type === 'VIDEO' && (
-                          <video
-                            src={`http://localhost:3007/api/media/${message.id}`}
-                            controls
+                          <div
                             style={{
+                              position: 'relative',
+                              display: 'inline-block',
                               maxWidth: '100%',
-                              maxHeight: '300px',
-                              borderRadius: '8px',
+                              maxHeight: '320px',
+                              borderRadius: '12px',
+                              overflow: 'hidden',
+                              backgroundColor: '#000',
                             }}
-                            onError={(e) => {
-                              const videoEl = e.target as HTMLVideoElement;
-                              if (message.metadata?.mediaUrl) {
-                                videoEl.src = message.metadata.mediaUrl.startsWith('http') 
-                                  ? message.metadata.mediaUrl 
-                                  : `http://localhost:3007${message.metadata.mediaUrl}`;
-                              }
-                            }}
-                          />
+                          >
+                            <video
+                              src={`http://localhost:3007/api/media/${message.id}`}
+                              controls
+                              style={{
+                                maxWidth: '100%',
+                                maxHeight: '320px',
+                                borderRadius: '8px',
+                              }}
+                              onError={(e) => {
+                                const videoEl = e.target as HTMLVideoElement;
+                                if (message.metadata?.mediaUrl) {
+                                  videoEl.src = message.metadata.mediaUrl.startsWith('http')
+                                    ? message.metadata.mediaUrl
+                                    : `http://localhost:3007${message.metadata.mediaUrl}`;
+                                }
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 8,
+                                right: 8,
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMediaMenuId(
+                                    openMediaMenuId === message.id ? null : message.id,
+                                  );
+                                }}
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: '999px',
+                                  border: 'none',
+                                  backgroundColor: 'rgba(0,0,0,0.6)',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  fontSize: '16px',
+                                }}
+                                title="Mais opções"
+                              >
+                                ⋮
+                              </button>
+                              {openMediaMenuId === message.id && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    marginTop: 4,
+                                    right: 0,
+                                    position: 'absolute',
+                                    minWidth: '160px',
+                                    backgroundColor: '#FFFFFF',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                    borderRadius: '8px',
+                                    padding: '6px 0',
+                                    zIndex: 50,
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleDownloadMedia(message);
+                                      setOpenMediaMenuId(null);
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 14px',
+                                      background: 'none',
+                                      border: 'none',
+                                      textAlign: 'left',
+                                      fontSize: '13px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Baixar
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         )}
                         {message.type === 'AUDIO' && (
                           <div
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '10px',
-                              padding: '8px',
-                              backgroundColor: isOwnMessage ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                              borderRadius: '8px',
-                              minWidth: '250px',
+                              gap: '12px',
+                              padding: '10px 12px',
+                              backgroundColor: isOwnMessage ? '#DCF8C6' : '#ffffff',
+                              borderRadius: '999px',
+                              minWidth: '260px',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
                             }}
                           >
-                            <span style={{ fontSize: '24px' }}>🎧</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const audioEl = audioRefs.current[message.id];
+                                if (!audioEl) return;
+
+                                Object.entries(audioRefs.current).forEach(([id, el]) => {
+                                  if (el && !el.paused && id !== message.id) {
+                                    el.pause();
+                                  }
+                                });
+
+                                if (audioEl.paused) {
+                                  audioEl
+                                    .play()
+                                    .then(() => {
+                                      setAudioState((prev) => ({
+                                        ...prev,
+                                        [message.id]: {
+                                          playing: true,
+                                          currentTime: prev[message.id]?.currentTime || 0,
+                                          duration: prev[message.id]?.duration || audioEl.duration || 0,
+                                        },
+                                      }));
+                                    })
+                                    .catch((err) => {
+                                      console.error('Erro ao reproduzir áudio:', err);
+                                    });
+                                } else {
+                                  audioEl.pause();
+                                  setAudioState((prev) => ({
+                                    ...prev,
+                                    [message.id]: {
+                                      playing: false,
+                                      currentTime: prev[message.id]?.currentTime || audioEl.currentTime || 0,
+                                      duration: prev[message.id]?.duration || audioEl.duration || 0,
+                                    },
+                                  }));
+                                }
+                              }}
+                              style={{
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '50%',
+                                border: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: '#25D366',
+                                color: 'white',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                              }}
+                            >
+                              {audioState[message.id]?.playing ? '⏸' : '▶'}
+                            </button>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div
+                                style={{
+                                  height: '4px',
+                                  borderRadius: '999px',
+                                  backgroundColor: isOwnMessage ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.08)',
+                                  overflow: 'hidden',
+                                  marginBottom: '6px',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    height: '100%',
+                                    width: `${
+                                      audioState[message.id]?.duration
+                                        ? Math.min(
+                                            100,
+                                            (audioState[message.id].currentTime /
+                                              audioState[message.id].duration) *
+                                              100,
+                                          )
+                                        : 0
+                                    }%`,
+                                    backgroundColor: '#25D366',
+                                    transition: 'width 0.15s linear',
+                                  }}
+                                />
+                              </div>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  fontSize: '12px',
+                                  opacity: 0.8,
+                                }}
+                              >
+                                <span>
+                                  {Math.floor(audioState[message.id]?.currentTime || 0) >= 0
+                                    ? `${Math.floor(
+                                        (audioState[message.id]?.currentTime || 0) / 60,
+                                      )}:${String(
+                                        Math.floor(audioState[message.id]?.currentTime || 0) % 60,
+                                      ).padStart(2, '0')}`
+                                    : '0:00'}
+                                </span>
+                                <span>
+                                  {Math.floor(audioState[message.id]?.duration || 0) >= 0
+                                    ? `${Math.floor(
+                                        (audioState[message.id]?.duration || 0) / 60,
+                                      )}:${String(
+                                        Math.floor(audioState[message.id]?.duration || 0) % 60,
+                                      ).padStart(2, '0')}`
+                                    : '0:00'}
+                                </span>
+                              </div>
+                            </div>
                             <audio
                               src={`http://localhost:3007/api/media/${message.id}`}
-                              controls
-                              style={{ 
-                                width: '220px',
-                                height: '32px',
-                                flex: 1,
-                              }}
+                              controls={false}
+                              style={{ display: 'none' }}
                               preload="metadata"
-                              onError={(e) => {
-                                const audioEl = e.target as HTMLAudioElement;
-                                if (message.metadata?.mediaUrl) {
-                                  audioEl.src = message.metadata.mediaUrl.startsWith('http') 
-                                    ? message.metadata.mediaUrl 
-                                    : `http://localhost:3007${message.metadata.mediaUrl}`;
-                                }
+                              ref={(el) => {
+                                audioRefs.current[message.id] = el;
+                              }}
+                              onLoadedMetadata={(ev) => {
+                                const el = ev.currentTarget;
+                                setAudioState((prev) => ({
+                                  ...prev,
+                                  [message.id]: {
+                                    playing: false,
+                                    currentTime: 0,
+                                    duration: el.duration || prev[message.id]?.duration || 0,
+                                  },
+                                }));
+                              }}
+                              onTimeUpdate={(ev) => {
+                                const el = ev.currentTarget;
+                                setAudioState((prev) => ({
+                                  ...prev,
+                                  [message.id]: {
+                                    playing: !el.paused,
+                                    currentTime: el.currentTime,
+                                    duration: el.duration || prev[message.id]?.duration || 0,
+                                  },
+                                }));
                               }}
                             />
                           </div>
@@ -1617,7 +2180,8 @@ export default function DealDetail() {
                   </div>
                 </div>
               );
-            })
+            })}
+            </>
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -1629,6 +2193,7 @@ export default function DealDetail() {
               padding: '16px 20px',
               borderTop: '1px solid #e5e7eb',
               backgroundColor: 'white',
+              position: 'relative',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
@@ -1710,12 +2275,17 @@ export default function DealDetail() {
                 ref={emojiPickerRef}
                 style={{
                   position: 'absolute',
-                  bottom: '90px',
+                  bottom: '80px',
                   left: '20px',
                   zIndex: 2000,
                 }}
               >
-                <EmojiPicker onEmojiClick={handleEmojiClick} />
+                <EmojiPicker
+                  onEmojiClick={handleEmojiClick}
+                  width={350}
+                  height={400}
+                  previewConfig={{ showPreview: false }}
+                />
               </div>
             )}
 
@@ -1773,6 +2343,112 @@ export default function DealDetail() {
           </div>
         )}
       </div>
+
+      {/* Modal de Transferência de Conversa (igual ao Conversations) */}
+      {showTransferModal && conversation && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 2000,
+          }}
+          onClick={() => setShowTransferModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '500px',
+              padding: '24px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '20px' }}>Transferir Conversa</h2>
+            <p style={{ color: '#6b7280', marginBottom: '20px' }}>
+              Selecione o usuário para transferir a conversa:
+            </p>
+            <div
+              style={{
+                maxHeight: '300px',
+                overflowY: 'auto',
+                border: '1px solid #e5e7eb',
+                borderRadius: '6px',
+                padding: '10px',
+              }}
+            >
+              {users.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#6b7280', padding: '20px' }}>
+                  Carregando usuários...
+                </p>
+              ) : (
+                users.map((user) => (
+                  <div
+                    key={user.id}
+                    onClick={async () => {
+                      try {
+                        await api.post(`/api/conversations/${conversation.id}/assign`, {
+                          userId: user.id,
+                        });
+                        alert(`Conversa transferida para ${user.name}`);
+                        setShowTransferModal(false);
+                        setConversation((prev: any) =>
+                          prev ? { ...prev, assignedTo: user } : prev,
+                        );
+                      } catch (error: any) {
+                        alert(error.response?.data?.error || 'Erro ao transferir conversa');
+                      }
+                    }}
+                    style={{
+                      padding: '12px',
+                      marginBottom: '8px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s',
+                      border: '1px solid #e5e7eb',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#f3f4f6';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'white';
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{user.name}</div>
+                        <div style={{ color: '#6b7280', fontSize: '12px' }}>{user.email}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div style={{ marginTop: '20px', textAlign: 'right' }}>
+              <button
+                onClick={() => setShowTransferModal(false)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db',
+                  backgroundColor: 'white',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
