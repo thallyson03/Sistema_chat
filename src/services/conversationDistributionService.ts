@@ -62,7 +62,15 @@ export class ConversationDistributionService {
     const availableUsers = await this.getAvailableUsers(sectorId);
 
     if (availableUsers.length === 0) {
-      console.log('[ConversationDistribution] Nenhum usuário disponível para distribuição');
+      console.log('[ConversationDistribution] Nenhum usuário disponível para distribuição. Conversa irá para fila (WAITING).');
+      // Marcar conversa como em fila (WAITING) quando não há atendentes disponíveis
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          assignedToId: null,
+          status: ConversationStatus.WAITING,
+        },
+      });
       return null;
     }
 

@@ -18,6 +18,9 @@ interface Webhook {
   _count?: {
     executions: number;
   };
+  autoCloseEnabled?: boolean;
+  autoCloseAfterMinutes?: number | null;
+  autoCloseMessage?: string | null;
 }
 
 interface Channel {
@@ -40,6 +43,9 @@ export default function Integrations() {
     secret: '',
     channelId: '',
     isActive: true,
+    autoCloseEnabled: false,
+    autoCloseAfterMinutes: 0,
+    autoCloseMessage: '',
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -88,6 +94,9 @@ export default function Integrations() {
         secret: '',
         channelId: webhook.channelId || '',
         isActive: webhook.isActive,
+        autoCloseEnabled: webhook.autoCloseEnabled ?? false,
+        autoCloseAfterMinutes: webhook.autoCloseAfterMinutes ?? 0,
+        autoCloseMessage: webhook.autoCloseMessage || '',
       });
     } else {
       setEditingWebhook(null);
@@ -98,6 +107,9 @@ export default function Integrations() {
         secret: '',
         channelId: '',
         isActive: true,
+        autoCloseEnabled: false,
+        autoCloseAfterMinutes: 0,
+        autoCloseMessage: '',
       });
     }
     setShowModal(true);
@@ -113,6 +125,9 @@ export default function Integrations() {
       secret: '',
       channelId: '',
       isActive: true,
+      autoCloseEnabled: false,
+      autoCloseAfterMinutes: 0,
+      autoCloseMessage: '',
     });
   };
 
@@ -139,6 +154,11 @@ export default function Integrations() {
         url: formData.url,
         events: formData.events,
         isActive: formData.isActive,
+        autoCloseEnabled: formData.autoCloseEnabled,
+        autoCloseAfterMinutes: formData.autoCloseEnabled
+          ? formData.autoCloseAfterMinutes || null
+          : null,
+        autoCloseMessage: formData.autoCloseEnabled ? formData.autoCloseMessage || '' : null,
       };
 
       if (formData.secret) {
@@ -235,6 +255,9 @@ export default function Integrations() {
         <p style={{ margin: '10px 0 0 0' }}>
           Configure webhooks para integrar com n8n e criar automações personalizadas. 
           Quando os eventos selecionados ocorrerem, o sistema enviará uma requisição HTTP para a URL configurada.
+        </p>
+        <p style={{ margin: '10px 0 0 0' }}>
+          Você também pode configurar o encerramento automático de conversas por inatividade para canais vinculados a esta integração.
         </p>
       </div>
 
@@ -571,6 +594,112 @@ export default function Integrations() {
                 <p style={{ marginTop: '5px', fontSize: '12px', color: '#6b7280' }}>
                   Secret para autenticação. Se não informado, será gerado automaticamente.
                 </p>
+              </div>
+
+              {/* Encerramento automático por inatividade */}
+              <div
+                style={{
+                  marginBottom: '15px',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  backgroundColor: '#f9fafb',
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontWeight: 'bold',
+                    fontSize: '14px',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.autoCloseEnabled}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        autoCloseEnabled: e.target.checked,
+                      }))
+                    }
+                  />
+                  Encerrar atendimento automaticamente por inatividade
+                </label>
+
+                {formData.autoCloseEnabled && (
+                  <>
+                    <div style={{ marginBottom: '10px' }}>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '5px',
+                          fontSize: '13px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        Minutos sem resposta do cliente *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={formData.autoCloseAfterMinutes || ''}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            autoCloseAfterMinutes: Number(e.target.value) || 0,
+                          }))
+                        }
+                        placeholder="Ex: 15"
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '5px',
+                          fontSize: '14px',
+                        }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '5px',
+                          fontSize: '13px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        Mensagem de encerramento *
+                      </label>
+                      <textarea
+                        value={formData.autoCloseMessage}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            autoCloseMessage: e.target.value,
+                          }))
+                        }
+                        placeholder="Ex: Encerramos este atendimento por inatividade. Se precisar, é só mandar uma nova mensagem."
+                        rows={3}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '5px',
+                          fontSize: '14px',
+                        }}
+                        required
+                      />
+                      <small style={{ color: '#6b7280', fontSize: '12px' }}>
+                        Esta mensagem será enviada automaticamente antes de a conversa ser marcada como
+                        encerrada.
+                      </small>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div style={{ marginBottom: '20px' }}>

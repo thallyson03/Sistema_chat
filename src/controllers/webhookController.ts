@@ -19,7 +19,16 @@ export class WebhookController {
         return res.status(403).json({ error: 'Apenas administradores podem registrar webhooks' });
       }
 
-      const { name, url, events, secret, channelId } = req.body;
+      const {
+        name,
+        url,
+        events,
+        secret,
+        channelId,
+        autoCloseEnabled,
+        autoCloseAfterMinutes,
+        autoCloseMessage,
+      } = req.body;
 
       if (!name || !url || !events || !Array.isArray(events) || events.length === 0) {
         return res.status(400).json({
@@ -34,6 +43,9 @@ export class WebhookController {
           events,
           secret,
           channelId,
+          autoCloseEnabled,
+          autoCloseAfterMinutes,
+          autoCloseMessage,
         },
         req.user.id
       );
@@ -83,7 +95,17 @@ export class WebhookController {
       }
 
       const { id } = req.params;
-      const { name, url, events, secret, channelId, isActive } = req.body;
+      const {
+        name,
+        url,
+        events,
+        secret,
+        channelId,
+        isActive,
+        autoCloseEnabled,
+        autoCloseAfterMinutes,
+        autoCloseMessage,
+      } = req.body;
 
       const updateData: any = {};
       if (name) updateData.name = name;
@@ -92,6 +114,10 @@ export class WebhookController {
       if (secret) updateData.secret = secret;
       if (channelId !== undefined) updateData.channelId = channelId;
       if (isActive !== undefined) updateData.isActive = isActive;
+      if (autoCloseEnabled !== undefined) updateData.autoCloseEnabled = autoCloseEnabled;
+      if (autoCloseAfterMinutes !== undefined)
+        updateData.autoCloseAfterMinutes = autoCloseAfterMinutes;
+      if (autoCloseMessage !== undefined) updateData.autoCloseMessage = autoCloseMessage;
 
       const webhook = await webhookService.updateWebhook(id, updateData);
 

@@ -152,6 +152,31 @@ export class ConversationController {
       res.status(400).json({ error: error.message });
     }
   }
+
+  /**
+   * Exclui uma conversa e suas mensagens associadas.
+   * Somente ADMIN pode executar.
+   */
+  async deleteConversation(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+
+      if (req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Apenas administradores podem excluir conversas' });
+      }
+
+      const { id } = req.params;
+
+      await conversationService.deleteConversation(id);
+
+      res.json({ message: 'Conversa excluída com sucesso' });
+    } catch (error: any) {
+      console.error('[ConversationController] Erro ao excluir conversa:', error);
+      res.status(400).json({ error: error.message });
+    }
+  }
 }
 
 

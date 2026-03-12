@@ -1,6 +1,8 @@
 import prisma from '../config/database';
 import axios from 'axios';
 import crypto from 'crypto';
+import { MessageService } from './messageService';
+import { MessageType } from '@prisma/client';
 
 export interface RegisterWebhookData {
   name: string;
@@ -8,6 +10,9 @@ export interface RegisterWebhookData {
   events: string[];
   secret?: string;
   channelId?: string;
+  autoCloseEnabled?: boolean;
+  autoCloseAfterMinutes?: number | null;
+  autoCloseMessage?: string | null;
 }
 
 export interface WebhookFilters {
@@ -31,6 +36,9 @@ export class WebhookService {
         secret: secret,
         channelId: data.channelId,
         isActive: true,
+        autoCloseEnabled: data.autoCloseEnabled ?? false,
+        autoCloseAfterMinutes: data.autoCloseAfterMinutes ?? null,
+        autoCloseMessage: data.autoCloseMessage ?? null,
       },
     });
 
@@ -97,6 +105,15 @@ export class WebhookService {
     if (data.secret) updateData.secret = data.secret;
     if (data.channelId !== undefined) updateData.channelId = data.channelId;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    if (data.autoCloseEnabled !== undefined) {
+      updateData.autoCloseEnabled = data.autoCloseEnabled;
+    }
+    if (data.autoCloseAfterMinutes !== undefined) {
+      updateData.autoCloseAfterMinutes = data.autoCloseAfterMinutes;
+    }
+    if (data.autoCloseMessage !== undefined) {
+      updateData.autoCloseMessage = data.autoCloseMessage;
+    }
 
     const webhook = await prisma.webhookConfig.update({
       where: { id: webhookId },
@@ -120,6 +137,96 @@ export class WebhookService {
     });
 
     console.log('[WebhookService] Webhook deletado:', webhookId);
+  }
+
+  /**
+   * Encerra automaticamente conversas inativas com base na configuração dos webhooks (integrações).
+   * - Considera lastCustomerMessageAt de conversas vinculadas ao canal do webhook.
+   * - Envia mensagem de encerramento e marca a conversa como CLOSED.
+   */
+  async autoCloseInactiveConversationsForIntegrations() {
+    try {
+      const webhooks = await prisma.webhookConfig.findMany({
+        where: {
+          autoCloseEnabled: true,
+          autoCloseAfterMinutes: {
+            not: null,
+          },
+          channelId: {
+            not: null,
+          },
+        },
+      });
+
+      if (!webhooks.length) {
+        return;
+      }
+
+      const now = new Date();
+      const messageService = new MessageService();
+
+      for (const webhook of webhooks) {
+        const minutes = webhook.autoCloseAfterMinutes || 0;
+        if (!minutes || minutes <= 0) continue;
+
+        const threshold = new Date(now.getTime() - minutes * 60 * 1000);
+
+        const conversations = await prisma.conversation.findMany({
+          where: {
+            channelId: webhook.channelId!,
+            status: 'OPEN',
+            lastCustomerMessageAt: {
+              not: null,
+              lte: threshold,
+            },
+          },
+        });
+
+        if (!conversations.length) continue;
+
+        const closeMessage =
+          webhook.autoCloseMessage ||
+          'Encerramos este atendimento por inatividade. Se precisar de algo, é só mandar uma nova mensagem.';
+
+        for (const conversation of conversations) {
+          try {
+            // Enviar mensagem de encerramento via integração (tratada como mensagem de bot/sistema)
+            await messageService.sendMessage({
+              conversationId: conversation.id,
+              userId: '', // será normalizado para null
+              content: closeMessage,
+              type: MessageType.TEXT,
+              fromBot: true,
+            });
+
+            // Marcar conversa como fechada
+            await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: {
+                status: 'CLOSED',
+                lastAgentMessageAt: now,
+              },
+            });
+
+            console.log(
+              `[WebhookService] Conversa ${conversation.id} encerrada automaticamente por inatividade (webhook ${webhook.id})`,
+            );
+          } catch (e: any) {
+            console.error(
+              '[WebhookService] Erro ao encerrar conversa automaticamente por integração:',
+              e.message,
+              'conversa:',
+              conversation.id,
+            );
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error(
+        '[WebhookService] Erro geral no autoCloseInactiveConversationsForIntegrations:',
+        error.message,
+      );
+    }
   }
 
   /**

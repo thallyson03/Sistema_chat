@@ -12,6 +12,7 @@ export default function Layout() {
   const [pauseReason, setPauseReason] = useState<string | null>(null);
   const [loadingPause, setLoadingPause] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [showPauseModal, setShowPauseModal] = useState(false);
 
   useEffect(() => {
     fetchPauseStatus();
@@ -42,31 +43,33 @@ export default function Layout() {
     }
   };
 
-  const handlePause = async () => {
+  const applyPause = async (pause: boolean, reason?: string) => {
     try {
       const currentUserResponse = await api.get('/api/auth/me');
       const userId = currentUserResponse.data.id;
 
-      const reason = prompt('Motivo da pausa (opcional):') || undefined;
-
       await api.post(`/api/users/${userId}/pause`, {
-        pause: !isPaused,
+        pause,
         reason,
       });
 
-      setIsPaused(!isPaused);
+      setIsPaused(pause);
       setPauseReason(reason || null);
-      
-      if (!isPaused) {
-        alert('Pausa ativada. Você não receberá novas conversas.');
-      } else {
-        alert('Pausa desativada. Você voltou a receber conversas.');
-      }
-
       await fetchPauseStatus();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Erro ao alterar pausa');
     }
+  };
+
+  const handlePauseClick = () => {
+    // Se já está em pausa, clicar no botão retoma imediatamente
+    if (isPaused) {
+      applyPause(false);
+      setShowPauseModal(false);
+      return;
+    }
+    // Se está ativo, abrir modal de seleção de motivo
+    setShowPauseModal(true);
   };
 
   const handleLogout = async () => {
@@ -131,6 +134,11 @@ export default function Layout() {
                   icon: "📥"
                 },
                 {
+                  to: "/contacts/auto-created",
+                  label: "Contatos",
+                  icon: "📋"
+                },
+                {
                   to: "/contact-lists",
                   label: "Listas",
                   icon: "📋"
@@ -138,7 +146,6 @@ export default function Layout() {
               ]}
             />
             <SidebarLink to="/channels" icon="📡">Canais</SidebarLink>
-            <SidebarLink to="/campaigns" icon="📢">Campanhas</SidebarLink>
             <SidebarLink to="/journeys" icon="🧩">Jornadas</SidebarLink>
             <SidebarLink to="/templates" icon="🧾">Templates WhatsApp</SidebarLink>
           </div>
@@ -169,39 +176,119 @@ export default function Layout() {
             </div>
           )}
 
-          {/* Botão de Pausa */}
+          {/* Botão de Pausa + Modal de seleção de motivo (estilo cartão) */}
           {!loadingPause && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <Button
-                variant={isPaused ? "danger" : "primary"}
-                onClick={handlePause}
-                className="w-full"
-                title={isPaused ? 'Retomar atendimento' : 'Pausar atendimento'}
+            <>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
               >
-                <span className="flex items-center justify-center gap-2">
-                  {isPaused ? (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Em Pausa
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Ativo
-                    </>
-                  )}
-                </span>
-              </Button>
-            </motion.div>
+                <Button
+                  variant={isPaused ? 'danger' : 'primary'}
+                  onClick={handlePauseClick}
+                  className="w-full"
+                  title={isPaused ? 'Retomar atendimento' : 'Pausar atendimento'}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    {isPaused ? (
+                      <>
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        Indisponível
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        Ativo
+                      </>
+                    )}
+                  </span>
+                </Button>
+              </motion.div>
+
+              {/* Modal de pausa estilo cartão flutuante */}
+              {showPauseModal && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                  transition={{ duration: 0.2 }}
+                  className="fixed bottom-24 left-72 z-50"
+                >
+                  <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-72 overflow-hidden">
+                    {/* Cabeçalho */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
+                      <div className="flex items-center gap-2">
+                        <span className="text-red-500 text-lg">🖥️</span>
+                        <span className="font-semibold text-sm text-slate-800">
+                          Indisponível
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setShowPauseModal(false)}
+                        className="text-slate-400 hover:text-slate-600 text-xs"
+                        aria-label="Fechar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Opções de pausa */}
+                    <div className="py-2">
+                      {[
+                        { label: 'Indisponível', icon: '🖥️' },
+                        { label: 'Pausa almoço', icon: '🍽️' },
+                        { label: 'Pausa particular', icon: '😍' },
+                        { label: 'Problemas técnicos', icon: '🛠️' },
+                        { label: 'Pausa feedback', icon: '💬' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.label}
+                          onClick={() => {
+                            applyPause(true, opt.label);
+                            setShowPauseModal(false);
+                          }}
+                          className="w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-slate-50 text-sm text-slate-700"
+                        >
+                          <span className="text-lg flex-shrink-0">{opt.icon}</span>
+                          <span>{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </>
           )}
           
           {isPaused && pauseReason && (

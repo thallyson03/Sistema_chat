@@ -16,6 +16,7 @@ router.get('/:id', conversationController.getConversationById.bind(conversationC
 router.put('/:id', conversationController.updateConversation.bind(conversationController));
 router.post('/:id/assign', conversationController.assignConversation.bind(conversationController));
 router.post('/:id/transfer-sector', conversationController.transferToSector.bind(conversationController));
+router.delete('/:id', conversationController.deleteConversation.bind(conversationController));
 
 export default router;
 

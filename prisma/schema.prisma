@@ -478,6 +478,10 @@ model WebhookConfig {
   isActive    Boolean  @default(true)
   secret      String?  // Secret para validação de webhooks recebidos
   channelId   String?  // Opcional: apenas para um canal específico
+  // Encerramento automático por inatividade (para conversas deste canal/integracao)
+  autoCloseEnabled      Boolean  @default(false)
+  autoCloseAfterMinutes Int?
+  autoCloseMessage      String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -360,6 +360,28 @@ export class ConversationService {
     return updated;
   }
 
+  async deleteConversation(id: string) {
+    // Deletar mensagens primeiro para evitar problemas de chave estrangeira
+    await prisma.message.deleteMany({
+      where: { conversationId: id },
+    });
+
+    // Deletar sessões de bot vinculadas
+    await prisma.botSession.deleteMany({
+      where: { conversationId: id },
+    });
+
+    // Deletar tickets vinculados
+    await prisma.ticket.deleteMany({
+      where: { conversationId: id },
+    });
+
+    // Finalmente, deletar a conversa
+    await prisma.conversation.delete({
+      where: { id },
+    });
+  }
+
   /**
    * Transfere a conversa para um setor (fila), opcionalmente redistribuindo
    * para um atendente elegível desse setor.

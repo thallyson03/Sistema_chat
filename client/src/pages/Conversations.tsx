@@ -989,7 +989,15 @@ export default function Conversations() {
   }
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden', position: 'relative' }}>
+    <div
+      style={{
+        display: 'flex',
+        height: 'calc(100vh - 60px)',
+        overflow: 'hidden',
+        position: 'relative',
+        backgroundColor: 'white',
+      }}
+    >
       <style>
         {`
           @keyframes pulse {
@@ -1082,7 +1090,7 @@ export default function Conversations() {
         style={{
           width: '350px',
           borderRight: '1px solid #e5e7eb',
-          backgroundColor: '#f9fafb',
+          backgroundColor: 'white',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -1132,7 +1140,7 @@ export default function Conversations() {
           >
             <option value="ALL">Todas</option>
             <option value="OPEN">Abertas</option>
-            <option value="WAITING">Aguardando</option>
+            <option value="WAITING">Fila</option>
             <option value="CLOSED">Fechadas</option>
             <option value="ARCHIVED">Arquivadas</option>
             <option value="BOT">Conversa em bot</option>
@@ -1191,12 +1199,16 @@ export default function Conversations() {
                         </p>
                       )}
                       {/* Tempos de atendimento */}
-                      <div className="text-xs text-gray-400 space-y-0.5">
+                      <div className="text-xs text-gray-400">
                         {conv.lastCustomerMessageAt && (
-                          <span>Cliente: {getTimeAgo(conv.lastCustomerMessageAt)}</span>
+                          <div>
+                            Cliente: {getTimeAgo(conv.lastCustomerMessageAt)}
+                          </div>
                         )}
                         {conv.lastAgentMessageAt && (
-                          <span>Você: {getTimeAgo(conv.lastAgentMessageAt)}</span>
+                          <div>
+                            Você: {getTimeAgo(conv.lastAgentMessageAt)}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1300,7 +1312,7 @@ export default function Conversations() {
                       {selectedConversation.status === 'OPEN'
                         ? 'Aberta'
                         : selectedConversation.status === 'WAITING'
-                        ? 'Aguardando'
+                        ? 'Fila'
                         : selectedConversation.status === 'CLOSED'
                         ? 'Fechada'
                         : 'Arquivada'}
@@ -1439,6 +1451,7 @@ export default function Conversations() {
                     cursor: 'pointer',
                     fontSize: '13px',
                     fontWeight: '600',
+                    marginRight: '10px',
                   }}
                   title="Transferir conversa"
                 >
@@ -1455,6 +1468,46 @@ export default function Conversations() {
               >
                 {selectedConversation.status}
               </span>
+              {currentUser && currentUser.role === 'ADMIN' && (
+                <button
+                  onClick={async () => {
+                    if (!selectedConversation) return;
+                    if (
+                      !confirm(
+                        'Tem certeza que deseja excluir definitivamente esta conversa? Esta ação não pode ser desfeita.',
+                      )
+                    ) {
+                      return;
+                    }
+                    try {
+                      await api.delete(`/api/conversations/${selectedConversation.id}`);
+                      // Remover do estado local
+                      setConversations((prev) =>
+                        prev.filter((conv) => conv.id !== selectedConversation.id),
+                      );
+                      setSelectedConversation(null);
+                      setMessages([]);
+                    } catch (error: any) {
+                      console.error('Erro ao excluir conversa:', error);
+                      alert(error.response?.data?.error || 'Erro ao excluir conversa');
+                    }
+                  }}
+                  style={{
+                    marginLeft: '10px',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: '#ef4444',
+                    color: 'white',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                  title="Excluir conversa (apenas administradores)"
+                >
+                  Excluir
+                </button>
+              )}
             </div>
 
             {/* Área de Mensagens */}

@@ -32,6 +32,7 @@ dotenv.config();
 // Inicializar WhatsApp Official (se configurado)
 import whatsappOfficial from './config/whatsappOfficial';
 import { BotService } from './services/botService';
+import { WebhookService } from './services/webhookService';
 whatsappOfficial.init();
 
 const app = express();
@@ -172,12 +173,19 @@ httpServer.listen(PORT, () => {
 
   // Agendador simples para encerramento automático de conversas inativas
   const botService = new BotService();
+  const webhookService = new WebhookService();
   const intervalMs = 60 * 1000; // a cada 60 segundos
   console.log(`⏱️ Auto-close de conversas inativas agendado a cada ${intervalMs / 1000}s`);
 
   setInterval(() => {
     botService.autoCloseInactiveConversations().catch((err) => {
-      console.error('[AutoClose] Erro ao executar verificação de conversas inativas:', err);
+      console.error('[AutoClose] Erro ao executar verificação de conversas inativas (bots):', err);
+    });
+    webhookService.autoCloseInactiveConversationsForIntegrations().catch((err) => {
+      console.error(
+        '[AutoClose] Erro ao executar verificação de conversas inativas (integrações):',
+        err,
+      );
     });
   }, intervalMs);
 });

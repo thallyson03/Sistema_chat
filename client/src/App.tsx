@@ -15,7 +15,6 @@ import Users from './pages/Users';
 import Pipelines from './pages/Pipelines';
 import DealDetail from './pages/DealDetail';
 import ContactImport from './pages/ContactImport';
-import Campaigns from './pages/Campaigns';
 import Journeys from './pages/Journeys';
 import ContactLists from './pages/ContactLists';
 import Templates from './pages/Templates';
@@ -66,7 +65,7 @@ function App() {
           <Route path="pipelines" element={<Pipelines />} />
           <Route path="pipelines/deals/:id" element={<DealDetail />} />
           <Route path="contacts/import" element={<ContactImport />} />
-          <Route path="campaigns" element={<Campaigns />} />
+          <Route path="contacts/auto-created" element={<ContactImport />} />
           <Route path="journeys" element={<Journeys />} />
           <Route path="contact-lists" element={<ContactLists />} />
           <Route path="templates" element={<Templates />} />

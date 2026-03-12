@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../utils/api';
 
 interface ImportResult {
@@ -46,6 +46,7 @@ interface ContactList {
 
 export default function ContactImport() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [file, setFile] = useState<File | null>(null);
   const [channelId, setChannelId] = useState<string>('');
   const [channels, setChannels] = useState<any[]>([]);
@@ -59,6 +60,9 @@ export default function ContactImport() {
   const [contactLists, setContactLists] = useState<ContactList[]>([]);
   const [loadingLists, setLoadingLists] = useState(false);
   const [selectedListId, setSelectedListId] = useState<string>('');
+
+  const isImportPage = location.pathname.includes('/contacts/import');
+  const isAutoCreatedPage = location.pathname.includes('/contacts/auto-created');
 
   // Carregar canais e contatos ao montar componente
   useEffect(() => {
@@ -222,7 +226,7 @@ export default function ContactImport() {
   return (
     <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>Importar Contatos</h1>
+        <h1>{isImportPage ? 'Importar Contatos' : 'Contatos Criados Automaticamente'}</h1>
         <button
           onClick={() => navigate('/conversations')}
           style={{
@@ -238,7 +242,8 @@ export default function ContactImport() {
         </button>
       </div>
 
-      <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+      {isImportPage && (
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
         {/* Informações */}
         <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f3f4f6', borderRadius: '5px' }}>
           <h3 style={{ marginTop: 0 }}>📋 Formato do Arquivo</h3>
@@ -437,10 +442,12 @@ export default function ContactImport() {
             )}
           </div>
         )}
-      </div>
+        </div>
+      )}
 
-      {/* Lista de Contatos */}
-      <div style={{ marginTop: '30px', backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+      {/* Lista de Contatos Criados Automaticamente */}
+      {isAutoCreatedPage && (
+        <div style={{ marginTop: '30px', backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h2 style={{ margin: 0 }}>📋 Contatos Criados Automaticamente</h2>
           <button
@@ -585,17 +592,21 @@ export default function ContactImport() {
                       {contact.email || '-'}
                     </td>
                     <td style={{ padding: '12px' }}>
-                      <span
-                        style={{
-                          padding: '4px 8px',
-                          backgroundColor: '#e0e7ff',
-                          color: '#4338ca',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {contact.channel.name}
-                      </span>
+                      {contact.channel ? (
+                        <span
+                          style={{
+                            padding: '4px 8px',
+                            backgroundColor: '#e0e7ff',
+                            color: '#4338ca',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          {contact.channel.name}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>Sem canal</span>
+                      )}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       {contact._count?.conversations || 0}
@@ -627,7 +638,8 @@ export default function ContactImport() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Listas de Contatos (resumo + atalho para gerenciar) */}
       <div style={{ marginTop: '30px', backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
