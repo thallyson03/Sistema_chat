@@ -1,5 +1,5 @@
 import prisma from '../config/database';
-import { PipelineAutomationType } from '@prisma/client';
+import { PipelineAutomationType, MessageType } from '@prisma/client';
 import { BotService } from './botService';
 import { MessageService } from './messageService';
 
@@ -26,6 +26,7 @@ interface AutomationConfig {
   assignTo?: string;
   assignedUserId?: string;
   taskType?: string;
+  notifyInChat?: boolean;
   [key: string]: any;
 }
 
@@ -450,13 +451,14 @@ class PipelineAutomationService {
     }
 
     // Criar tarefa
-    await prisma.pipelineTask.create({
+    const task = await prisma.pipelineTask.create({
       data: {
         dealId: deal.id,
         title: config.taskTitle,
         description: config.taskDescription || null,
         dueDate,
         status: 'PENDING',
+        notified: false,
         // Armazenar tipo de tarefa e outros metadados no description ou criar campo separado
         // Por enquanto, vamos incluir no description
         ...(config.taskType ? {
@@ -471,6 +473,201 @@ class PipelineAutomationService {
       dueDate,
       assignedTo: assignedUserId || 'N/A',
     });
+
+    // Se o prazo é imediato (sem dueDate), já notificar no chat agora
+    if (!dueDate) {
+      try {
+        console.log(
+          `[PipelineAutomation] Notificando imediatamente tarefa ${task.id} no chat do deal ${deal.id}`,
+        );
+
+        let conversationId = deal.conversationId || deal.conversation?.id || null;
+
+        if (!conversationId) {
+          let conversation = await prisma.conversation.findFirst({
+            where: {
+              contactId: deal.contactId,
+              channelId: deal.contact.channelId,
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+
+          if (!conversation) {
+            conversation = await prisma.conversation.create({
+              data: {
+                contactId: deal.contactId,
+                channelId: deal.contact.channelId,
+                status: 'OPEN',
+              },
+            });
+
+            await prisma.deal.update({
+              where: { id: deal.id },
+              data: { conversationId: conversation.id },
+            });
+          }
+
+          conversationId = conversation.id;
+        }
+
+        if (conversationId) {
+          const contentLines = [
+            '⏰ Chegou a hora de realizar uma tarefa deste negócio.',
+            '',
+            `• Tarefa: ${task.title}`,
+          ];
+
+          if (task.description) {
+            contentLines.push(`• Detalhes: ${task.description}`);
+          }
+
+          const content = contentLines.join('\n');
+
+          await this.messageService.sendMessage({
+            conversationId,
+            userId: '',
+            content,
+            type: MessageType.TEXT,
+            fromBot: true,
+            internalOnly: true,
+          });
+
+          await prisma.pipelineTask.update({
+            where: { id: task.id },
+            data: { notified: true },
+          });
+        }
+      } catch (err: any) {
+        console.error(
+          `[PipelineAutomation] Erro ao notificar imediatamente tarefa ${task.id}:`,
+          err.message || err,
+        );
+      }
+    }
+  }
+
+  /**
+   * Processa tarefas de pipeline vencidas e dispara notificações no chat
+   */
+  public async processDueTasks() {
+    try {
+      const now = new Date();
+
+      const tasks = await prisma.pipelineTask.findMany({
+        where: {
+          status: 'PENDING',
+          notified: false,
+          dueDate: {
+            not: null,
+            lte: now,
+          },
+        },
+        include: {
+          deal: {
+            include: {
+              contact: {
+                include: {
+                  channel: true,
+                },
+              },
+              conversation: true,
+            },
+          },
+        },
+      });
+
+      if (!tasks.length) {
+        return;
+      }
+
+      console.log(`[PipelineAutomation] Encontradas ${tasks.length} tarefas vencidas para notificar`);
+
+      for (const task of tasks as any[]) {
+        try {
+          const deal = task.deal;
+          if (!deal || !deal.contact) {
+            console.warn('[PipelineAutomation] Tarefa sem deal ou contato válido, ignorando', task.id);
+            continue;
+          }
+
+          // Garantir que existe uma conversa para o deal/contato
+          let conversationId = deal.conversationId || deal.conversation?.id || null;
+
+          if (!conversationId) {
+            let conversation = await prisma.conversation.findFirst({
+              where: {
+                contactId: deal.contactId,
+                channelId: deal.contact.channelId,
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+
+            if (!conversation) {
+              conversation = await prisma.conversation.create({
+                data: {
+                  contactId: deal.contactId,
+                  channelId: deal.contact.channelId,
+                  status: 'OPEN',
+                },
+              });
+
+              await prisma.deal.update({
+                where: { id: deal.id },
+                data: { conversationId: conversation.id },
+              });
+            }
+
+            conversationId = conversation.id;
+          }
+
+          if (!conversationId) {
+            console.warn(
+              `[PipelineAutomation] Não foi possível encontrar/criar conversa para tarefa ${task.id}`,
+            );
+            continue;
+          }
+
+          const contentLines = [
+            '⏰ Chegou a hora de realizar uma tarefa deste negócio.',
+            '',
+            `• Tarefa: ${task.title}`,
+          ];
+
+          if (task.description) {
+            contentLines.push(`• Detalhes: ${task.description}`);
+          }
+
+          const content = contentLines.join('\n');
+
+          await this.messageService.sendMessage({
+            conversationId,
+            userId: '',
+            content,
+            type: MessageType.TEXT,
+            fromBot: true,
+            internalOnly: true,
+          });
+
+          await prisma.pipelineTask.update({
+            where: { id: task.id },
+            data: {
+              notified: true,
+            },
+          });
+
+          console.log(
+            `[PipelineAutomation] Notificação de tarefa enviada para deal ${deal.id}, tarefa ${task.id}`,
+          );
+        } catch (err: any) {
+          console.error(
+            `[PipelineAutomation] Erro ao notificar tarefa ${task.id}:`,
+            err.message || err,
+          );
+        }
+      }
+    } catch (error: any) {
+      console.error('[PipelineAutomation] Erro geral em processDueTasks:', error.message || error);
+    }
   }
 
   /**

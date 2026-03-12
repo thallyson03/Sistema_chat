@@ -1604,6 +1604,10 @@ export default function Conversations() {
                       }
                     }
                     const isBotMessage = message.metadata?.fromBot === true;
+                    const isTaskNotification =
+                      isBotMessage &&
+                      typeof message.content === 'string' &&
+                      message.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.');
                     const isFromCustomer = !isBotMessage && message.userId === null;
                     const isOwnMessage = message.userId !== null || isBotMessage;
                     const contactName = selectedConversation?.contact.name || '';
@@ -1688,10 +1692,12 @@ export default function Conversations() {
                       <motion.div
                         className="max-w-[70%] px-0 py-0 rounded-xl relative"
                         style={{
-                          // Sem fundo de card: deixa o conteúdo (texto/mídia) “solto” sobre o fundo da tela
-                          backgroundColor: 'transparent',
+                          // Notificação de tarefa em fundo cinza; demais mensagens “soltas” no fundo
+                          backgroundColor: isTaskNotification ? '#e5e7eb' : 'transparent',
                           color: '#111827',
                           boxShadow: 'none',
+                          borderRadius: isTaskNotification ? 12 : 0,
+                          padding: isTaskNotification ? '8px 12px' : 0,
                         }}
                         whileHover={{ scale: 1.0 }}
                         transition={{ duration: 0.2 }}

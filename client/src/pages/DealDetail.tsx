@@ -101,6 +101,7 @@ export default function DealDetail() {
   const [audioState, setAudioState] = useState<
     Record<string, { playing: boolean; currentTime: number; duration: number }>
   >({});
+  const [taskNotification, setTaskNotification] = useState<Message | null>(null);
   
   // Estados para campos personalizados do pipeline
   const [pipelineCustomFields, setPipelineCustomFields] = useState<any[]>([]);
@@ -156,6 +157,21 @@ export default function DealDetail() {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, shouldScrollToBottom]);
+
+  // Detectar chegada de notificação de tarefa e exibir alerta visual
+  useEffect(() => {
+    if (!messages.length) return;
+    const last = messages[messages.length - 1];
+    if (
+      last &&
+      last.metadata?.fromBot === true &&
+      typeof last.content === 'string' &&
+      last.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.') &&
+      taskNotification?.id !== last.id
+    ) {
+      setTaskNotification(last);
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (deal?.conversation?.id) {
@@ -1737,7 +1753,12 @@ export default function DealDetail() {
               )}
 
             {messages.map((message) => {
-              const isOwnMessage = !!message.user;
+              const isBotMessage = message.metadata?.fromBot === true;
+              const isTaskNotification =
+                isBotMessage &&
+                typeof message.content === 'string' &&
+                message.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.');
+              const isOwnMessage = !!message.user || isBotMessage;
               const isMediaMessage = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(message.type);
               return (
                 <div
@@ -1753,19 +1774,25 @@ export default function DealDetail() {
                   <div
                     style={{
                       maxWidth: '70%',
-                      padding: isMediaMessage ? 0 : '10px 14px',
+                      padding: isMediaMessage ? 0 : isTaskNotification ? '8px 12px' : '10px 14px',
                       borderRadius: '12px',
                       backgroundColor: isMediaMessage
                         ? 'transparent'
+                        : isTaskNotification
+                        ? '#e5e7eb'
                         : isOwnMessage
                         ? '#3b82f6'
                         : 'white',
                       color: isMediaMessage
                         ? '#1f2937'
+                        : isTaskNotification
+                        ? '#111827'
                         : isOwnMessage
                         ? 'white'
                         : '#1f2937',
                       border: isMediaMessage
+                        ? 'none'
+                        : isTaskNotification
                         ? 'none'
                         : isOwnMessage
                         ? 'none'
@@ -2343,6 +2370,44 @@ export default function DealDetail() {
           </div>
         )}
       </div>
+
+      {/* Notificação flutuante de tarefa (apenas visual, interna) */}
+      {taskNotification && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            maxWidth: '320px',
+            backgroundColor: '#e5e7eb',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
+            zIndex: 3000,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>Tarefa de pipeline</span>
+            <button
+              type="button"
+              onClick={() => setTaskNotification(null)}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: '14px',
+                color: '#4b5563',
+              }}
+              title="Fechar"
+            >
+              ✕
+            </button>
+          </div>
+          <div style={{ fontSize: '12px', color: '#111827', whiteSpace: 'pre-wrap' }}>
+            {taskNotification.content}
+          </div>
+        </div>
+      )}
 
       {/* Modal de Transferência de Conversa (igual ao Conversations) */}
       {showTransferModal && conversation && (

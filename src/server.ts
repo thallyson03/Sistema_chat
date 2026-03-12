@@ -33,6 +33,7 @@ dotenv.config();
 import whatsappOfficial from './config/whatsappOfficial';
 import { BotService } from './services/botService';
 import { WebhookService } from './services/webhookService';
+import { pipelineAutomationService } from './services/pipelineAutomationService';
 whatsappOfficial.init();
 
 const app = express();
@@ -186,6 +187,11 @@ httpServer.listen(PORT, () => {
         '[AutoClose] Erro ao executar verificação de conversas inativas (integrações):',
         err,
       );
+    });
+
+    // Processar tarefas vencidas do pipeline e notificar no chat
+    pipelineAutomationService.processDueTasks().catch((err) => {
+      console.error('[PipelineTasks] Erro ao processar tarefas vencidas:', err);
     });
   }, intervalMs);
 });

@@ -1,5 +1,6 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
 import { SidebarLink } from './ui/SidebarLink';
@@ -13,6 +14,56 @@ export default function Layout() {
   const [loadingPause, setLoadingPause] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [showPauseModal, setShowPauseModal] = useState(false);
+  const [taskNotification, setTaskNotification] = useState<{
+    conversationId: string;
+    content: string;
+  } | null>(null);
+
+  // Conexão global com Socket.IO para notificações de tarefa (vale para todo o sistema)
+  useEffect(() => {
+    const socket: Socket = io('http://localhost:3007', {
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('connect', () => {
+      console.log('[Layout] ✅ Conectado ao Socket.IO para notificações globais');
+    });
+
+    socket.on('new_message', async (data: { conversationId: string; messageId: string }) => {
+      try {
+        // Buscar apenas a última mensagem da conversa e verificar se é notificação de tarefa
+        const response = await api.get(`/api/messages/conversation/${data.conversationId}`, {
+          params: { limit: 1, offset: 0 },
+        });
+        const messages = response.data || [];
+        if (!messages.length) return;
+
+        const message = messages[messages.length - 1];
+
+        const isTaskNotification =
+          message?.metadata?.fromBot === true &&
+          typeof message.content === 'string' &&
+          message.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.');
+
+        if (!isTaskNotification) return;
+
+        setTaskNotification({
+          conversationId: data.conversationId,
+          content: message.content,
+        });
+      } catch (error) {
+        console.error('[Layout] Erro ao processar new_message para notificação de tarefa:', error);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[Layout] ❌ Desconectado do Socket.IO (notificações globais)');
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     fetchPauseStatus();
@@ -336,6 +387,53 @@ export default function Layout() {
           </motion.div>
         </div>
       </main>
+
+      {/* Notificação global de tarefa de pipeline (aparece em qualquer página) */}
+      {taskNotification && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            maxWidth: '320px',
+            backgroundColor: '#e5e7eb',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
+            zIndex: 4000,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 6,
+            }}
+          >
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>
+              Tarefa de pipeline
+            </span>
+            <button
+              type="button"
+              onClick={() => setTaskNotification(null)}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: '14px',
+                color: '#4b5563',
+              }}
+              title="Fechar"
+            >
+              ✕
+            </button>
+          </div>
+          <div style={{ fontSize: '12px', color: '#111827', whiteSpace: 'pre-wrap' }}>
+            {taskNotification.content}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

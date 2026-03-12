@@ -17,6 +17,7 @@ export interface SendMessageData {
   caption?: string;
   mimetype?: string; // Mimetype do arquivo (ex: audio/webm, audio/ogg)
   fromBot?: boolean; // Flag opcional para identificar mensagens enviadas pelo bot
+  internalOnly?: boolean; // Se true, NÃO envia para canais externos (somente CRM)
 }
 
 export class MessageService {
@@ -42,7 +43,7 @@ export class MessageService {
       throw new Error('Conversa não encontrada');
     }
 
-    // Se for WhatsApp, verificar qual API usar (Official ou Evolution)
+    // Se for mensagem interna (notificação apenas no CRM), não enviar para canais externos
     let externalId: string | null = null;
     let status: MessageStatus = MessageStatus.SENT;
 
@@ -52,6 +53,8 @@ export class MessageService {
 
     // Garantir que channel não é null para TypeScript
     const channel = conversation.channel;
+
+    const isInternalOnly = data.internalOnly === true;
 
     console.log('🔍 [MessageService] Verificando condições para envio:', {
       channelType: channel.type,
@@ -63,6 +66,7 @@ export class MessageService {
       messageType: data.type,
       hasMediaUrl: !!data.mediaUrl,
       whatsappEnv: process.env.WHATSAPP_ENV,
+      internalOnly: isInternalOnly,
     });
 
     // Verificar se deve usar WhatsApp Official
@@ -80,6 +84,7 @@ export class MessageService {
       getWhatsAppOfficialService() !== null;
 
     const shouldUseWhatsAppOfficial =
+      !isInternalOnly &&
       channel.type === 'WHATSAPP' &&
       !!conversation.contact.phone &&
       (hasChannelOfficialConfig || hasGlobalEnvOfficial);
@@ -552,7 +557,7 @@ export class MessageService {
         // Não re-throw aqui - vamos salvar a mensagem mesmo com falha no envio
         console.warn('⚠️ Mensagem será salva mesmo com falha no envio via Evolution API');
       }
-    } else {
+    } else if (!isInternalOnly) {
       const reasons = [];
       if (channel.type !== 'WHATSAPP') reasons.push('não é WhatsApp');
       if (!channel.evolutionInstanceId) reasons.push('sem instanceId');
@@ -568,6 +573,8 @@ export class MessageService {
         hasPhone: !!conversation.contact.phone,
         phone: conversation.contact.phone,
       });
+    } else {
+      console.log('ℹ️ [MessageService] Mensagem marcada como internalOnly, não será enviada para canais externos.');
     }
 
     // Preparar metadata para mídias e flags auxiliares

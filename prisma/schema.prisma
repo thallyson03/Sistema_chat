@@ -916,6 +916,7 @@ model PipelineTask {
   title       String
   description String?
   status      String   @default("PENDING") // PENDING, DONE, CANCELLED
+  notified    Boolean  @default(false)     // Se já foi disparada a notificação desta tarefa
   dueDate     DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
