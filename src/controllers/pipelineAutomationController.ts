@@ -26,6 +26,8 @@ export class PipelineAutomationController {
           automationType = PipelineAutomationType.CHANGE_STAGE;
         } else if (rule.type === 'add_task' || rule.type === 'ADD_TASK') {
           automationType = PipelineAutomationType.ADD_TASK;
+        } else if (rule.type === 'change_user' || rule.type === 'CHANGE_USER') {
+          automationType = PipelineAutomationType.CHANGE_USER;
         } else {
           throw new Error(`Tipo de automação inválido: ${rule.type}`);
         }
@@ -91,6 +93,8 @@ export class PipelineAutomationController {
         return 'change_stage';
       case PipelineAutomationType.ADD_TASK:
         return 'add_task';
+      case PipelineAutomationType.CHANGE_USER:
+        return 'change_user';
     }
   }
 
@@ -105,6 +109,8 @@ export class PipelineAutomationController {
         return 'Mudar etapa';
       case PipelineAutomationType.ADD_TASK:
         return 'Adicionar tarefa';
+      case PipelineAutomationType.CHANGE_USER:
+        return 'Alterar usuário de lead';
       default:
         return 'Automação';
     }

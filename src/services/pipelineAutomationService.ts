@@ -78,13 +78,6 @@ class PipelineAutomationService {
   async handleStageEnter(dealId: string, stageId: string, isNewDeal: boolean = false, triggerType?: string) {
     console.log(`[PipelineAutomation] Processando automações para deal ${dealId} na etapa ${stageId} (novo: ${isNewDeal})`);
 
-    const rules = await this.getRulesForStage(stageId);
-    
-    if (!rules.length) {
-      console.log(`[PipelineAutomation] Nenhuma regra ativa encontrada para etapa ${stageId}`);
-      return;
-    }
-
     // Buscar deal com informações necessárias
     const deal = await prisma.deal.findUnique({
       where: { id: dealId },
@@ -95,6 +88,13 @@ class PipelineAutomationService {
           },
         },
         stage: true,
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
         conversation: true,
       },
     });
@@ -102,6 +102,41 @@ class PipelineAutomationService {
     if (!deal || !deal.contact) {
       console.error(`[PipelineAutomation] Deal ${dealId} ou contato não encontrado`);
       return;
+    }
+
+    const rules = await this.getRulesForStage(stageId);
+
+    if (!rules.length) {
+      console.log(`[PipelineAutomation] Nenhuma regra ativa encontrada para etapa ${stageId}`);
+
+      // Se não há nenhuma automação nesta etapa, desligar qualquer sessão de bot ligada ao negócio
+      if (deal.conversationId) {
+        await prisma.botSession.updateMany({
+          where: {
+            conversationId: deal.conversationId,
+            isActive: true,
+          },
+          data: {
+            isActive: false,
+          },
+        });
+      }
+
+      return;
+    }
+
+    // Verificar se há regra de SALES_BOT nesta etapa; se não houver, desligar sessão de bot existente
+    const hasSalesBotRule = rules.some((rule) => rule.type === PipelineAutomationType.SALES_BOT);
+    if (!hasSalesBotRule && deal.conversationId) {
+      await prisma.botSession.updateMany({
+        where: {
+          conversationId: deal.conversationId,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+        },
+      });
     }
 
     // Executar cada regra
@@ -161,6 +196,9 @@ class PipelineAutomationService {
             break;
           case PipelineAutomationType.ADD_TASK:
             await this.executeAddTaskRule(rule.id, deal, config);
+            break;
+          case PipelineAutomationType.CHANGE_USER:
+            await this.executeChangeUserRule(rule.id, deal, config);
             break;
           default:
             console.warn(`[PipelineAutomation] Tipo de automação desconhecido: ${rule.type}`);
@@ -544,6 +582,88 @@ class PipelineAutomationService {
         );
       }
     }
+  }
+
+  /**
+   * Executa regra de Alterar Usuário do Lead
+   */
+  private async executeChangeUserRule(
+    ruleId: string,
+    deal: any,
+    config: AutomationConfig,
+  ) {
+    console.log(
+      `[PipelineAutomation] Executando CHANGE_USER para deal ${deal.id} (assignedTo atual: ${deal.assignedToId || 'nenhum'})`,
+    );
+
+    const assignTo = config.assignTo || 'current_user';
+    let newAssignedUserId: string | null = null;
+
+    if (assignTo === 'current_user') {
+      if (!deal.assignedToId) {
+        console.log(
+          `[PipelineAutomation] Regra ${ruleId}: assignTo=current_user mas deal não tem usuário responsável atual; nada a fazer`,
+        );
+        return;
+      }
+      newAssignedUserId = deal.assignedToId;
+    } else if (assignTo === 'specific_user' && config.assignedUserId) {
+      newAssignedUserId = config.assignedUserId;
+    } else if (assignTo === 'no_assignment') {
+      newAssignedUserId = null;
+    } else {
+      console.warn(
+        `[PipelineAutomation] Regra ${ruleId}: configuração assignTo inválida ou sem usuário específico`,
+      );
+      return;
+    }
+
+    if (newAssignedUserId === deal.assignedToId) {
+      console.log(
+        `[PipelineAutomation] Deal ${deal.id}: usuário responsável já é o destino, nenhuma alteração necessária`,
+      );
+      return;
+    }
+
+    const previousUserId = deal.assignedToId as string | null;
+
+    const updated = await prisma.deal.update({
+      where: { id: deal.id },
+      data: {
+        assignedToId: newAssignedUserId,
+      },
+      include: {
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    let description = '';
+    if (previousUserId && deal.assignedTo) {
+      description = `De "${deal.assignedTo.name}" para "${updated.assignedTo?.name || 'N/A'}"`;
+    } else if (!previousUserId && updated.assignedTo) {
+      description = `Definido usuário responsável: "${updated.assignedTo.name}"`;
+    } else if (previousUserId && !updated.assignedTo) {
+      description = 'Responsável removido (sem atribuição)';
+    }
+
+    await prisma.dealActivity.create({
+      data: {
+        dealId: deal.id,
+        type: 'USER_CHANGE',
+        title: 'Usuário responsável alterado automaticamente',
+        description: description || undefined,
+      },
+    });
+
+    console.log(
+      `[PipelineAutomation] Usuário responsável do deal ${deal.id} alterado automaticamente para ${updated.assignedTo?.name || 'sem atribuição'}`,
+    );
   }
 
   /**

@@ -64,6 +64,12 @@ interface Intent {
   keywords: string[];
 }
 
+interface UserOption {
+  id: string;
+  name: string;
+  email?: string;
+}
+
 // Componente de nó customizado para mensagem
 const MessageNode = ({ data, selected, id }: any) => {
   const buttons = data.buttons || [];
@@ -282,6 +288,76 @@ const HandoffNode = ({ data, selected, id }: any) => {
       <Handle type="target" position={Position.Top} style={{ background: '#f87171', width: '16px', height: '16px', border: '2px solid white' }} />
       <div style={{ fontWeight: 'bold' }}>👤 Transferir</div>
       <div style={{ fontSize: '12px', opacity: 0.9 }}>Para humano</div>
+    </div>
+  );
+};
+
+// Componente de nó customizado para mover lead (deal) em pipelines
+const MoveDealNode = ({ data, selected, id }: any) => {
+  const pipelineName = data.config?.pipelineName || 'Funil atual';
+  const stageName = data.config?.stageName || 'Mesma etapa';
+
+  return (
+    <div
+      style={{
+        padding: '15px 20px',
+        backgroundColor: '#0f766e',
+        color: 'white',
+        borderRadius: '8px',
+        minWidth: '200px',
+        maxWidth: '260px',
+        boxShadow: selected ? '0 4px 12px rgba(15,118,110,0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
+        border: selected ? '2px solid #14b8a6' : '2px solid transparent',
+        position: 'relative',
+      }}
+    >
+      {selected && data.onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
+              data.onDelete(id);
+            }
+          }}
+          style={{
+            position: 'absolute',
+            top: '5px',
+            right: '5px',
+            width: '24px',
+            height: '24px',
+            borderRadius: '50%',
+            backgroundColor: '#ef4444',
+            color: 'white',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            zIndex: 10,
+            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          }}
+          title="Excluir bloco"
+        >
+          ×
+        </button>
+      )}
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{ background: '#14b8a6', width: '16px', height: '16px', border: '2px solid white' }}
+      />
+      <div style={{ fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>📦 Mover lead</div>
+      <div style={{ fontSize: '12px', opacity: 0.9 }}>
+        <div>Funil: {pipelineName}</div>
+        <div>Coluna: {stageName}</div>
+      </div>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{ background: '#14b8a6', width: '16px', height: '16px', border: '2px solid white' }}
+      />
     </div>
   );
 };
@@ -1682,6 +1758,7 @@ const nodeTypes: NodeTypes = {
   message: MessageNode,
   condition: ConditionNode,
   handoff: HandoffNode,
+  moveDeal: MoveDealNode,
   delay: DelayNode,
   input: InputNode,
   emailInput: EmailInputNode,
@@ -1735,6 +1812,8 @@ export default function BotFlowBuilderVisual() {
   const [availableVariables, setAvailableVariables] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [pipelines, setPipelines] = useState<any[]>([]);
 
   // Função para substituir variáveis no preview
   const parsePreviewVariables = useCallback((text: string, context?: Record<string, any>): string => {
@@ -1768,6 +1847,8 @@ export default function BotFlowBuilderVisual() {
       fetchFlows();
       fetchIntents();
       fetchVariables();
+      fetchUsers();
+      fetchPipelines();
     }
   }, [botId]);
 
@@ -1822,11 +1903,23 @@ export default function BotFlowBuilderVisual() {
       const response = await api.get(`/api/bots/${botId}/flows`);
       const flowList = response.data || [];
       setFlows(flowList);
-      if (flowList.length > 0) {
-        // Restaurar fluxo selecionado após F5 (persistido em sessionStorage)
-        const savedFlowId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(`bot-${botId}-selectedFlowId`) : null;
-        const flowToSelect = savedFlowId ? flowList.find((f: Flow) => f.id === savedFlowId) : null;
-        setSelectedFlow(flowToSelect || flowList[0]);
+
+      if (flowList.length === 0) {
+        // Se não existe fluxo ainda, criar automaticamente um fluxo padrão
+        try {
+          const created = await api.post(`/api/bots/${botId}/flows`, {
+            name: 'Fluxo principal',
+            description: 'Fluxo padrão do bot',
+            trigger: 'always',
+          });
+          setFlows([created.data]);
+          setSelectedFlow(created.data);
+        } catch (createError: any) {
+          console.error('Erro ao criar fluxo padrão do bot:', createError);
+        }
+      } else {
+        // Como o bot só pode ter um fluxo, selecionar sempre o primeiro
+        setSelectedFlow(flowList[0]);
       }
     } catch (error) {
       console.error('Erro ao carregar fluxos:', error);
@@ -1841,6 +1934,32 @@ export default function BotFlowBuilderVisual() {
       setIntents(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar intents:', error);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const response = await api.get('/api/users?limit=500');
+      const list = Array.isArray(response.data?.users) ? response.data.users : (response.data || []);
+      setUsers(
+        list.map((u: any) => ({
+          id: u.id,
+          name: u.name || u.email || 'Usuário',
+          email: u.email,
+        })),
+      );
+    } catch (error) {
+      console.error('Erro ao carregar usuários para Round Robin:', error);
+    }
+  };
+
+  const fetchPipelines = async () => {
+    try {
+      const response = await api.get('/api/pipelines');
+      const list = Array.isArray(response.data) ? response.data : [];
+      setPipelines(list);
+    } catch (error) {
+      console.error('Erro ao carregar pipelines para bloco Mover lead:', error);
     }
   };
 
@@ -1918,6 +2037,7 @@ export default function BotFlowBuilderVisual() {
         const nodeType = step.type === 'MESSAGE' ? 'message' :
                          step.type === 'CONDITION' ? 'condition' :
                          step.type === 'HANDOFF' ? 'handoff' :
+                         step.type === 'MOVE_DEAL' ? 'moveDeal' :
                          step.type === 'DELAY' ? 'delay' :
                          step.type === 'INPUT' ? 'input' :
                          step.type === 'SET_VARIABLE' ? 'setVariable' :
@@ -2261,9 +2381,25 @@ export default function BotFlowBuilderVisual() {
 
   const handleCreateFlow = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Restrição: apenas um fluxo por bot
-    alert('Este bot já possui um fluxo. Só é permitido um fluxo por bot.');
-    return;
+    // Mantemos a regra de um fluxo por bot: se já existe, apenas avisa
+    if (flows.length > 0) {
+      alert('Este bot já possui um fluxo. Só é permitido um fluxo por bot.');
+      return;
+    }
+
+    try {
+      const created = await api.post(`/api/bots/${botId}/flows`, {
+        name: flowFormData.name || 'Fluxo principal',
+        description: flowFormData.description,
+        trigger: 'always',
+      });
+      setFlows([created.data]);
+      setSelectedFlow(created.data);
+      setShowFlowModal(false);
+    } catch (error: any) {
+      console.error('Erro ao criar fluxo:', error);
+      alert(error.response?.data?.error || 'Erro ao criar fluxo');
+    }
   };
 
   const handleAddNode = (type: string) => {
@@ -2310,6 +2446,8 @@ export default function BotFlowBuilderVisual() {
           return { targetStepId: '' };
         case 'pictureChoice':
           return { choices: [], variableName: '', multiple: false, layout: 'grid' };
+        case 'moveDeal':
+          return { pipelineId: '', stageId: '', pipelineName: '', stageName: '' };
         default:
           return {};
       }
@@ -2341,6 +2479,7 @@ export default function BotFlowBuilderVisual() {
     const stepType = node.type === 'message' ? 'MESSAGE' :
                      node.type === 'condition' ? 'CONDITION' :
                      node.type === 'handoff' ? 'HANDOFF' :
+                     node.type === 'moveDeal' ? 'MOVE_DEAL' :
                      node.type === 'delay' ? 'DELAY' :
                      node.type === 'input' ? 'INPUT' :
                      node.type === 'setVariable' ? 'SET_VARIABLE' :
@@ -4006,6 +4145,32 @@ export default function BotFlowBuilderVisual() {
                 <span style={{ fontSize: '18px' }}>👤</span>
                 <span>Handoff</span>
               </button>
+              <button
+                onClick={() => handleAddNode('moveDeal')}
+                style={{
+                  padding: '10px 12px',
+                  backgroundColor: 'white',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f3f4f6';
+                  e.currentTarget.style.borderColor = '#0f766e';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'white';
+                  e.currentTarget.style.borderColor = '#e5e7eb';
+                }}
+              >
+                <span style={{ fontSize: '18px' }}>📦</span>
+                <span>Mover lead</span>
+              </button>
             </div>
           </div>
         </div>
@@ -4449,6 +4614,284 @@ export default function BotFlowBuilderVisual() {
                       <strong>Exemplo:</strong> Botão "Sim" → vai para um nó, Botão "Não" → vai para outro nó.
                     </div>
                   )}
+                </div>
+              </>
+            )}
+
+            {stepFormData.type === 'HANDOFF' && (
+              <>
+                <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#fef3c7', borderRadius: '6px', border: '1px solid #fde68a' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: '#92400e' }}>
+                    👤 Transferência para humano
+                  </div>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#92400e' }}>
+                    Você pode transferir para um único usuário ou distribuir em <strong>Round Robin</strong> entre vários usuários.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                    Modo de distribuição
+                  </label>
+                  <select
+                    value={stepFormData.config?.mode || 'single'}
+                    onChange={(e) =>
+                      setStepFormData({
+                        ...stepFormData,
+                        config: {
+                          ...stepFormData.config,
+                          mode: e.target.value,
+                        },
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <option value="single">Usuário específico</option>
+                    <option value="ROUND_ROBIN">Round Robin entre vários usuários</option>
+                  </select>
+                </div>
+
+                {(!stepFormData.config?.mode || stepFormData.config?.mode === 'single') && (
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                      Usuário de destino
+                    </label>
+                    <select
+                      value={stepFormData.config?.userId || ''}
+                      onChange={(e) =>
+                        setStepFormData({
+                          ...stepFormData,
+                          config: {
+                            ...stepFormData.config,
+                            userId: e.target.value || null,
+                          },
+                        })
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid #d1d5db',
+                        fontSize: '14px',
+                      }}
+                    >
+                      <option value="">Selecione um usuário</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} {u.email ? `(${u.email})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {stepFormData.config?.mode === 'ROUND_ROBIN' && (
+                  <>
+                    <div style={{ marginBottom: '15px' }}>
+                      <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                        Usuários da fila Round Robin
+                      </label>
+                      <div
+                        style={{
+                          maxHeight: '220px',
+                          overflowY: 'auto',
+                          borderRadius: '6px',
+                          border: '1px solid #e5e7eb',
+                          padding: '8px',
+                          backgroundColor: '#f9fafb',
+                        }}
+                      >
+                        {users.length === 0 && (
+                          <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                            Nenhum usuário carregado. Verifique a página de usuários.
+                          </div>
+                        )}
+                        {users.map((u) => {
+                          const selectedIds: string[] = Array.isArray(stepFormData.config?.userIds)
+                            ? stepFormData.config.userIds
+                            : [];
+                          const checked = selectedIds.includes(u.id);
+                          return (
+                            <label
+                              key={u.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                fontSize: '13px',
+                                padding: '4px 6px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                backgroundColor: checked ? '#eef2ff' : 'transparent',
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const current: string[] = Array.isArray(stepFormData.config?.userIds)
+                                    ? [...stepFormData.config.userIds]
+                                    : [];
+                                  let next: string[];
+                                  if (e.target.checked) {
+                                    next = current.includes(u.id) ? current : [...current, u.id];
+                                  } else {
+                                    next = current.filter((id) => id !== u.id);
+                                  }
+                                  setStepFormData({
+                                    ...stepFormData,
+                                    config: {
+                                      ...stepFormData.config,
+                                      userIds: next,
+                                    },
+                                  });
+                                }}
+                              />
+                              <span>
+                                {u.name}
+                                {u.email ? (
+                                  <span style={{ fontSize: '11px', color: '#6b7280' }}> - {u.email}</span>
+                                ) : null}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p style={{ marginTop: '6px', fontSize: '11px', color: '#6b7280' }}>
+                        A conversa será distribuída ciclicamente entre os usuários selecionados.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {stepFormData.type === 'MOVE_DEAL' && (
+              <>
+                <div
+                  style={{
+                    marginBottom: '15px',
+                    padding: '10px',
+                    backgroundColor: '#ecfeff',
+                    borderRadius: '6px',
+                    border: '1px solid #a5f3fc',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      marginBottom: '6px',
+                      color: '#0f766e',
+                    }}
+                  >
+                    📦 Mover lead entre funis e colunas
+                  </div>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#0f766e' }}>
+                    Este bloco move o negócio ligado à conversa para outro funil/coluna do pipeline.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '15px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '6px',
+                      fontWeight: 'bold',
+                      fontSize: '14px',
+                    }}
+                  >
+                    Funil de destino
+                  </label>
+                  <select
+                    value={stepFormData.config?.pipelineId || ''}
+                    onChange={(e) => {
+                      const pipelineId = e.target.value || '';
+                      const pipeline = pipelines.find((p) => p.id === pipelineId);
+                      setStepFormData({
+                        ...stepFormData,
+                        config: {
+                          ...stepFormData.config,
+                          pipelineId,
+                          pipelineName: pipeline?.name || '',
+                          stageId: '',
+                          stageName: '',
+                        },
+                      });
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <option value="">Manter funil atual</option>
+                    {pipelines.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '15px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '6px',
+                      fontWeight: 'bold',
+                      fontSize: '14px',
+                    }}
+                  >
+                    Coluna (etapa) de destino
+                  </label>
+                  <select
+                    value={stepFormData.config?.stageId || ''}
+                    onChange={(e) => {
+                      const stageId = e.target.value || '';
+                      const pipelineId = stepFormData.config?.pipelineId;
+                      const pipeline = pipelines.find((p) => p.id === pipelineId) || pipelines.find((p) =>
+                        p.stages?.some((s: any) => s.id === stageId),
+                      );
+                      const stage =
+                        pipeline?.stages?.find((s: any) => s.id === stageId) || undefined;
+                      setStepFormData({
+                        ...stepFormData,
+                        config: {
+                          ...stepFormData.config,
+                          stageId,
+                          stageName: stage?.name || '',
+                        },
+                      });
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <option value="">Manter coluna atual</option>
+                    {(pipelines.find((p) => p.id === stepFormData.config?.pipelineId)?.stages ||
+                      []).map((stage: any) => (
+                      <option key={stage.id} value={stage.id}>
+                        {stage.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ marginTop: '6px', fontSize: '11px', color: '#6b7280' }}>
+                    Se você escolher apenas o funil, o sistema moverá o lead para a primeira etapa
+                    ativa desse funil.
+                  </p>
                 </div>
               </>
             )}

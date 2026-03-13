@@ -32,6 +32,8 @@ function getBlockName(type: string): string {
       return 'Mudar etapa';
     case 'add_task':
       return 'Adicionar tarefa';
+    case 'change_user':
+      return 'Alterar usuário de lead';
     default:
       return 'Automação';
   }
@@ -138,6 +140,11 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
           deadline: 'immediately',
           assignTo: 'current_user',
           taskType: 'follow_up'
+        };
+      case 'change_user':
+        return {
+          trigger: 'when_moved_to_stage',
+          assignTo: 'current_user',
         };
       default:
         return {};
@@ -608,36 +615,6 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
               </span>
             </button>
 
-            {/* Crie um lead */}
-            <button
-              onClick={() => addBlock('create_lead', selectedStageForBlock || undefined)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '12px',
-                backgroundColor: '#e0f2fe',
-                border: '1px solid #bae6fd',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <span style={{ fontSize: '24px', marginBottom: '4px' }}>💰</span>
-              <span style={{ fontSize: '10px', fontWeight: '600', color: '#0369a1', textAlign: 'center' }}>
-                + Crie um lead
-              </span>
-            </button>
-
             {/* Enviar e-mail */}
             <button
               onClick={() => addBlock('send_email', selectedStageForBlock || undefined)}
@@ -779,6 +756,16 @@ function getBlockDescription(block: AutomationBlock): string {
       const taskType = block.config?.taskType || 'follow_up';
       const taskTypeName = getTaskTypeName(taskType);
       return `Cria tarefa: ${taskTypeName}${delayText}`;
+    case 'change_user': {
+      const assignTo = block.config?.assignTo || 'current_user';
+      if (assignTo === 'specific_user') {
+        return `Altera usuário do lead para um usuário específico${delayText}`;
+      }
+      if (assignTo === 'no_assignment') {
+        return `Remove usuário responsável do lead${delayText}`;
+      }
+      return `Mantém/ajusta usuário responsável atual${delayText}`;
+    }
     default:
       return `Executa${delayText}`;
   }
@@ -1579,6 +1566,87 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
                   fontSize: '14px',
                 }}
               />
+            </div>
+          </>
+        )}
+
+        {block.type === 'change_user' && (
+          <>
+            {/* Seção de Condições */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
+                Para todos os leads com:
+              </label>
+              <input
+                type="text"
+                placeholder="Adicionar uma condição"
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                }}
+              />
+            </div>
+
+            {/* Gatilho de Execução */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
+                Executar:
+              </label>
+              <select
+                value={config.trigger || 'when_moved_to_stage'}
+                onChange={(e) => onChange({ ...config, trigger: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  backgroundColor: 'white',
+                }}
+              >
+                <option value="when_created_in_stage">Imediatamente quando criado nesta etapa</option>
+                <option value="when_moved_to_stage">Imediatamente quando movido para esta etapa</option>
+                <option value="when_moved_or_created">Imediatamente quando movido para ou criado nesta etapa</option>
+                <option value="when_user_changed">Quando o usuário responsável é alterado em lead</option>
+              </select>
+            </div>
+
+            {/* Para (Usuário responsável) */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
+                Novo responsável:
+              </label>
+              <select
+                value={config.assignTo || 'current_user'}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    assignTo: e.target.value,
+                    assignedUserId: e.target.value === 'specific_user' ? config.assignedUserId : undefined,
+                  })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  backgroundColor: 'white',
+                }}
+              >
+                <option value="current_user">Manter usuário responsável atual</option>
+                <option value="specific_user">Definir usuário específico</option>
+                <option value="no_assignment">Sem atribuição</option>
+              </select>
+              {config.assignTo === 'specific_user' && (
+                <TaskUserSelector
+                  config={config}
+                  onChange={onChange}
+                />
+              )}
             </div>
           </>
         )}

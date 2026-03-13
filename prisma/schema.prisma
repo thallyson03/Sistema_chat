@@ -890,6 +890,7 @@ enum PipelineAutomationType {
   SALES_BOT      // Iniciar robô de vendas
   CHANGE_STAGE   // Mudar etapa automaticamente
   ADD_TASK       // Adicionar tarefa
+  CHANGE_USER    // Alterar usuário responsável do lead
 }
 
 model PipelineAutomationRule {

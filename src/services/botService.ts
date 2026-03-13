@@ -214,16 +214,24 @@ export class BotService {
       return null;
     }
 
-    // Verificar se há bot ativo para este canal
-    if (!conversation.channelId) {
-      console.log('[BotService] Conversa não possui canal associado, não há bot para processar');
+    // Só processar mensagens se já existir uma sessão de bot ativa para esta conversa.
+    // Isso garante que o bot só atua quando foi explicitamente iniciado por uma automação (ex: Robô de vendas no pipeline).
+    if (!conversation.botSession || !conversation.botSession.isActive) {
+      console.log('[BotService] Nenhuma sessão de bot ativa para esta conversa, ignorando mensagem');
       return null;
     }
 
-    const bot = await prisma.bot.findFirst({
+    // Carregar o bot associado à sessão
+    const session: any = conversation.botSession as any;
+
+    if (!session.botId) {
+      console.warn('[BotService] Sessão de bot sem botId associado, ignorando');
+      return null;
+    }
+
+    const bot = await prisma.bot.findUnique({
       where: {
-        channelId: conversation.channelId,
-        isActive: true,
+        id: session.botId,
       },
       include: {
         intents: {
@@ -251,27 +259,9 @@ export class BotService {
       },
     });
 
-    if (!bot) {
-      return null; // Nenhum bot ativo
-    }
-
-    // Se já existe sessão ativa, usar ela; senão criar nova
-    // Usar tipo any para evitar problemas de tipo com bot incluído ou não
-    let session: any = null;
-    
-    if (conversation.botSession) {
-      session = conversation.botSession as any;
-    } else {
-      // Criar nova sessão sem incluir bot
-      // Fazer o cast direto no await para evitar problemas de tipo
-      session = (await prisma.botSession.create({
-        data: {
-          botId: bot.id,
-          conversationId: conversation.id,
-          isActive: true,
-          context: {},
-        },
-      })) as any;
+    if (!bot || !bot.isActive) {
+      console.log('[BotService] Bot da sessão não encontrado ou inativo, ignorando mensagem');
+      return null;
     }
 
     // Tentar fazer match de intent (apenas para mensagens de texto)
@@ -625,9 +615,110 @@ export class BotService {
         }
         break;
 
-      case 'HANDOFF':
-        await this.handoffToHuman(session.id, currentStep.config?.userId);
+      case 'HANDOFF': {
+        const mode = (currentStep.config?.mode || 'single').toUpperCase();
+
+        // Modo padrão: handoff para um usuário específico
+        if (mode !== 'ROUND_ROBIN') {
+          await this.handoffToHuman(session.id, currentStep.config?.userId);
+          break;
+        }
+
+        const userIds: string[] = Array.isArray(currentStep.config?.userIds)
+          ? currentStep.config.userIds.filter((id: any) => typeof id === 'string' && id.trim().length > 0)
+          : [];
+
+        if (!userIds.length) {
+          console.warn(
+            `[BotService] Step HANDOFF em modo ROUND_ROBIN mas sem userIds configurados. Caindo para handoff simples.`,
+          );
+          await this.handoffToHuman(session.id, currentStep.config?.userId);
+          break;
+        }
+
+        // Usar contexto da sessão para guardar o índice atual da fila
+        const context = (session.context as any) || {};
+        const rrKey = `roundRobin_${currentStep.id}`;
+        const currentIndex = Number(context[rrKey]?.index || 0);
+        const nextUserId = userIds[currentIndex % userIds.length];
+        const nextIndex = (currentIndex + 1) % userIds.length;
+
+        // Atualizar contexto com próximo índice
+        context[rrKey] = { index: nextIndex, updatedAt: new Date().toISOString() };
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: {
+            context,
+          },
+        });
+
+        await this.handoffToHuman(session.id, nextUserId);
         break;
+      }
+
+      case 'MOVE_DEAL': {
+        const targetPipelineId = currentStep.config?.pipelineId as string | undefined;
+        const targetStageId = currentStep.config?.stageId as string | undefined;
+
+        if (!targetPipelineId && !targetStageId) {
+          console.warn('[BotService] MOVE_DEAL sem pipelineId ou stageId configurados');
+          break;
+        }
+
+        // Buscar negócio ligado a esta conversa
+        const deal = await prisma.deal.findFirst({
+          where: { conversationId: session.conversationId },
+        });
+
+        if (!deal) {
+          console.warn(
+            `[BotService] MOVE_DEAL: nenhum negócio encontrado para conversationId=${session.conversationId}`,
+          );
+          break;
+        }
+
+        let finalStageId = targetStageId || null;
+        let finalPipelineId = targetPipelineId || deal.pipelineId;
+
+        if (targetStageId) {
+          const stage = await prisma.pipelineStage.findUnique({
+            where: { id: targetStageId },
+          });
+          if (!stage) {
+            console.warn(`[BotService] MOVE_DEAL: etapa destino não encontrada (${targetStageId})`);
+            break;
+          }
+          finalStageId = stage.id;
+          finalPipelineId = stage.pipelineId;
+        } else if (targetPipelineId && !targetStageId) {
+          // Se só o funil foi escolhido, usar a primeira etapa ativa desse funil
+          const firstStage = await prisma.pipelineStage.findFirst({
+            where: { pipelineId: targetPipelineId, isActive: true },
+            orderBy: { order: 'asc' },
+          });
+          if (!firstStage) {
+            console.warn(
+              `[BotService] MOVE_DEAL: nenhum stage ativo encontrado para pipeline ${targetPipelineId}`,
+            );
+            break;
+          }
+          finalStageId = firstStage.id;
+          finalPipelineId = firstStage.pipelineId;
+        }
+
+        await prisma.deal.update({
+          where: { id: deal.id },
+          data: {
+            pipelineId: finalPipelineId || deal.pipelineId,
+            stageId: finalStageId || deal.stageId,
+          },
+        });
+
+        console.log(
+          `[BotService] MOVE_DEAL: negócio ${deal.id} movido para pipeline=${finalPipelineId} stage=${finalStageId}`,
+        );
+        break;
+      }
 
       case 'CONDITION': {
         // Múltiplas condições: avaliar todas e combinar com AND ou OR (config.logicOperator)

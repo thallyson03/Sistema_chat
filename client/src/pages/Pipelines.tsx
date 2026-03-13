@@ -65,9 +65,11 @@ export default function Pipelines() {
   const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateDealModal, setShowCreateDealModal] = useState(false);
   const [showAutomationModal, setShowAutomationModal] = useState(false);
   const [draggedDeal, setDraggedDeal] = useState<{ dealId: string; stageId: string } | null>(null);
+  const [selectedDealIds, setSelectedDealIds] = useState<string[]>([]);
 
   useEffect(() => {
     fetchPipelines();
@@ -103,6 +105,7 @@ export default function Pipelines() {
 
   const handlePipelineSelect = async (pipeline: Pipeline) => {
     setSelectedPipeline(pipeline);
+    setSelectedDealIds([]);
     await fetchPipelineDetails(pipeline.id);
   };
 
@@ -144,6 +147,38 @@ export default function Pipelines() {
     }).format(value);
   };
 
+  const toggleDealSelection = (dealId: string) => {
+    setSelectedDealIds((prev) =>
+      prev.includes(dealId) ? prev.filter((id) => id !== dealId) : [...prev, dealId]
+    );
+  };
+
+  const handleDeleteSelectedDeals = async () => {
+    if (!selectedPipeline || selectedDealIds.length === 0) return;
+
+    if (
+      !window.confirm(
+        `Deseja realmente excluir ${selectedDealIds.length} negócio(s) selecionado(s)? Esta ação não pode ser desfeita.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        selectedDealIds.map((dealId) =>
+          api.delete(`/api/pipelines/deals/${dealId}`)
+        )
+      );
+
+      setSelectedDealIds([]);
+      await fetchPipelineDetails(selectedPipeline.id);
+    } catch (error: any) {
+      console.error('Erro ao excluir negócios selecionados:', error);
+      alert(error.response?.data?.error || 'Erro ao excluir negócios selecionados');
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ padding: '20px', textAlign: 'center' }}>
@@ -159,6 +194,24 @@ export default function Pipelines() {
         <div style={{ display: 'flex', gap: '10px' }}>
           {selectedPipeline && (
             <>
+              <button
+                onClick={() => setShowEditModal(true)}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f59e0b',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                ✏️ Editar funil
+              </button>
               <button
                 onClick={() => setShowAutomationModal(true)}
                 style={{
@@ -233,6 +286,42 @@ export default function Pipelines() {
               {pipeline.name} ({pipeline._count?.deals || 0})
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Barra de ações em massa para deals selecionados */}
+      {selectedPipeline && selectedDealIds.length > 0 && (
+        <div
+          style={{
+            marginBottom: '12px',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            backgroundColor: '#fef3c7',
+            border: '1px solid #fcd34d',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '13px',
+          }}
+        >
+          <span>
+            {selectedDealIds.length} negócio(s) selecionado(s)
+          </span>
+          <button
+            onClick={handleDeleteSelectedDeals}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: '#ef4444',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500',
+            }}
+          >
+            Excluir selecionados
+          </button>
         </div>
       )}
 
@@ -319,7 +408,9 @@ export default function Pipelines() {
                           cursor: 'pointer',
                           boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
                           transition: 'all 0.2s',
-                          border: '1px solid #e5e7eb',
+                          border: selectedDealIds.includes(deal.id)
+                            ? '2px solid #3b82f6'
+                            : '1px solid #e5e7eb',
                         }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
@@ -330,6 +421,24 @@ export default function Pipelines() {
                           e.currentTarget.style.transform = 'translateY(0)';
                         }}
                       >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedDealIds.includes(deal.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleDealSelection(deal.id);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
                         <div style={{ marginBottom: '8px' }}>
                           <h4
                             style={{
@@ -408,6 +517,18 @@ export default function Pipelines() {
           onSuccess={() => {
             setShowCreateModal(false);
             fetchPipelines();
+          }}
+        />
+      )}
+
+      {/* Modal de Editar Pipeline */}
+      {showEditModal && selectedPipeline && (
+        <EditPipelineModal
+          pipeline={selectedPipeline}
+          onClose={() => setShowEditModal(false)}
+          onSuccess={async () => {
+            await fetchPipelines();
+            await fetchPipelineDetails(selectedPipeline.id);
           }}
         />
       )}
@@ -682,6 +803,365 @@ function CreatePipelineModal({
               }}
             >
               Criar Pipeline
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Modal para editar pipeline
+function EditPipelineModal({
+  pipeline,
+  onClose,
+  onSuccess,
+}: {
+  pipeline: Pipeline;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [name, setName] = useState(pipeline.name);
+  const [description, setDescription] = useState(pipeline.description || '');
+  const [color, setColor] = useState(pipeline.color || '#3B82F6');
+  const [stages, setStages] = useState<PipelineStage[]>(
+    [...(pipeline.stages || [])].sort((a, b) => a.order - b.order)
+  );
+  const [savingStages, setSavingStages] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.put(`/api/pipelines/${pipeline.id}`, {
+        name,
+        description,
+        color,
+      });
+      await onSuccess();
+      onClose();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Erro ao atualizar pipeline');
+    }
+  };
+
+  const handleAddStage = async () => {
+    const name = window.prompt('Nome da nova etapa:');
+    if (!name) return;
+
+    try {
+      setSavingStages(true);
+      const response = await api.post(`/api/pipelines/${pipeline.id}/stages`, {
+        name,
+        order: stages.length,
+        probability: 0,
+      });
+      setStages((prev) =>
+        [...prev, response.data].sort((a, b) => a.order - b.order)
+      );
+      onSuccess();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Erro ao criar etapa');
+    } finally {
+      setSavingStages(false);
+    }
+  };
+
+  const handleDeleteStage = async (stage: PipelineStage) => {
+    if (
+      !window.confirm(
+        `Deseja realmente excluir a etapa "${stage.name}"? Ela não pode ter negócios associados.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setSavingStages(true);
+      await api.delete(`/api/pipelines/stages/${stage.id}`);
+      setStages((prev) => prev.filter((s) => s.id !== stage.id));
+      onSuccess();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Erro ao excluir etapa');
+    } finally {
+      setSavingStages(false);
+    }
+  };
+
+  const handleMoveStage = async (stageId: string, direction: 'up' | 'down') => {
+    const currentIndex = stages.findIndex((s) => s.id === stageId);
+    if (currentIndex === -1) return;
+
+    const targetIndex =
+      direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= stages.length) return;
+
+    const newStages = [...stages];
+    const [removed] = newStages.splice(currentIndex, 1);
+    newStages.splice(targetIndex, 0, removed);
+
+    // Recalcular order localmente
+    const stageOrders = newStages.map((s, index) => ({
+      id: s.id,
+      order: index,
+    }));
+
+    try {
+      setSavingStages(true);
+      await api.put(`/api/pipelines/${pipeline.id}/stages/reorder`, {
+        stages: stageOrders,
+      });
+      setStages(
+        newStages.map((s, index) => ({
+          ...s,
+          order: index,
+        }))
+      );
+      onSuccess();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Erro ao reordenar etapas');
+    } finally {
+      setSavingStages(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          backgroundColor: 'white',
+          borderRadius: '8px',
+          padding: '24px',
+          width: '90%',
+          maxWidth: '500px',
+          maxHeight: '90vh',
+          overflowY: 'auto',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ margin: '0 0 20px 0' }}>Editar Pipeline</h2>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
+              Nome do Pipeline
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px',
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
+              Descrição
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px',
+                minHeight: '80px',
+                resize: 'vertical',
+              }}
+              placeholder="Descrição opcional do pipeline"
+            />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
+              Cor
+            </label>
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              style={{
+                width: '100%',
+                height: '40px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                cursor: 'pointer',
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+              Etapas do Pipeline
+            </label>
+            {stages
+              .slice()
+              .sort((a, b) => a.order - b.order)
+              .map((stage, index) => (
+                <div
+                  key={stage.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '8px',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    backgroundColor: '#f9fafb',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '12px',
+                      color: '#6b7280',
+                      width: '20px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {index + 1}.
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      fontSize: '14px',
+                      color: '#111827',
+                    }}
+                  >
+                    {stage.name}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      color: '#6b7280',
+                    }}
+                  >
+                    {stage.probability}%
+                  </span>
+                  <button
+                    type="button"
+                    disabled={index === 0 || savingStages}
+                    onClick={() => handleMoveStage(stage.id, 'up')}
+                    style={{
+                      padding: '4px 6px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: index === 0 ? '#e5e7eb' : '#d1fae5',
+                      color: '#065f46',
+                      cursor: index === 0 || savingStages ? 'default' : 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    disabled={index === stages.length - 1 || savingStages}
+                    onClick={() => handleMoveStage(stage.id, 'down')}
+                    style={{
+                      padding: '4px 6px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor:
+                        index === stages.length - 1 ? '#e5e7eb' : '#dbeafe',
+                      color: '#1d4ed8',
+                      cursor:
+                        index === stages.length - 1 || savingStages
+                          ? 'default'
+                          : 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteStage(stage)}
+                    disabled={savingStages}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: savingStages ? 'default' : 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Excluir
+                  </button>
+                </div>
+              ))}
+            <button
+              type="button"
+              onClick={handleAddStage}
+              disabled={savingStages}
+              style={{
+                marginTop: '8px',
+                padding: '8px 16px',
+                backgroundColor: '#e5e7eb',
+                color: '#1f2937',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: savingStages ? 'default' : 'pointer',
+                fontSize: '14px',
+              }}
+            >
+              + Adicionar etapa
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#e5e7eb',
+                color: '#1f2937',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+            >
+              Salvar alterações
             </button>
           </div>
         </form>
