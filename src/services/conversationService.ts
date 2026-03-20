@@ -147,6 +147,12 @@ export class ConversationService {
         include: {
           channel: {
             include: {
+              sector: true,
+              secondarySectors: {
+                include: {
+                  sector: true,
+                },
+              },
               webhooks: {
                 select: {
                   id: true,
@@ -220,6 +226,12 @@ export class ConversationService {
       include: {
         channel: {
           include: {
+            sector: true,
+            secondarySectors: {
+              include: {
+                sector: true,
+              },
+            },
             webhooks: {
               select: {
                 id: true,
@@ -411,6 +423,7 @@ export class ConversationService {
       where: { id },
       data: {
         assignedToId: null,
+        sectorId,
       },
       include: {
         channel: true,
@@ -451,7 +464,18 @@ export class ConversationService {
             },
           },
         });
+
+        // Se foi atribuído para um humano, desligar o bot para esta conversa
+        await prisma.botSession.updateMany({
+          where: { conversationId: id, isActive: true },
+          data: { isActive: false },
+        });
       }
+    }
+
+    // Se a conversa ficou sem humano atribuído, garantir que o bot do setor correto esteja ativo.
+    if (!updated.assignedToId) {
+      await this.activateBotForConversation(id);
     }
 
     return updated;
@@ -476,17 +500,18 @@ export class ConversationService {
       }
 
       // Se o canal tem setor, verificar se o usuário pode atender esse setor
-      if (conversation.channel?.sectorId) {
+      const targetSectorId = conversation.sectorId || conversation.channel?.sectorId;
+      if (targetSectorId) {
         const userSector = await prisma.userSector.findFirst({
           where: {
             userId,
-            sectorId: conversation.channel.sectorId,
+            sectorId: targetSectorId,
           },
         });
 
         if (!userSector) {
           throw new Error(
-            `Usuário não está autorizado a atender o setor "${conversation.channel.sector?.name || 'sem setor'}". O canal pertence ao setor "${conversation.channel.sector?.name}" e o usuário não possui permissão para atendê-lo.`
+            `Usuário não está autorizado a atender o setor "${targetSectorId}". O usuário não possui permissão para atendê-lo.`
           );
         }
       }
@@ -524,6 +549,128 @@ export class ConversationService {
     });
 
     return updated;
+  }
+
+  async activateBotForConversation(id: string) {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: {
+        channel: true,
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversa não encontrada');
+    }
+
+    if (!conversation.channelId) {
+      throw new Error('Conversa não possui canal associado');
+    }
+
+    const primarySectorId = conversation.channel?.sectorId || null;
+    const currentSectorId = conversation.sectorId || primarySectorId;
+
+    // Regra: se existe contexto de setor (currentSectorId não nulo),
+    // não fazemos fallback para outro setor.
+    // Se não houver bot configurado para o setor, o bot NÃO existe (comportamento normal).
+    if (currentSectorId) {
+      const botForSector = await prisma.bot.findFirst({
+        where: {
+          channelId: conversation.channelId,
+          isActive: true,
+          sectorId: currentSectorId,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      if (!botForSector) {
+        // Garantir que uma sessão anterior fique desativada.
+        await prisma.botSession.updateMany({
+          where: { conversationId: id, isActive: true },
+          data: { isActive: false },
+        });
+        return null;
+      }
+
+      // Prossegue usando o bot daquele setor.
+      // eslint-disable-next-line prefer-destructuring
+      // (mantém a variável bot como no código original)
+      var bot: any = botForSector;
+    } else {
+      // Sem contexto de setor (legado): usa bot legacy (sectorId = null) se existir.
+      const legacyBot = await prisma.bot.findFirst({
+        where: {
+          channelId: conversation.channelId,
+          isActive: true,
+          sectorId: null,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      if (!legacyBot) {
+        await prisma.botSession.updateMany({
+          where: { conversationId: id, isActive: true },
+          data: { isActive: false },
+        });
+        return null;
+      }
+
+      var bot: any = legacyBot;
+    }
+
+    // Voltar para automação: remove atendente humano.
+    await prisma.conversation.update({
+      where: { id },
+      data: {
+        assignedToId: null,
+      },
+    });
+
+    const existingSession = await prisma.botSession.findUnique({
+      where: { conversationId: id },
+    });
+
+    if (!existingSession) {
+      await prisma.botSession.create({
+        data: {
+          botId: bot.id,
+          conversationId: id,
+          isActive: true,
+          currentFlowId: null,
+          currentStepId: null,
+          context: {
+            mode: 'outside',
+            sectorId: currentSectorId,
+          },
+          handoffToUserId: null,
+          handoffAt: null,
+        },
+      });
+    } else {
+      await prisma.botSession.update({
+        where: { id: existingSession.id },
+        data: {
+          botId: bot.id,
+          isActive: true,
+          currentFlowId: null,
+          currentStepId: null,
+          handoffToUserId: null,
+          handoffAt: null,
+          context: {
+            ...(existingSession.context as any || {}),
+            mode: 'outside',
+            sectorId: currentSectorId,
+          },
+        },
+      });
+    }
+
+    const updatedConversation = await this.getConversationById(id);
+    if (!updatedConversation) {
+      throw new Error('Conversa não encontrada após ativar bot');
+    }
+
+    return updatedConversation;
   }
 
   async getUnreadCount(userId?: string) {

@@ -9,7 +9,11 @@ export interface CreateChannelData {
   evolutionApiKey?: string;
   evolutionInstanceId?: string;
   evolutionInstanceToken?: string;
-  sectorId?: string;
+  // setor principal (legado: sectorId)
+  primarySectorId?: string;
+  sectorId?: string; // legado: tratado como primarySectorId
+  // setores secundários
+  secondarySectorIds?: string[];
 }
 
 export class ChannelService {
@@ -231,15 +235,18 @@ export class ChannelService {
       }
     }
 
-    // Normalizar sectorId: se vier como string vazia do frontend, não devemos salvar,
-    // pois isso quebra a foreign key com a tabela Sector.
-    const normalizedSectorId =
-      data.sectorId && data.sectorId.trim() !== '' ? data.sectorId : undefined;
+    const rawPrimary = data.primarySectorId ?? data.sectorId;
+    const normalizedPrimarySectorId =
+      rawPrimary && rawPrimary.trim() !== '' ? rawPrimary : undefined;
+
+    const secondarySectorIds = (data.secondarySectorIds || [])
+      .map((id) => (typeof id === 'string' ? id.trim() : ''))
+      .filter((id) => id.length > 0);
 
     // Para WhatsApp Official, status deve ser ACTIVE (não precisa de QR code)
     const channelStatus = isWhatsAppOfficial ? ChannelStatus.ACTIVE : ChannelStatus.INACTIVE;
     
-    return await prisma.channel.create({
+    const channel = await prisma.channel.create({
       data: {
         name: data.name,
         type: data.type,
@@ -248,13 +255,34 @@ export class ChannelService {
         evolutionApiKey: apiKey || null,
         evolutionInstanceId: instanceId || null,
         evolutionInstanceToken: instanceToken || null,
-        sectorId: normalizedSectorId,
+        sectorId: normalizedPrimarySectorId,
       },
     });
+
+    if (secondarySectorIds.length > 0) {
+      const filteredSecondary = normalizedPrimarySectorId
+        ? secondarySectorIds.filter((sid) => sid !== normalizedPrimarySectorId)
+        : secondarySectorIds;
+
+      if (filteredSecondary.length > 0) {
+        await prisma.channelSector.createMany({
+          data: filteredSecondary.map((sectorId) => ({ channelId: channel.id, sectorId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    return channel;
   }
 
   async updateChannel(id: string, data: Partial<CreateChannelData>): Promise<Channel> {
-    return await prisma.channel.update({
+    const rawPrimary = data.primarySectorId ?? data.sectorId;
+    const normalizedPrimarySectorId =
+      rawPrimary && rawPrimary.trim() !== '' ? rawPrimary : null;
+
+    const shouldUpdateSectors = data.primarySectorId !== undefined || data.secondarySectorIds !== undefined;
+
+    const updated = await prisma.channel.update({
       where: { id },
       data: {
         ...(data.name && { name: data.name }),
@@ -262,13 +290,36 @@ export class ChannelService {
         ...(data.evolutionApiKey && { evolutionApiKey: data.evolutionApiKey }),
         ...(data.evolutionInstanceId && { evolutionInstanceId: data.evolutionInstanceId }),
         ...(data.evolutionInstanceToken && { evolutionInstanceToken: data.evolutionInstanceToken }),
-        // Mesma normalização do create: string vazia não deve ser gravada
-        ...(data.sectorId !== undefined && {
-          sectorId:
-            data.sectorId && data.sectorId.trim() !== '' ? data.sectorId : null,
-        }),
+        ...(data.primarySectorId !== undefined || data.sectorId !== undefined
+          ? { sectorId: normalizedPrimarySectorId }
+          : {}),
       },
     });
+
+    if (shouldUpdateSectors) {
+      const primary = normalizedPrimarySectorId || null;
+      const secondarySectorIds = (data.secondarySectorIds || [])
+        .map((sid) => (typeof sid === 'string' ? sid.trim() : ''))
+        .filter((sid) => sid.length > 0);
+
+      // Se veio primary mas veio sem secondary, limpamos e recriamos o que foi enviado.
+      await prisma.channelSector.deleteMany({
+        where: { channelId: id },
+      });
+
+      const filteredSecondary = primary
+        ? secondarySectorIds.filter((sid) => sid !== primary)
+        : secondarySectorIds;
+
+      if (filteredSecondary.length > 0) {
+        await prisma.channelSector.createMany({
+          data: filteredSecondary.map((sectorId) => ({ channelId: id, sectorId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    return updated;
   }
 
   async updateChannelStatus(id: string, status: ChannelStatus): Promise<Channel> {

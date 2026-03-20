@@ -91,6 +91,16 @@ export class ConversationController {
     }
   }
 
+  async activateBot(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const conversation = await conversationService.activateBotForConversation(id);
+      res.json(conversation);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
   /**
    * Transfere conversa para um setor (fila), opcionalmente redistribuindo
    * automaticamente para um atendente desse setor.

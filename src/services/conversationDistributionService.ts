@@ -203,7 +203,7 @@ export class ConversationDistributionService {
 
         const userId = await this.distributeConversation(conversation.id, {
           channelId: conversation.channelId,
-          sectorId: conversation.channel.sectorId || undefined,
+          sectorId: conversation.sectorId || conversation.channel.sectorId || undefined,
         });
 
         if (userId) {
@@ -259,7 +259,7 @@ export class ConversationDistributionService {
 
         const newUserId = await this.distributeConversation(conversation.id, {
           channelId: conversation.channelId,
-          sectorId: conversation.channel.sectorId || undefined,
+          sectorId: conversation.sectorId || conversation.channel.sectorId || undefined,
         });
 
         if (newUserId && newUserId !== userId) {

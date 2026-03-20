@@ -139,6 +139,8 @@ model User {
   messages              Message[]
   quickReplies          QuickReply[]
   sectors               UserSector[]
+  pipelineAccesses     UserPipelineAccess[]
+  channelAccesses      UserChannelAccess[]
   // Campanhas e automações
   campaigns             Campaign[]        @relation("UserCampaigns")
 }
@@ -152,6 +154,7 @@ model Channel {
   evolutionApiKey         String?
   evolutionInstanceId     String?
   evolutionInstanceToken  String?
+  // Setor principal do canal (apenas 1)
   sectorId                String?
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
@@ -162,6 +165,24 @@ model Channel {
   webhooks      WebhookConfig[]
   bots          Bot[]
   campaigns     Campaign[]
+  secondarySectors ChannelSector[]
+  userChannelAccesses UserChannelAccess[]
+}
+
+// Setores secundários permitidos para um mesmo canal (além do setor principal).
+model ChannelSector {
+  id        String   @id @default(cuid())
+  channelId String
+  sectorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sector    Sector   @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, sectorId])
+  @@index([channelId])
+  @@index([sectorId])
 }
 
 model Contact {
@@ -195,6 +216,8 @@ model Conversation {
   channelId    String?  // Opcional: permite manter histórico quando canal é deletado
   contactId    String
   assignedToId String?
+  // Setor atual da conversa (fila/setor para roteamento fora do pipeline).
+  sectorId     String?
   status       ConversationStatus @default(OPEN)
   priority     Priority           @default(MEDIUM)
   unreadCount  Int                @default(0)
@@ -207,6 +230,7 @@ model Conversation {
   channel      Channel?           @relation("ConversationChannel", fields: [channelId], references: [id], onDelete: SetNull)
   contact      Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
   assignedTo   User?              @relation("AssignedConversations", fields: [assignedToId], references: [id], onDelete: SetNull)
+  sector       Sector?           @relation(fields: [sectorId], references: [id], onDelete: SetNull)
   messages     Message[]
   tags         ConversationTag[]
   ticket       Ticket?
@@ -551,6 +575,8 @@ model Bot {
   description     String?
   avatar          String?
   channelId       String
+  // Setor atendido pelo bot (opcional; usado para roteamento fora do pipeline).
+  sectorId        String?
   language        String   @default("pt-BR")
   isActive        Boolean  @default(true)
   welcomeMessage  String?
@@ -563,6 +589,7 @@ model Bot {
   updatedAt       DateTime @updatedAt
 
   channel     Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sector      Sector?     @relation(fields: [sectorId], references: [id], onDelete: SetNull)
   intents     Intent[]
   flows       Flow[]
   sessions    BotSession[]
@@ -570,6 +597,7 @@ model Bot {
 
   @@index([channelId])
   @@index([isActive])
+  @@index([sectorId])
 }
 
 model Intent {
@@ -744,7 +772,14 @@ model Sector {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Canais onde este setor é o principal (Channel.sectorId)
   channels  Channel[]
+  // Canais onde este setor é secundário (ChannelSector)
+  channelSectors ChannelSector[]
+  // Bots que atendem este setor
+  bots       Bot[]
+  // Conversas que estão neste setor (fora do pipeline)
+  conversations Conversation[]
   users     UserSector[]
 }
 
@@ -760,6 +795,40 @@ model UserSector {
   @@unique([userId, sectorId])
   @@index([userId])
   @@index([sectorId])
+}
+
+// ============================================
+// PERMISSÕES: Usuário -> Pipelines
+// ============================================
+model UserPipelineAccess {
+  id          String   @id @default(cuid())
+  userId      String
+  pipelineId  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pipelineId])
+  @@index([pipelineId])
+}
+
+// ============================================
+// PERMISSÕES: Usuário -> Canais
+// ============================================
+model UserChannelAccess {
+  id          String   @id @default(cuid())
+  userId      String
+  channelId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@index([channelId])
 }
 
 // ============================================
@@ -786,6 +855,7 @@ model Pipeline {
   deals       Deal[]
   customFields PipelineCustomField[]
   automationRules PipelineAutomationRule[]
+  userPipelineAccesses UserPipelineAccess[]
 
   @@index([isActive])
 }

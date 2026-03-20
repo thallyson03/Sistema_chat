@@ -1919,7 +1919,9 @@ export default function BotFlowBuilderVisual() {
         }
       } else {
         // Como o bot só pode ter um fluxo, selecionar sempre o primeiro
-        setSelectedFlow(flowList[0]);
+        const flowWithSteps =
+          flowList.find((f: any) => Array.isArray(f.steps) && f.steps.length > 0) || flowList[0];
+        setSelectedFlow(flowWithSteps);
       }
     } catch (error) {
       console.error('Erro ao carregar fluxos:', error);
@@ -3443,32 +3445,20 @@ export default function BotFlowBuilderVisual() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <select
-            value={selectedFlow?.id || ''}
-            onChange={(e) => {
-              const flow = flows.find(f => f.id === e.target.value);
-              setSelectedFlow(flow || null);
-              if (botId && flow?.id) {
-                try {
-                  sessionStorage.setItem(`bot-${botId}-selectedFlowId`, flow.id);
-                } catch (_) {}
-              }
-            }}
+          <div
             style={{
               padding: '6px 12px',
               border: '1px solid #d1d5db',
               borderRadius: '6px',
               fontSize: '13px',
               backgroundColor: 'white',
+              color: '#111827',
+              minWidth: '180px',
             }}
+            title="Um bot só pode ter um fluxo (o fluxo principal)"
           >
-            <option value="">Selecione um fluxo</option>
-            {flows.map((flow) => (
-              <option key={flow.id} value={flow.id}>
-                {flow.name}
-              </option>
-            ))}
-          </select>
+            {selectedFlow?.name || 'Fluxo principal'}
+          </div>
           <button
             onClick={() => {
               if (showPreview) {

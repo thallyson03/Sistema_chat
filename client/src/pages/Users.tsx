@@ -15,6 +15,19 @@ interface User {
       color: string;
     };
   }>;
+  pipelineAccesses?: Array<{
+    pipeline: {
+      id: string;
+      name: string;
+    };
+  }>;
+  channelAccesses?: Array<{
+    channel: {
+      id: string;
+      name: string;
+      type: string;
+    };
+  }>;
   _count?: {
     assignedConversations: number;
     assignedTickets: number;
@@ -27,9 +40,22 @@ interface Sector {
   color: string;
 }
 
+interface Pipeline {
+  id: string;
+  name: string;
+}
+
+interface Channel {
+  id: string;
+  name: string;
+  type: string;
+}
+
 export default function Users() {
   const [users, setUsers] = useState<User[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -41,12 +67,16 @@ export default function Users() {
     name: '',
     role: 'AGENT',
     sectorIds: [] as string[],
+    pipelineIds: [] as string[],
+    channelIds: [] as string[],
     isActive: true,
   });
 
   useEffect(() => {
     fetchUsers();
     fetchSectors();
+    fetchPipelines();
+    fetchChannels();
   }, []);
 
   const fetchUsers = async () => {
@@ -70,6 +100,24 @@ export default function Users() {
     }
   };
 
+  const fetchPipelines = async () => {
+    try {
+      const response = await api.get('/api/pipelines?includeInactive=true');
+      setPipelines(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar pipelines:', error);
+    }
+  };
+
+  const fetchChannels = async () => {
+    try {
+      const response = await api.get('/api/channels');
+      setChannels(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar canais:', error);
+    }
+  };
+
   const handleCreate = () => {
     setEditingUser(null);
     setFormData({
@@ -78,6 +126,8 @@ export default function Users() {
       name: '',
       role: 'AGENT',
       sectorIds: [],
+      pipelineIds: [],
+      channelIds: [],
       isActive: true,
     });
     setShowModal(true);
@@ -91,6 +141,8 @@ export default function Users() {
       name: user.name,
       role: user.role,
       sectorIds: user.sectors?.map((us) => us.sector.id) || [],
+      pipelineIds: user.pipelineAccesses?.map((pa) => pa.pipeline.id) || [],
+      channelIds: user.channelAccesses?.map((ca) => ca.channel.id) || [],
       isActive: user.isActive,
     });
     setShowModal(true);
@@ -144,6 +196,24 @@ export default function Users() {
       sectorIds: prev.sectorIds.includes(sectorId)
         ? prev.sectorIds.filter((id) => id !== sectorId)
         : [...prev.sectorIds, sectorId],
+    }));
+  };
+
+  const handleTogglePipeline = (pipelineId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      pipelineIds: prev.pipelineIds.includes(pipelineId)
+        ? prev.pipelineIds.filter((id) => id !== pipelineId)
+        : [...prev.pipelineIds, pipelineId],
+    }));
+  };
+
+  const handleToggleChannel = (channelId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      channelIds: prev.channelIds.includes(channelId)
+        ? prev.channelIds.filter((id) => id !== channelId)
+        : [...prev.channelIds, channelId],
     }));
   };
 
@@ -422,6 +492,60 @@ export default function Users() {
                           style={{ backgroundColor: sector.color }}
                         />
                         <span>{sector.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Pipelines que pode acessar
+                </label>
+                <div className="border border-slate-200 rounded-lg p-2.5 max-h-56 overflow-y-auto space-y-1">
+                  {pipelines.length === 0 ? (
+                    <p className="text-xs text-slate-500 m-0">Nenhum pipeline cadastrado.</p>
+                  ) : (
+                    pipelines.map((pipeline) => (
+                      <label
+                        key={pipeline.id}
+                        className="flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer hover:bg-slate-50 text-xs text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.pipelineIds.includes(pipeline.id)}
+                          onChange={() => handleTogglePipeline(pipeline.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
+                        />
+                        <span>{pipeline.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Canais que pode acessar
+                </label>
+                <div className="border border-slate-200 rounded-lg p-2.5 max-h-56 overflow-y-auto space-y-1">
+                  {channels.length === 0 ? (
+                    <p className="text-xs text-slate-500 m-0">Nenhum canal cadastrado.</p>
+                  ) : (
+                    channels.map((channel) => (
+                      <label
+                        key={channel.id}
+                        className="flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer hover:bg-slate-50 text-xs text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.channelIds.includes(channel.id)}
+                          onChange={() => handleToggleChannel(channel.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
+                        />
+                        <span>
+                          {channel.name} ({channel.type})
+                        </span>
                       </label>
                     ))
                   )}

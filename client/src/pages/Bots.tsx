@@ -30,6 +30,12 @@ interface Channel {
   status: string;
 }
 
+interface Sector {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface BotVariable {
   id: string;
   name: string;
@@ -43,12 +49,14 @@ export default function Bots() {
   const navigate = useNavigate();
   const [bots, setBots] = useState<Bot[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     channelId: '',
+    sectorId: '',
     welcomeMessage: '',
     fallbackMessage: '',
     autoCloseEnabled: false,
@@ -72,6 +80,7 @@ export default function Bots() {
   useEffect(() => {
     fetchBots();
     fetchChannels();
+    fetchSectors();
   }, []);
 
   const fetchBots = async () => {
@@ -102,6 +111,15 @@ export default function Bots() {
     }
   };
 
+  const fetchSectors = async () => {
+    try {
+      const response = await api.get('/api/sectors');
+      setSectors(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar setores:', error);
+    }
+  };
+
   const handleCreateBot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.channelId) {
@@ -117,6 +135,7 @@ export default function Bots() {
         name: '',
         description: '',
         channelId: '',
+        sectorId: '',
         welcomeMessage: '',
         fallbackMessage: '',
         autoCloseEnabled: false,
@@ -449,6 +468,31 @@ export default function Bots() {
                   {channels.map((channel) => (
                     <option key={channel.id} value={channel.id}>
                       {channel.name} ({channel.type}) {channel.status ? `- ${channel.status}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
+                  Setor atendido (opcional)
+                </label>
+                <select
+                  value={formData.sectorId}
+                  onChange={(e) => setFormData({ ...formData, sectorId: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '5px',
+                    fontSize: '14px',
+                    backgroundColor: 'white',
+                  }}
+                >
+                  <option value="">Usar fallback do canal</option>
+                  {sectors.map((sector) => (
+                    <option key={sector.id} value={sector.id}>
+                      {sector.name}
                     </option>
                   ))}
                 </select>

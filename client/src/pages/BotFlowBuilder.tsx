@@ -96,7 +96,9 @@ export default function BotFlowBuilder() {
       const response = await api.get(`/api/bots/${botId}/flows`);
       setFlows(response.data || []);
       if (response.data && response.data.length > 0 && !selectedFlow) {
-        setSelectedFlow(response.data[0]);
+        const flowWithSteps =
+          response.data.find((f: any) => Array.isArray(f.steps) && f.steps.length > 0) || response.data[0];
+        setSelectedFlow(flowWithSteps);
       }
     } catch (error) {
       console.error('Erro ao carregar fluxos:', error);
@@ -235,40 +237,20 @@ export default function BotFlowBuilder() {
             <h2 style={{ margin: 0 }}>Criar Fluxo - {bot.name}</h2>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <select
-              value={selectedFlow?.id || ''}
-              onChange={(e) => {
-                const flow = flows.find(f => f.id === e.target.value);
-                setSelectedFlow(flow || null);
-              }}
+            <div
               style={{
                 padding: '8px 12px',
                 border: '1px solid #d1d5db',
                 borderRadius: '5px',
                 fontSize: '14px',
+                backgroundColor: 'white',
+                color: '#111827',
+                minWidth: '200px',
               }}
+              title="Um bot só pode ter um fluxo (o fluxo principal)"
             >
-              <option value="">Selecione um fluxo</option>
-              {flows.map((flow) => (
-                <option key={flow.id} value={flow.id}>
-                  {flow.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => setShowFlowModal(true)}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontSize: '14px',
-              }}
-            >
-              + Novo Fluxo
-            </button>
+              {selectedFlow?.name || 'Fluxo principal'}
+            </div>
             <button
               onClick={() => setShowStepModal(true)}
               disabled={!selectedFlow}

@@ -7,6 +7,8 @@ export interface CreateUserData {
   name: string;
   role?: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
   sectorIds?: string[];
+  pipelineIds?: string[];
+  channelIds?: string[];
   isActive?: boolean;
 }
 
@@ -15,6 +17,8 @@ export interface UpdateUserData {
   name?: string;
   role?: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
   sectorIds?: string[];
+  pipelineIds?: string[];
+  channelIds?: string[];
   isActive?: boolean;
   password?: string;
 }
@@ -55,6 +59,27 @@ export class UserService {
       },
     });
 
+    // Permissões: pipelines e canais
+    if (data.pipelineIds && data.pipelineIds.length > 0) {
+      await prisma.userPipelineAccess.createMany({
+        data: data.pipelineIds.map((pipelineId) => ({
+          userId: user.id,
+          pipelineId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (data.channelIds && data.channelIds.length > 0) {
+      await prisma.userChannelAccess.createMany({
+        data: data.channelIds.map((channelId) => ({
+          userId: user.id,
+          channelId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
     const { password: _, ...userWithoutPassword } = user;
     return userWithoutPassword as any;
   }
@@ -89,6 +114,28 @@ export class UserService {
       }
     }
 
+    // Atualizar pipelines se fornecido
+    if (data.pipelineIds !== undefined) {
+      await prisma.userPipelineAccess.deleteMany({ where: { userId: id } });
+      if (data.pipelineIds.length > 0) {
+        await prisma.userPipelineAccess.createMany({
+          data: data.pipelineIds.map((pipelineId) => ({ userId: id, pipelineId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    // Atualizar canais se fornecido
+    if (data.channelIds !== undefined) {
+      await prisma.userChannelAccess.deleteMany({ where: { userId: id } });
+      if (data.channelIds.length > 0) {
+        await prisma.userChannelAccess.createMany({
+          data: data.channelIds.map((channelId) => ({ userId: id, channelId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
     const user = await prisma.user.update({
       where: { id },
       data: updateData,
@@ -96,6 +143,16 @@ export class UserService {
         sectors: {
           include: {
             sector: true,
+          },
+        },
+        pipelineAccesses: {
+          include: {
+            pipeline: true,
+          },
+        },
+        channelAccesses: {
+          include: {
+            channel: true,
           },
         },
       },
@@ -132,6 +189,16 @@ export class UserService {
             sector: true,
           },
         },
+        pipelineAccesses: {
+          include: {
+            pipeline: true,
+          },
+        },
+        channelAccesses: {
+          include: {
+            channel: true,
+          },
+        },
       },
     });
 
@@ -153,6 +220,16 @@ export class UserService {
         sectors: {
           include: {
             sector: true,
+          },
+        },
+        pipelineAccesses: {
+          include: {
+            pipeline: true,
+          },
+        },
+        channelAccesses: {
+          include: {
+            channel: true,
           },
         },
         _count: {

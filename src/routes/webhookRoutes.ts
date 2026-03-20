@@ -3,10 +3,12 @@ import prisma from '../config/database';
 import { WebhookService } from '../services/webhookService';
 import { BotService } from '../services/botService';
 import { ConversationDistributionService } from '../services/conversationDistributionService';
+import { ConversationService } from '../services/conversationService';
 import crypto from 'crypto';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
+const conversationService = new ConversationService();
 
 // io será injetado via função
 let io: any = null;
@@ -827,7 +829,7 @@ async function handleNewMessage(data: any) {
     });
 
     // Buscar ou criar conversa
-    let conversation = await prisma.conversation.findFirst({
+    let conversation: any = await prisma.conversation.findFirst({
       where: {
         channelId: channel.id,
         contactId: contact.id,
@@ -846,11 +848,13 @@ async function handleNewMessage(data: any) {
         data: {
           channelId: channel.id,
           contactId: contact.id,
+            // Fora do pipeline, começamos no setor principal configurado no canal.
+            sectorId: channelWithSector?.sectorId || null,
           status: 'OPEN',
           unreadCount: 1,
           lastMessageAt: new Date(),
           lastCustomerMessageAt: new Date(),
-        },
+        } as any,
         include: {
           channel: {
             include: {
@@ -919,6 +923,10 @@ async function handleNewMessage(data: any) {
           console.error(`❌ [handleNewMessage] Erro ao redistribuir conversa ${conversation.id}:`, error.message);
         }
       }
+    }
+
+    if (!conversation) {
+      throw new Error('Conversa não foi possível ser carregada/criada');
     }
 
     // Extrair conteúdo e tipo da mensagem
@@ -1033,6 +1041,15 @@ async function handleNewMessage(data: any) {
       // Verificar se há bot ativo e processar mensagem
       if (!fromMe && messageContent) {
         try {
+          // Se não existe deal (fora do pipeline) e ninguém humano está atribuído,
+          // ativar automaticamente o bot do setor atual.
+          const deal = conversation.id
+            ? await prisma.deal.findUnique({ where: { conversationId: conversation.id } }).catch(() => null)
+            : null;
+          if (!deal && !conversation.assignedToId) {
+            await conversationService.activateBotForConversation(conversation.id);
+          }
+
           const botResult = await botService.processMessage(messageContent, conversation.id, {
             messageType,
             provider: 'evolution',

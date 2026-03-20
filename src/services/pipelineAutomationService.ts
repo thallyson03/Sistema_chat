@@ -125,19 +125,10 @@ class PipelineAutomationService {
       return;
     }
 
-    // Verificar se há regra de SALES_BOT nesta etapa; se não houver, desligar sessão de bot existente
-    const hasSalesBotRule = rules.some((rule) => rule.type === PipelineAutomationType.SALES_BOT);
-    if (!hasSalesBotRule && deal.conversationId) {
-      await prisma.botSession.updateMany({
-        where: {
-          conversationId: deal.conversationId,
-          isActive: true,
-        },
-        data: {
-          isActive: false,
-        },
-      });
-    }
+    // Desativar sessão de bot SOMENTE se nenhuma regra SALES_BOT for executada pelo trigger atual.
+    // Antes o código desativava (ou deixava ativa) baseado apenas em "existir regra SALES_BOT na etapa",
+    // o que mantém bot ligado quando a regra existe, mas o trigger/config não corresponde ao evento (ex: moved vs created).
+    let executedSalesBot = false;
 
     // Executar cada regra
     for (const rule of rules) {
@@ -189,7 +180,8 @@ class PipelineAutomationService {
 
         switch (rule.type) {
           case PipelineAutomationType.SALES_BOT:
-            await this.executeSalesBotRule(rule.id, deal, config);
+            executedSalesBot =
+              executedSalesBot || (await this.executeSalesBotRule(rule.id, deal, config));
             break;
           case PipelineAutomationType.CHANGE_STAGE:
             await this.executeChangeStageRule(rule.id, deal, config);
@@ -208,6 +200,23 @@ class PipelineAutomationService {
         // Continuar com outras regras mesmo se uma falhar
       }
     }
+
+    // Se existiam regras na etapa mas nenhuma SALES_BOT foi executada,
+    // então desligar a sessão de bot existente para evitar bot responder fora da coluna/condição.
+    if (deal.conversationId && !executedSalesBot) {
+      await prisma.botSession.updateMany({
+        where: {
+          conversationId: deal.conversationId,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+        },
+      });
+      console.log(
+        `[PipelineAutomation] Nenhuma SALES_BOT executada na etapa ${stageId}. Desativando sessão de bot para conversa ${deal.conversationId}`,
+      );
+    }
   }
 
   /**
@@ -217,10 +226,10 @@ class PipelineAutomationService {
     ruleId: string,
     deal: any,
     config: AutomationConfig
-  ) {
+  ): Promise<boolean> {
     if (!config.botId) {
       console.warn(`[PipelineAutomation] Regra ${ruleId}: botId não configurado`);
-      return;
+      return false;
     }
 
     console.log(`[PipelineAutomation] Executando SALES_BOT: iniciando bot ${config.botId} para contato ${deal.contactId}`);
@@ -261,13 +270,13 @@ class PipelineAutomationService {
 
     if (!bot || !bot.isActive) {
       console.error(`[PipelineAutomation] Bot ${config.botId} não encontrado ou inativo`);
-      return;
+      return false;
     }
 
     // Verificar se o bot pertence ao mesmo canal do contato
     if (bot.channelId !== deal.contact.channelId) {
       console.error(`[PipelineAutomation] Bot ${config.botId} não pertence ao canal do contato`);
-      return;
+      return false;
     }
 
     // Criar ou ativar sessão do bot
@@ -287,7 +296,7 @@ class PipelineAutomationService {
     
     if (!conversationId) {
       console.error(`[PipelineAutomation] Não foi possível encontrar conversa para iniciar o bot`);
-      return;
+      return false;
     }
 
     // Verificar se já existe sessão ativa
@@ -302,10 +311,15 @@ class PipelineAutomationService {
           botId: config.botId,
           conversationId,
           isActive: true,
+          currentFlowId: null,
+          currentStepId: null,
           context: {
             dealId: deal.id,
             dealName: deal.name,
             contactName: deal.contact.name,
+            mode: 'pipeline',
+            pipelineId: deal.pipelineId,
+            stageId: deal.stageId,
           },
         },
       });
@@ -316,11 +330,16 @@ class PipelineAutomationService {
         data: {
           botId: config.botId,
           isActive: true,
+          currentFlowId: null,
+          currentStepId: null,
           context: {
             ...(botSession.context as any || {}),
             dealId: deal.id,
             dealName: deal.name,
             contactName: deal.contact.name,
+            mode: 'pipeline',
+            pipelineId: deal.pipelineId,
+            stageId: deal.stageId,
           },
         },
       });
@@ -350,6 +369,8 @@ class PipelineAutomationService {
     }
 
     console.log(`[PipelineAutomation] Bot ${config.botId} iniciado com sucesso para deal ${deal.id}`);
+
+    return true;
   }
 
   /**

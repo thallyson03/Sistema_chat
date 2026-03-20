@@ -8,6 +8,7 @@ export interface CreateBotData {
   description?: string;
   avatar?: string;
   channelId: string;
+  sectorId?: string | null;
   language?: string;
   welcomeMessage?: string;
   fallbackMessage?: string;
@@ -98,12 +99,37 @@ export class BotService {
    * Cria um novo bot
    */
   async createBot(data: CreateBotData) {
+    if (data.sectorId) {
+      const channel = await prisma.channel.findUnique({
+        where: { id: data.channelId },
+        select: {
+          sectorId: true,
+          secondarySectors: {
+            select: { sectorId: true },
+          },
+        },
+      });
+
+      if (!channel) {
+        throw new Error('Canal não encontrado para validar setor do bot');
+      }
+
+      const allowed =
+        channel.sectorId === data.sectorId ||
+        (channel.secondarySectors || []).some((s) => s.sectorId === data.sectorId);
+
+      if (!allowed) {
+        throw new Error('Este setor não pertence ao canal configurado');
+      }
+    }
+
     const bot = await prisma.bot.create({
       data: {
         name: data.name,
         description: data.description,
         avatar: data.avatar,
         channelId: data.channelId,
+        sectorId: data.sectorId ?? null,
         language: data.language || 'pt-BR',
         welcomeMessage: data.welcomeMessage,
         fallbackMessage: data.fallbackMessage || 'Desculpe, não entendi. Pode reformular sua pergunta?',
@@ -115,6 +141,19 @@ export class BotService {
     });
 
     console.log('[BotService] Bot criado:', bot.id);
+
+    // Garantir regra: 1 bot => 1 fluxo (cria o fluxo principal automaticamente)
+    await prisma.flow.create({
+      data: {
+        botId: bot.id,
+        name: 'Fluxo principal',
+        description: 'Fluxo padrão do bot',
+        trigger: 'always',
+        triggerValue: null,
+        isActive: true,
+      },
+    });
+
     return bot;
   }
 
@@ -229,6 +268,67 @@ export class BotService {
       return null;
     }
 
+    // Condicionar o bot ao "escopo" da automação.
+    // Se a sessão foi iniciada via pipeline (coluna/stage), só responder enquanto o deal da conversa estiver na mesma stage.
+    const sessionContext = (session.context as any) || {};
+    if (sessionContext?.mode === 'pipeline' || sessionContext?.pipelineId || sessionContext?.stageId) {
+      const deal = await prisma.deal.findUnique({
+        where: { conversationId },
+        select: {
+          pipelineId: true,
+          stageId: true,
+        },
+      });
+
+      // Se a conversa não está mais em um deal/pipeline, desativar o bot.
+      if (!deal) {
+        await prisma.botSession.update({
+          where: { conversationId },
+          data: { isActive: false },
+        });
+        return null;
+      }
+
+      const expectedPipelineId = sessionContext.pipelineId;
+      const expectedStageId = sessionContext.stageId;
+
+      const pipelineMismatch =
+        expectedPipelineId && deal.pipelineId !== expectedPipelineId;
+      const stageMismatch = expectedStageId && deal.stageId !== expectedStageId;
+
+      if (pipelineMismatch || stageMismatch) {
+        await prisma.botSession.update({
+          where: { conversationId },
+          data: { isActive: false },
+        });
+        return null;
+      }
+    }
+
+    // Fora do pipeline: condicionar o bot ao setor da conversa.
+    // Ex: canal A (setor principal) -> bot principal; ao transferir para setor secundário -> bot secundário.
+    if (sessionContext?.mode === 'outside') {
+      const expectedSectorId = sessionContext.sectorId || null;
+      const currentSectorId = conversation.sectorId || (conversation.channel as any)?.sectorId || null;
+
+      if (expectedSectorId && currentSectorId && expectedSectorId !== currentSectorId) {
+        await prisma.botSession.update({
+          where: { conversationId },
+          data: { isActive: false },
+        });
+        return null;
+      }
+
+      // Se o bot está configurado para um setor mas a conversa não tem setor definido, desativar.
+      if (expectedSectorId && !currentSectorId) {
+        await prisma.botSession.update({
+          where: { conversationId },
+          data: { isActive: false },
+        });
+        return null;
+      }
+    }
+
     const bot = await prisma.bot.findUnique({
       where: {
         id: session.botId,
@@ -291,11 +391,17 @@ export class BotService {
 
     // Se não há fluxo ativo, verificar se há fluxo com trigger "always" para iniciar automaticamente
     if (session && !(session as any).currentFlowId) {
-      // Buscar fluxo com trigger "always" ou sem trigger específico (fluxo padrão)
-      const alwaysFlow = (bot as any).flows?.find((f: any) => 
-        f.isActive && 
-        (f.trigger === 'always' || !f.trigger || f.trigger === '')
+      // Buscar fluxo com trigger "always" (ou sem trigger) e priorizar o que tenha steps.
+      // Isso evita cair em fluxos legados vazios quando existem múltiplos fluxos antigos.
+      const candidateFlows = ((bot as any).flows || []).filter(
+        (f: any) => f.isActive && (f.trigger === 'always' || !f.trigger || f.trigger === ''),
       );
+      const alwaysFlow = candidateFlows.sort((a: any, b: any) => {
+        const aStepCount = Array.isArray(a.steps) ? a.steps.length : 0;
+        const bStepCount = Array.isArray(b.steps) ? b.steps.length : 0;
+        if (aStepCount !== bStepCount) return bStepCount - aStepCount;
+        return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+      })[0];
       
       if (alwaysFlow) {
         console.log(`[BotService] Iniciando fluxo automático "${alwaysFlow.name}" (trigger: ${alwaysFlow.trigger || 'always'})`);
@@ -1829,6 +1935,16 @@ export class BotService {
    * Cria um fluxo
    */
   async createFlow(data: { botId: string; name: string; description?: string; trigger?: string; triggerValue?: string }) {
+    const existingFlowCount = await prisma.flow.count({
+      where: {
+        botId: data.botId,
+      },
+    });
+
+    if (existingFlowCount > 0) {
+      throw new Error('Este bot já possui um fluxo. Só é permitido um fluxo por bot.');
+    }
+
     const flow = await prisma.flow.create({
       data: {
         botId: data.botId,

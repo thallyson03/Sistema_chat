@@ -128,11 +128,11 @@ export default function Conversations() {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showTransferModal, setShowTransferModal] = useState(false);
-  const [users, setUsers] = useState<any[]>([]);
   const [showNewConversationModal, setShowNewConversationModal] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loadingNewConversation, setLoadingNewConversation] = useState(false);
   const [channels, setChannels] = useState<any[]>([]);
+  const [sectors, setSectors] = useState<any[]>([]);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const [audioState, setAudioState] = useState<
     Record<string, { playing: boolean; currentTime: number; duration: number }>
@@ -171,8 +171,8 @@ export default function Conversations() {
 
   useEffect(() => {
     fetchConversations();
-    fetchUsers();
     fetchChannels();
+    fetchSectors();
 
     // Listener para selecionar conversa via evento customizado (usado ao clicar em telefone no DealDetail)
     const handleSelectConversation = (event: Event) => {
@@ -336,21 +336,21 @@ export default function Conversations() {
     }
   };
 
-  const fetchUsers = async () => {
-    try {
-      const response = await api.get('/api/users');
-      setUsers(response.data || []);
-    } catch (error) {
-      console.error('Erro ao carregar usuários:', error);
-    }
-  };
-
   const fetchChannels = async () => {
     try {
       const response = await api.get('/api/channels');
       setChannels(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar canais:', error);
+    }
+  };
+
+  const fetchSectors = async () => {
+    try {
+      const response = await api.get('/api/sectors');
+      setSectors(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar setores:', error);
     }
   };
 
@@ -1339,10 +1339,8 @@ export default function Conversations() {
                             { userId: currentUser.id },
                           );
                         } else {
-                          // Humano -> voltar para fila/bot (remover atribuição)
-                          await api.put(`/api/conversations/${selectedConversation.id}`, {
-                            assignedToId: null,
-                          });
+                          // Humano -> voltar para bot (reativar sessão do bot na conversa)
+                          await api.post(`/api/conversations/${selectedConversation.id}/activate-bot`);
                         }
 
                         // Buscar conversa atualizada (inclui campo inBot calculado no backend)
@@ -2637,7 +2635,7 @@ export default function Conversations() {
           >
             <h2 style={{ marginTop: 0, marginBottom: '20px' }}>Transferir Conversa</h2>
             <p style={{ color: '#6b7280', marginBottom: '20px' }}>
-              Selecione o usuário para transferir a conversa:
+              Selecione o setor para transferir a conversa:
             </p>
             <div
               style={{
@@ -2648,20 +2646,21 @@ export default function Conversations() {
                 padding: '10px',
               }}
             >
-              {users.length === 0 ? (
+              {sectors.length === 0 ? (
                 <p style={{ textAlign: 'center', color: '#6b7280', padding: '20px' }}>
-                  Carregando usuários...
+                  Carregando setores...
                 </p>
               ) : (
-                users.map((user) => (
+                sectors.map((sector: any) => (
                   <div
-                    key={user.id}
+                    key={sector.id}
                     onClick={async () => {
                       try {
-                        await api.post(`/api/conversations/${selectedConversation.id}/assign`, {
-                          userId: user.id,
+                        await api.post(`/api/conversations/${selectedConversation.id}/transfer-sector`, {
+                          sectorId: sector.id,
+                          autoAssign: false,
                         });
-                        alert(`Conversa transferida para ${user.name}`);
+                        alert(`Conversa transferida para o setor ${sector.name}`);
                         setShowTransferModal(false);
                         await fetchConversations();
                         const updated = conversations.find((c) => c.id === selectedConversation.id);
@@ -2677,53 +2676,30 @@ export default function Conversations() {
                       cursor: 'pointer',
                       transition: 'background-color 0.2s',
                       border: '1px solid #e5e7eb',
+                      backgroundColor: `${sector.color || '#3b82f6'}10`,
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#f3f4f6';
+                      e.currentTarget.style.backgroundColor = `${sector.color || '#3b82f6'}20`;
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'white';
+                      e.currentTarget.style.backgroundColor = `${sector.color || '#3b82f6'}10`;
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{user.name}</div>
-                        <div style={{ color: '#6b7280', fontSize: '12px' }}>{user.email}</div>
-                        {user.sectors && user.sectors.length > 0 && (
-                          <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
-                            {user.sectors.map((us: any) => (
-                              <span
-                                key={us.sector.id}
-                                style={{
-                                  fontSize: '11px',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  backgroundColor: `${us.sector.color}20`,
-                                  color: us.sector.color,
-                                }}
-                              >
-                                {us.sector.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{sector.name}</div>
                       </div>
                       <span
                         style={{
                           padding: '4px 8px',
-                          borderRadius: '4px',
+                          borderRadius: '999px',
                           fontSize: '11px',
-                          fontWeight: '600',
-                          backgroundColor:
-                            user.role === 'ADMIN'
-                              ? '#dc2626'
-                              : user.role === 'SUPERVISOR'
-                              ? '#f59e0b'
-                              : '#3b82f6',
+                          fontWeight: '700',
+                          backgroundColor: sector.color || '#3b82f6',
                           color: 'white',
                         }}
                       >
-                        {user.role}
+                        Setor
                       </span>
                     </div>
                   </div>

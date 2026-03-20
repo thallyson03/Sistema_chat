@@ -16,7 +16,7 @@ export class UserController {
         return res.status(403).json({ error: 'Sem permissão para criar usuários' });
       }
 
-      const { email, password, name, role, sectorIds, isActive } = req.body;
+      const { email, password, name, role, sectorIds, pipelineIds, channelIds, isActive } = req.body;
 
       if (!email || !password || !name) {
         return res.status(400).json({ error: 'Email, senha e nome são obrigatórios' });
@@ -28,6 +28,8 @@ export class UserController {
         name,
         role,
         sectorIds,
+        pipelineIds,
+        channelIds,
         isActive,
       });
 
@@ -50,7 +52,7 @@ export class UserController {
         return res.status(403).json({ error: 'Sem permissão para editar este usuário' });
       }
 
-      const { email, name, role, sectorIds, isActive, password } = req.body;
+      const { email, name, role, sectorIds, pipelineIds, channelIds, isActive, password } = req.body;
 
       // Apenas admins podem alterar role e isActive
       const updateData: any = {};
@@ -61,6 +63,8 @@ export class UserController {
         if (role) updateData.role = role;
         if (isActive !== undefined) updateData.isActive = isActive;
         if (sectorIds !== undefined) updateData.sectorIds = sectorIds;
+        if (pipelineIds !== undefined) updateData.pipelineIds = pipelineIds;
+        if (channelIds !== undefined) updateData.channelIds = channelIds;
       }
 
       const user = await userService.updateUser(id, updateData);

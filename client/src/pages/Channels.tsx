@@ -14,6 +14,14 @@ interface Channel {
     name: string;
     color: string;
   };
+  // secundários (opcional - pode não existir no retorno atual da API)
+  secondarySectors?: Array<{
+    sector: {
+      id: string;
+      name: string;
+      color: string;
+    };
+  }>;
 }
 
 export default function Channels() {
@@ -27,7 +35,8 @@ export default function Channels() {
   const [formData, setFormData] = useState({
     name: '',
     type: 'WHATSAPP',
-    sectorId: '',
+    primarySectorId: '',
+    secondarySectorIds: [] as string[],
     provider: 'evolution', // 'evolution' ou 'whatsapp_official'
     whatsappToken: '',
     whatsappPhoneNumberId: '',
@@ -77,7 +86,8 @@ export default function Channels() {
       const channelData: any = {
         name: formData.name,
         type: formData.type,
-        sectorId: formData.sectorId || undefined,
+        primarySectorId: formData.primarySectorId || undefined,
+        secondarySectorIds: formData.secondarySectorIds || [],
       };
 
       // Se for WhatsApp, adicionar config com provider
@@ -98,7 +108,8 @@ export default function Channels() {
       setFormData({
         name: '',
         type: 'WHATSAPP',
-        sectorId: '',
+        primarySectorId: '',
+        secondarySectorIds: [],
         provider: 'evolution',
         whatsappToken: '',
         whatsappPhoneNumberId: '',
@@ -376,20 +387,67 @@ export default function Channels() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Setor (opcional)
+                  Setor principal (opcional)
                 </label>
                 <select
-                  value={formData.sectorId}
-                  onChange={(e) => setFormData({ ...formData, sectorId: e.target.value })}
+                  value={formData.primarySectorId}
+                  onChange={(e) => {
+                    const nextPrimary = e.target.value;
+                    setFormData((prev) => {
+                      // remover o setor principal da lista de secundários (se estiver)
+                      const filteredSecondary = prev.secondarySectorIds.filter((sid) => sid !== nextPrimary);
+                      return { ...prev, primarySectorId: nextPrimary, secondarySectorIds: filteredSecondary };
+                    });
+                  }}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
                 >
-                  <option value="">Nenhum setor</option>
+                  <option value="">Nenhum setor principal</option>
                   {sectors.map((sector) => (
                     <option key={sector.id} value={sector.id}>
                       {sector.name}
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Setores secundários (opcional)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {sectors.map((sector) => {
+                    const isPrimary = formData.primarySectorId === sector.id;
+                    const checked = formData.secondarySectorIds.includes(sector.id);
+                    return (
+                      <label
+                        key={sector.id}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                          isPrimary ? 'border-slate-200 bg-slate-50 opacity-70' : 'border-slate-200 bg-white'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          disabled={isPrimary}
+                          checked={checked}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setFormData((prev) => {
+                              const next = on
+                                ? [...prev.secondarySectorIds, sector.id]
+                                : prev.secondarySectorIds.filter((sid) => sid !== sector.id);
+                              // nunca permitir duplicar o primary na secondary
+                              return {
+                                ...prev,
+                                secondarySectorIds: next.filter((sid) => sid !== prev.primarySectorId),
+                              };
+                            });
+                          }}
+                        />
+                        <span className="text-slate-800">{sector.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

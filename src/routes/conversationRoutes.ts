@@ -15,6 +15,7 @@ router.get('/unread-count', conversationController.getUnreadCount.bind(conversat
 router.get('/:id', conversationController.getConversationById.bind(conversationController));
 router.put('/:id', conversationController.updateConversation.bind(conversationController));
 router.post('/:id/assign', conversationController.assignConversation.bind(conversationController));
+router.post('/:id/activate-bot', conversationController.activateBot.bind(conversationController));
 router.post('/:id/transfer-sector', conversationController.transferToSector.bind(conversationController));
 router.delete('/:id', conversationController.deleteConversation.bind(conversationController));
 
