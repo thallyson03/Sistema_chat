@@ -132,9 +132,9 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req: Aut
           console.warn('[Media] ⚠️ Não foi possível remover arquivo WEBM original:', unlinkError);
         }
         
-        // Usar arquivo OGG convertido
+        // Usar arquivo OGG convertido com mimetype compatível com WhatsApp (sem codecs=opus)
         finalFilename = oggFilename;
-        finalMimetype = 'audio/ogg; codecs=opus';
+        finalMimetype = 'audio/ogg';
         finalSize = oggStats.size;
         
         console.log('[Media] ✅ Conversão concluída com sucesso:', {

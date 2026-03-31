@@ -5,7 +5,7 @@ import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
 import { WhatsAppOfficialService } from './whatsappOfficialService';
 import fs from 'fs';
 import path from 'path';
-import { convertOggToMp3 } from '../utils/audioConverter';
+import { convertOggToMp3, convertWebmToOgg } from '../utils/audioConverter';
 
 export interface SendMessageData {
   conversationId: string;
@@ -123,10 +123,21 @@ export class MessageService {
 
         if (data.mediaUrl && data.type !== 'TEXT') {
           // Enviar mídia via WhatsApp Official
-          const mediaType = data.type === 'IMAGE' ? 'image' :
-                           data.type === 'VIDEO' ? 'video' :
-                           data.type === 'AUDIO' ? 'audio' :
-                           data.type === 'DOCUMENT' ? 'document' : 'image';
+          // Para seguir exatamente a documentação da Meta:
+          // - IMAGEM  -> type: "image"
+          // - VÍDEO   -> type: "video"
+          // - ÁUDIO   -> type: "audio" (voice message quando voice: true)
+          // - DOCUMENTO -> type: "document"
+          const mediaType =
+            data.type === 'IMAGE'
+              ? 'image'
+              : data.type === 'VIDEO'
+              ? 'video'
+              : data.type === 'AUDIO'
+              ? 'audio'
+              : data.type === 'DOCUMENT'
+              ? 'document'
+              : 'image';
 
           // Construir URL pública completa para a mídia (WhatsApp Official exige link HTTP/HTTPS válido)
           const baseUrl =
@@ -163,12 +174,10 @@ export class MessageService {
             );
           }
 
-          // Para áudio, fazer upload primeiro para obter media_id (recomendado pela API oficial)
-          // A API oficial do WhatsApp funciona melhor com media_id para áudio.
-          // Aqui vamos converter o OGG local para MP3 e subir o MP3 diretamente do disco,
-          // para maximizar compatibilidade com clientes mobile.
-          if (mediaType === 'audio') {
-            console.log('[MessageService] 🎵 Áudio detectado, preparando MP3 para WhatsApp Official...');
+          // Para mensagens internas do tipo AUDIO, seguimos a recomendação oficial:
+          // converter para OGG/Opus e enviar como type: "audio" + voice: true.
+          if (data.type === 'AUDIO') {
+            console.log('[MessageService] 🎵 Áudio detectado, preparando OGG/Opus para WhatsApp Official...');
             try {
               // Extrair nome do arquivo a partir da URL local gerada pelo backend.
               let audioFilename: string | undefined;
@@ -188,40 +197,68 @@ export class MessageService {
 
               if (audioFilename) {
                 const uploadsDir = path.join(__dirname, '../../uploads');
-                const oggPath = path.join(uploadsDir, audioFilename);
+                const inputPath = path.join(uploadsDir, audioFilename);
 
-                if (!fs.existsSync(oggPath)) {
-                  console.warn('[MessageService] ⚠️ Arquivo OGG local não encontrado para conversão em MP3:', {
-                    oggPath,
+                if (!fs.existsSync(inputPath)) {
+                  console.warn('[MessageService] ⚠️ Arquivo de áudio local não encontrado para envio como áudio:', {
+                    inputPath,
                   });
                 } else {
-                  const mp3Filename = audioFilename.replace(/\.ogg$/i, '.mp3');
-                  const mp3Path = path.join(uploadsDir, mp3Filename);
+                  // Determinar extensão e garantir saída em OGG/Opus
+                  const ext = audioFilename.toLowerCase().split('.').pop() || '';
+                  let oggFilename = audioFilename;
 
-                  // Converter apenas se ainda não existir (evita reconversões desnecessárias)
-                  if (!fs.existsSync(mp3Path)) {
-                    await convertOggToMp3(oggPath, mp3Path);
-                  } else {
-                    console.log('[MessageService] ℹ️ MP3 já existe, reutilizando:', {
-                      mp3Path,
-                    });
+                  if (ext !== 'ogg' && ext !== 'oga') {
+                    // Converter para OGG/Opus com parâmetros adequados para voz
+                    oggFilename = audioFilename.replace(/\.[^/.]+$/i, '.ogg');
+                    const oggPath = path.join(uploadsDir, oggFilename);
+
+                    if (!fs.existsSync(oggPath)) {
+                      console.log('[MessageService] 🔄 Convertendo áudio para OGG/Opus antes do envio...', {
+                        inputPath,
+                        oggPath,
+                      });
+                      // Usar conversor WEBM->OGG (também funciona para outros formatos suportados pelo FFmpeg)
+                      try {
+                        await convertWebmToOgg(inputPath, oggPath);
+                      } catch (convError: any) {
+                        console.error('[MessageService] ❌ Erro ao converter áudio para OGG/Opus, tentando enviar arquivo original:', convError.message);
+                        // Se a conversão falhar, manter o caminho original (pode cair no fallback via URL abaixo)
+                      }
+                    }
                   }
 
-                  const uploadResult = await whatsappService.uploadMedia(mp3Path, 'audio', mp3Filename);
-                  console.log('[MessageService] ✅ Upload de áudio (MP3) concluído, media_id:', uploadResult.mediaId);
+                  const finalOggPath = path.join(uploadsDir, oggFilename);
+                  const hasValidOgg = fs.existsSync(finalOggPath);
+                  const pathToUpload = hasValidOgg ? finalOggPath : inputPath;
+                  const filenameToUpload = hasValidOgg ? oggFilename : audioFilename;
+
+                  // Subir arquivo OGG/Opus para obter media_id (type: "audio")
+                  const uploadResult = await whatsappService.uploadMedia(
+                    pathToUpload,
+                    'audio',
+                    filenameToUpload,
+                  );
+                  console.log('[MessageService] ✅ Upload de áudio concluído, media_id:', uploadResult.mediaId, {
+                    pathToUpload,
+                    filenameToUpload,
+                  });
                   
-                  // Usar media_id no envio
+                  // Usar media_id no envio como voice message:
+                  // type: "audio" + audio.voice = true + arquivo OGG/Opus.
                   result = await whatsappService.sendMediaMessage({
                     to: formattedPhone,
                     mediaId: uploadResult.mediaId,
                     type: mediaType,
                     caption: data.caption || data.content,
-                    filename: mp3Filename,
+                    // voice: true segue a documentação oficial para renderizar
+                    // com o layout de mensagem de voz (laranja).
+                    voice: hasValidOgg ? true : undefined,
                   });
                 }
               }
 
-              // Se por algum motivo não conseguimos converter/enviar via MP3,
+              // Se por algum motivo não conseguimos subir/enviar via media_id,
               // caímos no fallback abaixo usando a URL pública (OGG).
               if (!result) {
                 console.warn('[MessageService] ⚠️ Fallback: enviando áudio via URL pública (OGG) para WhatsApp Official');
@@ -581,7 +618,18 @@ export class MessageService {
     const metadata: any = {};
     if (data.mediaUrl) {
       metadata.mediaUrl = data.mediaUrl;
-      if (data.fileName) {
+
+      // Para arquivos servidos por /api/media/file, derivar o nome real do arquivo
+      // a partir da URL (garantindo extensão e nome exatos salvos em disco).
+      let derivedFileName: string | undefined;
+      if (data.mediaUrl.startsWith('/api/media/file/')) {
+        derivedFileName = data.mediaUrl.replace('/api/media/file/', '').split('?')[0];
+      }
+
+      if (derivedFileName) {
+        metadata.fileName = derivedFileName;
+      } else if (data.fileName) {
+        // Fallback: usar fileName enviado pelo cliente apenas se não for possível derivar da URL
         metadata.fileName = data.fileName;
       }
       if (data.caption) {

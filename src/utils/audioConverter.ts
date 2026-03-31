@@ -32,7 +32,7 @@ try {
 export async function convertWebmToOgg(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
-      console.log('[AudioConverter] 🔄 Convertendo WEBM para OGG...', {
+      console.log('[AudioConverter] 🔄 Convertendo áudio para OGG/Opus...', {
         input: inputPath,
         output: outputPath,
       });
@@ -41,16 +41,18 @@ export async function convertWebmToOgg(inputPath: string, outputPath: string): P
 
       ffmpeg(inputPath)
         .audioCodec('libopus')
-        .audioBitrate('64k')
-        .audioFrequency(48000)
-        .audioChannels(1) // Mono para PTT (push-to-talk)
+        .audioBitrate('32k')          // bitrate 32 kbps para voz
+        // A documentação da Cloud API usa exemplos com 16 kHz.
+        // Mantemos mono + OPUS, mas baixamos a taxa para 16 kHz
+        // para ficar o mais próximo possível do perfil padrão de voz.
+        .audioFrequency(16000)        // 16 kHz
+        .audioChannels(1)             // Mono (PTT)
         .format('ogg')
         .outputOptions([
-          '-strict', '-2', // Permitir codecs experimentais se necessário
-          '-map_metadata', '-1', // Remover metadados
-          '-application', 'voip', // Otimizar para voz (PTT)
-          '-compression_level', '10', // Nível de compressão (0-10, 10 = melhor qualidade)
-          '-packet_loss', '0', // Sem perda de pacotes
+          '-vbr', 'on',               // variable bitrate
+          '-map_metadata', '-1',      // remover metadados
+          '-application', 'voip',     // otimizar para voz humana
+          '-frame_duration', '20',    // duração de quadro 20ms (perfil comum de voz)
         ])
         .output(outputPath)
         .on('start', (commandLine) => {

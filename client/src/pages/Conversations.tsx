@@ -832,10 +832,12 @@ export default function Conversations() {
             // Enviar mensagem de áudio (incluindo mimetype)
             await api.post('/api/messages', {
               conversationId: selectedConversation.id,
-              content: 'Áudio',
+              content: '',
               type: 'AUDIO',
               mediaUrl: url,
-              fileName: `audio.${extension}`,
+              // O backend já converte para OGG e envia para a Meta como .ogg,
+              // então mantemos um nome coerente aqui.
+              fileName: 'audio.ogg',
               caption: 'Áudio',
               mimetype: mimetype, // Passar mimetype para o backend usar no envio
             });
@@ -1191,7 +1193,7 @@ export default function Conversations() {
                         </h3>
                       </div>
                       <p className="text-xs text-gray-500 mb-1 truncate">
-                        {conv.channel.name} • {conv.contact.phone || 'Sem telefone'}
+                        {(conv.channel?.name || 'Sem canal')} • {conv.contact.phone || 'Sem telefone'}
                       </p>
                       {conv.lastMessage && (
                         <p className="text-sm text-gray-600 truncate mb-2">
@@ -1319,8 +1321,10 @@ export default function Conversations() {
                     </span>
                   </div>
                   <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
-                    {selectedConversation.channel.name} •{' '}
-                    {selectedConversation.contact.name || selectedConversation.contact.phone || 'Sem telefone'}
+                    {(selectedConversation.channel?.name || 'Sem canal')} •{' '}
+                    {selectedConversation.contact?.name ||
+                      selectedConversation.contact?.phone ||
+                      'Sem telefone'}
                   </p>
                 </div>
               </div>

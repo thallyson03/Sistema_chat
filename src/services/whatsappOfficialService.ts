@@ -28,6 +28,8 @@ interface SendMediaMessageParams {
   type: 'image' | 'audio' | 'video' | 'document';
   caption?: string;
   filename?: string;
+  // Quando type === 'audio', definir true para enviar como mensagem de voz (voice message)
+  voice?: boolean;
 }
 
 interface CreateTemplateParams {
@@ -207,6 +209,12 @@ export class WhatsAppOfficialService {
       // Adicionar filename para documentos
       if (params.filename && params.type === 'document') {
         payload[params.type].filename = params.filename;
+      }
+
+      // Para áudio, permitir marcar como mensagem de voz (voice: true)
+      if (params.type === 'audio' && typeof params.voice === 'boolean') {
+        payload.audio = payload.audio || {};
+        payload.audio.voice = params.voice;
       }
 
       const response = await this.client.post(
