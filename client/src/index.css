@@ -112,4 +112,68 @@
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   }
+
+  /* Página Canais — glass + gradiente mint (referência Channel Manager) */
+  .glass-channel-card {
+    background: rgba(40, 42, 40, 0.6);
+    backdrop-filter: blur(24px);
+    border-top: 1px solid rgba(102, 221, 139, 0.1);
+  }
+  .primary-gradient-channel {
+    background: linear-gradient(135deg, #66dd8b 0%, #004f25 100%);
+  }
+  .text-on-primary-channel {
+    color: #003919;
+  }
+
+  /* Jornadas — React Flow em tema escuro */
+  .journeys-flow-root .react-flow {
+    background: #121412;
+  }
+  .journeys-flow-root .react-flow__background pattern circle {
+    fill: rgba(102, 221, 139, 0.14);
+  }
+  .journeys-flow-root .react-flow__edge-path {
+    stroke: rgba(102, 221, 139, 0.45) !important;
+  }
+  .journeys-flow-root .react-flow__controls {
+    border-radius: 0.5rem;
+    overflow: hidden;
+    border: 1px solid rgba(63, 73, 69, 0.25);
+    box-shadow: 0 8px 32px rgba(226, 227, 223, 0.04);
+  }
+  .journeys-flow-root .react-flow__controls-button {
+    background: #2e312e !important;
+    border-bottom: 1px solid rgba(63, 73, 69, 0.25) !important;
+    fill: #e5e7eb !important;
+  }
+  .journeys-flow-root .react-flow__controls-button:hover {
+    background: #333533 !important;
+  }
+  .journeys-flow-root .react-flow__minimap {
+    background-color: #1a1c1a !important;
+    border: 1px solid rgba(63, 73, 69, 0.25) !important;
+    border-radius: 0.5rem;
+  }
+  .journeys-flow-root .react-flow__minimap-mask {
+    fill: rgba(14, 16, 14, 0.65) !important;
+  }
+  .journeys-flow-root .react-flow__minimap-node {
+    fill: #2e312e !important;
+    stroke: rgba(102, 221, 139, 0.35) !important;
+  }
+
+  /* Modal de configuração de nó — campos legíveis no tema escuro */
+  .journey-config-modal input[type='text'],
+  .journey-config-modal input[type='number'],
+  .journey-config-modal input[type='email'],
+  .journey-config-modal select,
+  .journey-config-modal textarea {
+    background-color: #121412;
+    color: #e5e7eb;
+  }
+  .journey-config-modal option {
+    background-color: #1a1c1a;
+    color: #e5e7eb;
+  }
 }

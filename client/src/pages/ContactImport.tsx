@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, type ChangeEvent, type DragEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../utils/api';
 
@@ -44,9 +44,16 @@ interface ContactList {
   };
 }
 
+const STEPS = [
+  { n: 1, label: 'Carregar arquivo' },
+  { n: 2, label: 'Mapear campos' },
+  { n: 3, label: 'Finalizar' },
+] as const;
+
 export default function ContactImport() {
   const navigate = useNavigate();
   const location = useLocation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [channelId, setChannelId] = useState<string>('');
   const [channels, setChannels] = useState<any[]>([]);
@@ -64,18 +71,16 @@ export default function ContactImport() {
   const isImportPage = location.pathname.includes('/contacts/import');
   const isAutoCreatedPage = location.pathname.includes('/contacts/auto-created');
 
-  // Carregar canais e contatos ao montar componente
   useEffect(() => {
     fetchChannels();
     fetchContacts();
     fetchContactLists();
   }, []);
 
-  // Recarregar contatos quando filtros mudarem
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       fetchContacts();
-    }, 500); // Debounce de 500ms
+    }, 500);
 
     return () => clearTimeout(timeoutId);
   }, [searchTerm, filterChannelId]);
@@ -125,21 +130,35 @@ export default function ContactImport() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      const fileName = selectedFile.name.toLowerCase();
-      
-      // Validar extensão
-      if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
-        setError('Apenas arquivos Excel (.xlsx, .xls) ou CSV são permitidos');
-        return;
-      }
+  const validateAndSetFile = (selectedFile: File) => {
+    const fileName = selectedFile.name.toLowerCase();
 
-      setFile(selectedFile);
-      setError('');
-      setImportResult(null);
+    if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
+      setError('Apenas arquivos Excel (.xlsx, .xls) ou CSV são permitidos');
+      return;
     }
+
+    setFile(selectedFile);
+    setError('');
+    setImportResult(null);
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      validateAndSetFile(e.target.files[0]);
+    }
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropped = e.dataTransfer.files?.[0];
+    if (dropped) validateAndSetFile(dropped);
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
   };
 
   const handleDownloadTemplate = async () => {
@@ -193,15 +212,13 @@ export default function ContactImport() {
 
       setImportResult(response.data.result);
       setFile(null);
-      setSelectedListId(''); // Limpar seleção de lista
-      
-      // Limpar input de arquivo
+      setSelectedListId('');
+
       const fileInput = document.getElementById('csv-file') as HTMLInputElement;
       if (fileInput) {
         fileInput.value = '';
       }
 
-      // Recarregar lista de contatos e listas após importação
       await fetchContacts();
       await fetchContactLists();
     } catch (err: any) {
@@ -223,513 +240,473 @@ export default function ContactImport() {
     });
   };
 
+  const selectFieldClass =
+    'mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface focus:border-[#66dd8b]/50 focus:outline-none focus:ring-1 focus:ring-[#66dd8b]/40';
+  const selectFieldClassNoMt =
+    'w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface focus:border-[#66dd8b]/50 focus:outline-none focus:ring-1 focus:ring-[#66dd8b]/40';
+
   return (
-    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>{isImportPage ? 'Importar Contatos' : 'Contatos Criados Automaticamente'}</h1>
-        <button
-          onClick={() => navigate('/conversations')}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#6b7280',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-          }}
-        >
-          ← Voltar
-        </button>
-      </div>
+    <div className="relative min-h-[calc(100vh-60px)] bg-surface pb-10 font-body text-on-surface">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_45%_at_50%_-15%,rgba(102,221,139,0.14),transparent_55%)]"
+        aria-hidden
+      />
 
-      {isImportPage && (
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-        {/* Informações */}
-        <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f3f4f6', borderRadius: '5px' }}>
-          <h3 style={{ marginTop: 0 }}>📋 Formato do Arquivo</h3>
-          <p style={{ margin: '5px 0' }}>
-            O arquivo Excel (.xlsx) ou CSV deve conter as seguintes colunas:
-          </p>
-          <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
-            <li><strong>name</strong> (obrigatório) - Nome do contato</li>
-            <li><strong>phone</strong> (obrigatório) - Telefone do contato</li>
-            <li><strong>email</strong> (opcional) - E-mail do contato</li>
-          </ul>
-          <button
-            onClick={handleDownloadTemplate}
-            style={{
-              marginTop: '10px',
-              padding: '8px 16px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-            }}
-          >
-            📥 Baixar Template Excel (.xlsx)
-          </button>
-        </div>
-
-        {/* Seleção de Canal */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-            Canal *
-          </label>
-          <select
-            value={channelId}
-            onChange={(e) => setChannelId(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px',
-              border: '1px solid #d1d5db',
-              borderRadius: '5px',
-              fontSize: '14px',
-            }}
-          >
-            <option value="">Selecione um canal</option>
-            {channels.map((channel) => (
-              <option key={channel.id} value={channel.id}>
-                {channel.name} ({channel.type})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Seleção de Lista (Opcional) */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-            Adicionar à Lista (Opcional)
-          </label>
-          {loadingLists ? (
-            <p style={{ fontSize: '14px', color: '#6b7280' }}>Carregando listas...</p>
-          ) : (
-            <select
-              value={selectedListId}
-              onChange={(e) => setSelectedListId(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #d1d5db',
-                borderRadius: '5px',
-                fontSize: '14px',
-                backgroundColor: 'white',
-              }}
+      <div className="relative z-10 mx-auto max-w-3xl px-4 py-8">
+        {!isImportPage && (
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <h1 className="font-headline text-2xl font-bold text-on-surface">
+              Contatos Criados Automaticamente
+            </h1>
+            <button
+              type="button"
+              onClick={() => navigate('/conversations')}
+              className="rounded-lg border border-outline-variant bg-surface-container-highest px-4 py-2 text-sm text-on-surface transition-colors hover:bg-surface-variant"
             >
-              <option value="">Não adicionar a nenhuma lista</option>
-              {contactLists.map((list) => (
-                <option key={list.id} value={list.id}>
-                  {list.name} ({list._count.members} contatos)
-                </option>
-              ))}
-            </select>
-          )}
-          <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-            Se selecionar uma lista, os contatos importados serão automaticamente adicionados a ela
-          </p>
-        </div>
-
-        {/* Upload de Arquivo */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-            Arquivo Excel ou CSV *
-          </label>
-          <input
-            id="csv-file"
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            onChange={handleFileChange}
-            style={{
-              width: '100%',
-              padding: '10px',
-              border: '1px solid #d1d5db',
-              borderRadius: '5px',
-              fontSize: '14px',
-            }}
-          />
-          {file && (
-            <p style={{ marginTop: '8px', color: '#059669', fontSize: '14px' }}>
-              ✓ Arquivo selecionado: {file.name} ({(file.size / 1024).toFixed(2)} KB)
-            </p>
-          )}
-        </div>
-
-        {/* Erro */}
-        {error && (
-          <div style={{
-            marginBottom: '20px',
-            padding: '12px',
-            backgroundColor: '#fee2e2',
-            color: '#991b1b',
-            borderRadius: '5px',
-            fontSize: '14px',
-          }}>
-            ❌ {error}
+              ← Voltar
+            </button>
           </div>
         )}
 
-        {/* Botão de Importar */}
-        <button
-          onClick={handleImport}
-          disabled={loading || !file || !channelId}
-          style={{
-            width: '100%',
-            padding: '12px',
-            backgroundColor: loading || !file || !channelId ? '#9ca3af' : '#10b981',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            fontSize: '16px',
-            fontWeight: 'bold',
-            cursor: loading || !file || !channelId ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {loading ? '⏳ Importando...' : '📤 Importar Contatos'}
-        </button>
+        {isImportPage && (
+          <>
+            <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <h1 className="font-headline text-2xl font-bold tracking-tight text-on-surface">
+                Importar Contatos
+              </h1>
+              <button
+                type="button"
+                onClick={() => navigate('/conversations')}
+                className="shrink-0 rounded-lg border border-outline-variant bg-surface-container-highest px-4 py-2 text-sm text-on-surface transition-colors hover:bg-surface-variant"
+              >
+                ← Voltar
+              </button>
+            </div>
 
-        {/* Resultado da Importação */}
-        {importResult && (
-          <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f9fafb', borderRadius: '5px' }}>
-            <h3 style={{ marginTop: 0 }}>📊 Resultado da Importação</h3>
-            <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
-              <div style={{ flex: 1, textAlign: 'center', padding: '10px', backgroundColor: '#d1fae5', borderRadius: '5px' }}>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#059669' }}>
-                  {importResult.success}
+            <div className="mb-8 flex flex-wrap items-center justify-center gap-3 sm:gap-5">
+              {STEPS.map((step, index) => (
+                <span key={step.n} className="flex items-center gap-3">
+                  {index > 0 && (
+                    <span className="hidden text-on-surface-variant sm:inline" aria-hidden>
+                      —
+                    </span>
+                  )}
+                  <span className="flex items-center gap-2.5">
+                    <span
+                      className={
+                        step.n === 1
+                          ? 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#66dd8b] text-sm font-bold text-[#003919]'
+                          : 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-outline-variant bg-surface-container-highest text-sm font-bold text-on-surface-variant'
+                      }
+                    >
+                      {step.n}
+                    </span>
+                    <span
+                      className={
+                        step.n === 1
+                          ? 'text-sm font-semibold text-[#66dd8b]'
+                          : 'text-sm font-medium text-on-surface-variant'
+                      }
+                    >
+                      {step.label}
+                    </span>
+                  </span>
+                </span>
+              ))}
+            </div>
+
+            <div className="rounded-xl border border-outline-variant bg-[rgba(40,42,40,0.55)] p-6 shadow-forest-glow backdrop-blur-xl">
+              <div className="mb-6 flex flex-col gap-4 border-b border-outline-variant pb-6 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-headline text-lg font-bold text-on-surface">
+                    Instruções de Importação
+                  </h2>
+                  <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
+                    O arquivo Excel (.xlsx, .xls) ou CSV deve conter as colunas{' '}
+                    <strong className="text-on-surface">name</strong> (obrigatório),{' '}
+                    <strong className="text-on-surface">phone</strong> (obrigatório) e{' '}
+                    <strong className="text-on-surface">email</strong> (opcional).
+                  </p>
                 </div>
-                <div style={{ fontSize: '12px', color: '#065f46' }}>Sucessos</div>
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-highest px-4 py-2.5 text-sm font-medium text-on-surface transition-colors hover:border-[#66dd8b]/35 hover:bg-surface-variant"
+                >
+                  <span className="material-symbols-outlined text-xl text-[#66dd8b]">download</span>
+                  Baixar modelo
+                </button>
               </div>
-              <div style={{ flex: 1, textAlign: 'center', padding: '10px', backgroundColor: '#fee2e2', borderRadius: '5px' }}>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>
-                  {importResult.errors}
-                </div>
-                <div style={{ fontSize: '12px', color: '#991b1b' }}>Erros</div>
+
+              <div className="mb-5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-[#66dd8b]">
+                  Canal de destino
+                </label>
+                <select
+                  value={channelId}
+                  onChange={(e) => setChannelId(e.target.value)}
+                  className={selectFieldClass}
+                >
+                  <option value="">Selecione um canal</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name} ({channel.type})
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div style={{ flex: 1, textAlign: 'center', padding: '10px', backgroundColor: '#fef3c7', borderRadius: '5px' }}>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#d97706' }}>
-                  {importResult.skipped}
+
+              <div className="mb-5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  Adicionar à lista (opcional)
+                </label>
+                {loadingLists ? (
+                  <p className="mt-2 text-sm text-on-surface-variant">Carregando listas...</p>
+                ) : (
+                  <select
+                    value={selectedListId}
+                    onChange={(e) => setSelectedListId(e.target.value)}
+                    className={selectFieldClass}
+                  >
+                    <option value="">Não adicionar a nenhuma lista</option>
+                    {contactLists.map((list) => (
+                      <option key={list.id} value={list.id}>
+                        {list.name} ({list._count.members} contatos)
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="mt-1.5 text-xs text-on-surface-variant">
+                  Se selecionar uma lista, os contatos importados serão automaticamente adicionados a ela
+                </p>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                id="csv-file"
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileChange}
+                className="sr-only"
+              />
+
+              <div
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[rgba(102,221,139,0.35)] bg-surface-container-lowest/80 px-6 py-12 text-center transition-colors hover:border-[#66dd8b]/55 hover:bg-surface-container-highest/40"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <span className="material-symbols-outlined mb-3 text-5xl text-[#66dd8b]">upload_file</span>
+                <p className="text-base font-medium text-on-surface">Arraste seu arquivo aqui</p>
+                <p className="mt-1 text-sm text-on-surface-variant">
+                  ou clique para navegar nos seus documentos
+                </p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                  className="primary-gradient-channel mt-6 rounded-lg px-6 py-2.5 text-sm font-bold text-[#003919] shadow-forest-glow transition-opacity hover:opacity-95"
+                >
+                  Escolher arquivo
+                </button>
+              </div>
+
+              {file && (
+                <p className="mt-4 text-sm font-medium text-[#66dd8b]">
+                  ✓ Arquivo selecionado: {file.name} ({(file.size / 1024).toFixed(2)} KB)
+                </p>
+              )}
+
+              <div className="mt-6 flex flex-col gap-3 border-t border-outline-variant pt-5 text-xs text-on-surface-variant sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-[#66dd8b]">✓</span> Limite: 50.000 linhas
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-[#66dd8b]">✓</span> Formatos: .csv, .xlsx
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-[#66dd8b]">✓</span> Codificação: UTF-8
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleImport}
+                disabled={loading || !file || !channelId}
+                className={
+                  loading || !file || !channelId
+                    ? 'mt-6 w-full cursor-not-allowed rounded-lg bg-surface-container-highest py-3 text-sm font-bold text-on-surface-variant'
+                    : 'primary-gradient-channel mt-6 w-full rounded-lg py-3 text-sm font-bold text-[#003919] shadow-forest-glow transition-opacity hover:opacity-95'
+                }
+              >
+                {loading ? '⏳ Importando...' : 'Importar contatos'}
+              </button>
+
+              {error && (
+                <div
+                  className="mt-5 rounded-lg border border-red-500/40 bg-red-950/40 px-4 py-3 text-sm text-red-200"
+                  role="alert"
+                >
+                  ❌ {error}
                 </div>
-                <div style={{ fontSize: '12px', color: '#92400e' }}>Ignorados</div>
+              )}
+
+              {importResult && (
+                <div className="mt-6 rounded-lg border border-outline-variant bg-surface-container-low p-4">
+                  <h3 className="font-headline mt-0 text-base font-bold text-on-surface">
+                    Resultado da importação
+                  </h3>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <div className="min-w-[100px] flex-1 rounded-lg border border-[#66dd8b]/25 bg-emerald-950/30 px-3 py-3 text-center">
+                      <div className="text-2xl font-bold text-[#66dd8b]">{importResult.success}</div>
+                      <div className="text-xs text-on-surface-variant">Sucessos</div>
+                    </div>
+                    <div className="min-w-[100px] flex-1 rounded-lg border border-red-500/25 bg-red-950/20 px-3 py-3 text-center">
+                      <div className="text-2xl font-bold text-red-400">{importResult.errors}</div>
+                      <div className="text-xs text-on-surface-variant">Erros</div>
+                    </div>
+                    <div className="min-w-[100px] flex-1 rounded-lg border border-amber-500/25 bg-amber-950/20 px-3 py-3 text-center">
+                      <div className="text-2xl font-bold text-amber-200">{importResult.skipped}</div>
+                      <div className="text-xs text-on-surface-variant">Ignorados</div>
+                    </div>
+                  </div>
+
+                  {importResult.details && importResult.details.length > 0 && (
+                    <div className="mt-4 max-h-[300px] overflow-y-auto">
+                      <h4 className="mb-2 text-sm font-semibold text-on-surface">Detalhes</h4>
+                      <table className="w-full border-collapse text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-outline-variant bg-surface-container-highest text-on-surface-variant">
+                            <th className="border border-outline-variant p-2">Linha</th>
+                            <th className="border border-outline-variant p-2">Contato</th>
+                            <th className="border border-outline-variant p-2">Status</th>
+                            <th className="border border-outline-variant p-2">Mensagem</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importResult.details.map((detail, index) => (
+                            <tr
+                              key={index}
+                              className={
+                                detail.status === 'success'
+                                  ? 'bg-emerald-950/15'
+                                  : detail.status === 'error'
+                                    ? 'bg-red-950/15'
+                                    : 'bg-amber-950/15'
+                              }
+                            >
+                              <td className="border border-outline-variant p-2">{detail.row}</td>
+                              <td className="border border-outline-variant p-2">{detail.contact}</td>
+                              <td className="border border-outline-variant p-2">
+                                {detail.status === 'success' ? '✅' : detail.status === 'error' ? '❌' : '⚠️'}
+                              </td>
+                              <td className="border border-outline-variant p-2">{detail.message}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {isAutoCreatedPage && (
+          <div className="rounded-xl border border-outline-variant bg-[rgba(40,42,40,0.55)] p-6 shadow-forest-glow backdrop-blur-xl">
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="font-headline m-0 text-lg font-bold text-on-surface">
+                Contatos criados automaticamente
+              </h2>
+              <button
+                type="button"
+                onClick={fetchContacts}
+                disabled={loadingContacts}
+                className="rounded-lg border border-outline-variant bg-surface-container-highest px-4 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loadingContacts ? '⏳ Carregando...' : '🔄 Atualizar'}
+              </button>
+            </div>
+
+            <div className="mb-6 flex flex-wrap gap-3">
+              <div className="min-w-[200px] flex-1">
+                <input
+                  type="text"
+                  placeholder="Buscar por nome, telefone ou email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant focus:border-[#66dd8b]/50 focus:outline-none focus:ring-1 focus:ring-[#66dd8b]/40"
+                />
+              </div>
+              <div className="min-w-[200px]">
+                <select
+                  value={filterChannelId}
+                  onChange={(e) => setFilterChannelId(e.target.value)}
+                  className={selectFieldClassNoMt}
+                >
+                  <option value="">Todos os canais</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name} ({channel.type})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            {/* Detalhes */}
-            {importResult.details && importResult.details.length > 0 && (
-              <div style={{ maxHeight: '300px', overflowY: 'auto', marginTop: '15px' }}>
-                <h4 style={{ marginBottom: '10px', fontSize: '14px' }}>Detalhes:</h4>
-                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+            {loadingContacts ? (
+              <div className="py-10 text-center text-on-surface-variant">⏳ Carregando contatos...</div>
+            ) : contacts.length === 0 ? (
+              <div className="py-10 text-center text-on-surface-variant">📭 Nenhum contato encontrado</div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-outline-variant">
+                <table className="w-full border-collapse text-sm">
                   <thead>
-                    <tr style={{ backgroundColor: '#e5e7eb', textAlign: 'left' }}>
-                      <th style={{ padding: '8px', border: '1px solid #d1d5db' }}>Linha</th>
-                      <th style={{ padding: '8px', border: '1px solid #d1d5db' }}>Contato</th>
-                      <th style={{ padding: '8px', border: '1px solid #d1d5db' }}>Status</th>
-                      <th style={{ padding: '8px', border: '1px solid #d1d5db' }}>Mensagem</th>
+                    <tr className="border-b border-outline-variant bg-surface-container-highest text-left text-on-surface-variant">
+                      <th className="border-b border-outline-variant px-3 py-3 font-semibold">Nome</th>
+                      <th className="border-b border-outline-variant px-3 py-3 font-semibold">Telefone</th>
+                      <th className="border-b border-outline-variant px-3 py-3 font-semibold">Email</th>
+                      <th className="border-b border-outline-variant px-3 py-3 font-semibold">Canal</th>
+                      <th className="border-b border-outline-variant px-3 py-3 font-semibold">Conversas</th>
+                      <th className="border-b border-outline-variant px-3 py-3 font-semibold">Criado em</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {importResult.details.map((detail, index) => (
-                      <tr key={index} style={{ backgroundColor: detail.status === 'success' ? '#d1fae5' : detail.status === 'error' ? '#fee2e2' : '#fef3c7' }}>
-                        <td style={{ padding: '8px', border: '1px solid #d1d5db' }}>{detail.row}</td>
-                        <td style={{ padding: '8px', border: '1px solid #d1d5db' }}>{detail.contact}</td>
-                        <td style={{ padding: '8px', border: '1px solid #d1d5db' }}>
-                          {detail.status === 'success' ? '✅' : detail.status === 'error' ? '❌' : '⚠️'}
+                    {contacts.map((contact) => (
+                      <tr
+                        key={contact.id}
+                        className={
+                          contact._count?.conversations && contact._count.conversations > 0
+                            ? 'border-b border-outline-variant bg-emerald-950/10'
+                            : 'border-b border-outline-variant bg-surface-container-low/30'
+                        }
+                      >
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-2">
+                            {contact.profilePicture ? (
+                              <img
+                                src={contact.profilePicture}
+                                alt={contact.name}
+                                className="h-8 w-8 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-xs font-bold text-[#66dd8b]">
+                                {contact.name.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <span className="font-medium text-on-surface">{contact.name}</span>
+                            {contact._count?.conversations && contact._count.conversations > 0 && (
+                              <span className="rounded-full bg-[#66dd8b]/20 px-2 py-0.5 text-[10px] font-bold text-[#66dd8b]">
+                                ✓ Ativo
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td style={{ padding: '8px', border: '1px solid #d1d5db' }}>{detail.message}</td>
+                        <td className="px-3 py-3 text-on-surface-variant">{contact.phone || '-'}</td>
+                        <td className="px-3 py-3 text-on-surface-variant">{contact.email || '-'}</td>
+                        <td className="px-3 py-3">
+                          {contact.channel ? (
+                            <span className="rounded-md border border-secondary/30 bg-secondary/10 px-2 py-1 text-xs text-secondary">
+                              {contact.channel.name}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-on-surface-variant">Sem canal</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-center">{contact._count?.conversations || 0}</td>
+                        <td className="px-3 py-3 text-xs text-on-surface-variant">
+                          {formatDate(contact.createdAt)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-          </div>
-        )}
-        </div>
-      )}
 
-      {/* Lista de Contatos Criados Automaticamente */}
-      {isAutoCreatedPage && (
-        <div style={{ marginTop: '30px', backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 style={{ margin: 0 }}>📋 Contatos Criados Automaticamente</h2>
-          <button
-            onClick={fetchContacts}
-            disabled={loadingContacts}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: loadingContacts ? 'not-allowed' : 'pointer',
-              fontSize: '14px',
-            }}
-          >
-            {loadingContacts ? '⏳ Carregando...' : '🔄 Atualizar'}
-          </button>
-        </div>
-
-        {/* Filtros */}
-        <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: '200px' }}>
-            <input
-              type="text"
-              placeholder="🔍 Buscar por nome, telefone ou email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #d1d5db',
-                borderRadius: '5px',
-                fontSize: '14px',
-              }}
-            />
-          </div>
-          <div style={{ minWidth: '200px' }}>
-            <select
-              value={filterChannelId}
-              onChange={(e) => setFilterChannelId(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #d1d5db',
-                borderRadius: '5px',
-                fontSize: '14px',
-              }}
-            >
-              <option value="">Todos os canais</option>
-              {channels.map((channel) => (
-                <option key={channel.id} value={channel.id}>
-                  {channel.name} ({channel.type})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Lista de Contatos */}
-        {loadingContacts ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-            ⏳ Carregando contatos...
-          </div>
-        ) : contacts.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-            📭 Nenhum contato encontrado
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f3f4f6', textAlign: 'left' }}>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #e5e7eb', fontWeight: 'bold' }}>Nome</th>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #e5e7eb', fontWeight: 'bold' }}>Telefone</th>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #e5e7eb', fontWeight: 'bold' }}>Email</th>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #e5e7eb', fontWeight: 'bold' }}>Canal</th>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #e5e7eb', fontWeight: 'bold' }}>Conversas</th>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #e5e7eb', fontWeight: 'bold' }}>Criado em</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contacts.map((contact) => (
-                  <tr
-                    key={contact.id}
-                    style={{
-                      borderBottom: '1px solid #e5e7eb',
-                      backgroundColor: contact._count?.conversations && contact._count.conversations > 0 ? '#f0fdf4' : 'white',
-                    }}
-                  >
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        {contact.profilePicture ? (
-                          <img
-                            src={contact.profilePicture}
-                            alt={contact.name}
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '50%',
-                              objectFit: 'cover',
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '50%',
-                              backgroundColor: '#3b82f6',
-                              color: 'white',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 'bold',
-                              fontSize: '12px',
-                            }}
-                          >
-                            {contact.name.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <span style={{ fontWeight: '500' }}>{contact.name}</span>
-                        {contact._count?.conversations && contact._count.conversations > 0 && (
-                          <span
-                            style={{
-                              padding: '2px 8px',
-                              backgroundColor: '#10b981',
-                              color: 'white',
-                              borderRadius: '12px',
-                              fontSize: '10px',
-                              fontWeight: 'bold',
-                            }}
-                          >
-                            ✓ Ativo
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px', color: '#6b7280' }}>
-                      {contact.phone || '-'}
-                    </td>
-                    <td style={{ padding: '12px', color: '#6b7280' }}>
-                      {contact.email || '-'}
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      {contact.channel ? (
-                        <span
-                          style={{
-                            padding: '4px 8px',
-                            backgroundColor: '#e0e7ff',
-                            color: '#4338ca',
-                            borderRadius: '4px',
-                            fontSize: '12px',
-                          }}
-                        >
-                          {contact.channel.name}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '12px', color: '#6b7280' }}>Sem canal</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      {contact._count?.conversations || 0}
-                    </td>
-                    <td style={{ padding: '12px', color: '#6b7280', fontSize: '12px' }}>
-                      {formatDate(contact.createdAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Estatísticas */}
-        {contacts.length > 0 && (
-          <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f9fafb', borderRadius: '5px', display: 'flex', gap: '20px', justifyContent: 'center' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#3b82f6' }}>
-                {contacts.length}
-              </div>
-              <div style={{ fontSize: '12px', color: '#6b7280' }}>Total de Contatos</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#10b981' }}>
-                {contacts.filter(c => c._count?.conversations && c._count.conversations > 0).length}
-              </div>
-              <div style={{ fontSize: '12px', color: '#6b7280' }}>Com Conversas</div>
-            </div>
-          </div>
-        )}
-        </div>
-      )}
-
-      {/* Listas de Contatos (resumo + atalho para gerenciar) */}
-      <div style={{ marginTop: '30px', backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 style={{ margin: 0 }}>📂 Listas de Contatos</h2>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button
-              onClick={fetchContactLists}
-              disabled={loadingLists}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: loadingLists ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-              }}
-            >
-              {loadingLists ? '⏳ Carregando...' : '🔄 Atualizar listas'}
-            </button>
-            <button
-              onClick={() => navigate('/contact-lists')}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontSize: '14px',
-              }}
-            >
-              ⚙️ Gerenciar Listas
-            </button>
-          </div>
-        </div>
-
-        {loadingLists ? (
-          <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>
-            Carregando listas...
-          </div>
-        ) : contactLists.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>
-            Nenhuma lista criada ainda. Clique em <strong>Gerenciar Listas</strong> para criar.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>
-            {contactLists.map((list) => (
-              <div
-                key={list.id}
-                style={{
-                  flex: '1 1 220px',
-                  minWidth: '220px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                  padding: '12px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  backgroundColor: '#f9fafb',
-                }}
-              >
-                <div
-                  style={{
-                    width: '10px',
-                    height: '40px',
-                    borderRadius: '999px',
-                    backgroundColor: list.color || '#3b82f6',
-                  }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px' }}>
-                    {list.name}
+            {contacts.length > 0 && (
+              <div className="mt-6 flex flex-wrap justify-center gap-6 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-4">
+                <div className="text-center">
+                  <div className="text-xl font-bold text-secondary">{contacts.length}</div>
+                  <div className="text-xs text-on-surface-variant">Total de contatos</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-[#66dd8b]">
+                    {contacts.filter((c) => c._count?.conversations && c._count.conversations > 0).length}
                   </div>
-                  {list.description && (
-                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
-                      {list.description}
-                    </div>
-                  )}
-                  <div style={{ fontSize: '12px', color: '#4b5563' }}>
-                    {list._count?.members ?? 0} contato(s)
-                  </div>
+                  <div className="text-xs text-on-surface-variant">Com conversas</div>
                 </div>
               </div>
-            ))}
+            )}
           </div>
         )}
+
+        <div className="mt-10 rounded-xl border border-outline-variant bg-[rgba(40,42,40,0.55)] p-6 shadow-forest-glow backdrop-blur-xl">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-headline m-0 text-lg font-bold text-on-surface">Listas de contatos</h2>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={fetchContactLists}
+                disabled={loadingLists}
+                className="rounded-lg border border-outline-variant bg-surface-container-highest px-4 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loadingLists ? '⏳ Carregando...' : '🔄 Atualizar listas'}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/contact-lists')}
+                className="primary-gradient-channel rounded-lg px-4 py-2 text-sm font-bold text-[#003919] shadow-forest-glow hover:opacity-95"
+              >
+                Gerenciar listas
+              </button>
+            </div>
+          </div>
+
+          {loadingLists ? (
+            <div className="py-8 text-center text-on-surface-variant">Carregando listas...</div>
+          ) : contactLists.length === 0 ? (
+            <div className="py-8 text-center text-on-surface-variant">
+              Nenhuma lista criada ainda. Clique em <strong className="text-on-surface">Gerenciar listas</strong>{' '}
+              para criar.
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-4">
+              {contactLists.map((list) => (
+                <div
+                  key={list.id}
+                  className="flex min-w-[220px] flex-1 items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-3"
+                >
+                  <div
+                    className="h-10 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: list.color || '#66dd8b' }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold text-on-surface">{list.name}</div>
+                    {list.description && (
+                      <div className="text-xs text-on-surface-variant">{list.description}</div>
+                    )}
+                    <div className="text-xs text-on-surface-variant">
+                      {list._count?.members ?? 0} contato(s)
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-

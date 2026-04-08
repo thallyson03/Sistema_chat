@@ -75,7 +75,7 @@ export default function Journeys() {
   const [creating, setCreating] = useState(false);
   const [newJourneyName, setNewJourneyName] = useState('');
   const [stats, setStats] = useState<JourneyStats | null>(null);
-  const [loadingStats, setLoadingStats] = useState(false);
+  const [, setLoadingStats] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -331,7 +331,7 @@ export default function Journeys() {
     setEditingNode(newNode);
   };
 
-  const handleNodeClick: NodeMouseHandler = (event, node) => {
+  const handleNodeClick: NodeMouseHandler = (_event, node) => {
     setEditingNode(node);
   };
 
@@ -457,28 +457,28 @@ export default function Journeys() {
 
   if (loading) {
     return (
-      <div className="p-6">
+      <div className="flex h-[calc(100vh-60px)] items-center justify-center bg-surface text-on-surface-variant font-body">
         <p>Carregando jornadas...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-[calc(100vh-60px)] bg-gray-50">
+    <div className="flex h-[calc(100vh-60px)] bg-surface font-body text-on-surface">
       {/* Lateral esquerda: lista de jornadas e ações */}
-      <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Jornadas</h1>
-          <p className="text-xs text-gray-500">Crie fluxos automatizados de atendimento</p>
+      <div className="w-80 flex flex-col border-r border-outline-variant bg-surface-container-low">
+        <div className="glass-channel-card border-b border-outline-variant p-4">
+          <h1 className="font-headline text-xl font-bold text-on-surface mb-1">Jornadas</h1>
+          <p className="text-xs text-on-surface-variant">Crie fluxos automatizados de atendimento</p>
         </div>
 
-        <div className="p-4 border-b border-gray-200">
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Nova jornada</label>
+        <div className="border-b border-outline-variant p-4">
+          <label className="mb-1 block text-xs font-semibold text-on-surface-variant">Nova jornada</label>
           <input
             type="text"
             value={newJourneyName}
             onChange={(e) => setNewJourneyName(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded mb-2 text-sm"
+            className="mb-2 w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant focus:border-[#66dd8b]/50 focus:outline-none focus:ring-1 focus:ring-[#66dd8b]/40"
             placeholder="Ex: Boas-vindas WhatsApp"
           />
           <Button
@@ -491,33 +491,33 @@ export default function Journeys() {
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="flex-1 space-y-2 overflow-y-auto p-4">
           {journeys.length === 0 && (
-            <p className="text-xs text-gray-500">Nenhuma jornada criada ainda.</p>
+            <p className="text-xs text-on-surface-variant">Nenhuma jornada criada ainda.</p>
           )}
           {journeys.map((j) => (
             <div
               key={j.id}
-              className={`w-full rounded border text-sm mb-1 ${
+              className={`mb-1 w-full rounded-lg border text-sm transition-colors ${
                 selectedJourney?.id === j.id
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:bg-gray-50'
+                  ? 'border-[#66dd8b]/45 bg-[#66dd8b]/10 shadow-forest-glow'
+                  : 'border-outline-variant bg-surface-container hover:bg-surface-container-highest'
               }`}
             >
               <button
                 onClick={() => handleSelectJourney(j.id)}
-                className="w-full text-left px-3 py-2"
+                className="w-full px-3 py-2 text-left"
               >
                 <div className="flex items-center justify-between">
-                  <div className="font-semibold truncate flex-1">{j.name}</div>
-                  <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                  <div className="flex-1 truncate font-semibold text-on-surface">{j.name}</div>
+                  <span className={`ml-2 rounded px-2 py-0.5 text-[10px] font-semibold ${
                     j.status === 'ACTIVE' 
-                      ? 'bg-green-100 text-green-700' 
+                      ? 'bg-emerald-500/15 text-[#66dd8b]' 
                       : j.status === 'PAUSED'
-                      ? 'bg-yellow-100 text-yellow-700'
+                      ? 'bg-amber-500/15 text-amber-200'
                       : j.status === 'ARCHIVED'
-                      ? 'bg-gray-100 text-gray-700'
-                      : 'bg-blue-100 text-blue-700'
+                      ? 'bg-on-surface-variant/15 text-on-surface-variant'
+                      : 'bg-sky-500/15 text-sky-200'
                   }`}>
                     {j.status === 'ACTIVE' ? '✓ Ativa' : 
                      j.status === 'PAUSED' ? '⏸ Pausada' :
@@ -530,7 +530,7 @@ export default function Journeys() {
                   e.stopPropagation();
                   handleDeleteJourney(j.id, j.name);
                 }}
-                className="w-full px-3 py-1 text-xs text-red-600 hover:bg-red-50 rounded-b flex items-center justify-center gap-1"
+                className="flex w-full items-center justify-center gap-1 rounded-b-lg px-3 py-1 text-xs text-red-400 hover:bg-red-500/10"
                 title="Excluir jornada"
               >
                 🗑️ Excluir
@@ -541,8 +541,8 @@ export default function Journeys() {
       </div>
 
       {/* Centro: canvas da jornada */}
-      <div className="flex-1 relative">
-        <div className="absolute inset-0">
+      <div className="relative flex-1">
+        <div className="journeys-flow-root absolute inset-0">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -563,72 +563,72 @@ export default function Journeys() {
         </div>
 
         {/* Barra superior do canvas */}
-        <div className="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none">
-          <div className="pointer-events-auto bg-white/95 backdrop-blur px-4 py-3 rounded-lg shadow-lg border border-gray-200">
+        <div className="pointer-events-none absolute left-4 right-4 top-4 flex items-center justify-between">
+          <div className="pointer-events-auto glass-channel-card max-w-[min(100%,42rem)] rounded-xl border border-outline-variant px-4 py-3 shadow-forest-glow backdrop-blur-xl">
             {selectedJourney ? (
               <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-gray-800">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-bold text-on-surface">
                       {selectedJourney.name}
                     </span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                    <span className={`rounded px-2 py-0.5 text-xs font-semibold ${
                       selectedJourney.status === 'ACTIVE' 
-                        ? 'bg-green-100 text-green-700 border border-green-300' 
+                        ? 'border border-[#66dd8b]/35 bg-emerald-500/15 text-[#66dd8b]' 
                         : selectedJourney.status === 'PAUSED'
-                        ? 'bg-yellow-100 text-yellow-700 border border-yellow-300'
+                        ? 'border border-amber-500/35 bg-amber-500/15 text-amber-200'
                         : selectedJourney.status === 'ARCHIVED'
-                        ? 'bg-gray-100 text-gray-700 border border-gray-300'
-                        : 'bg-blue-100 text-blue-700 border border-blue-300'
+                        ? 'border border-outline-variant bg-on-surface-variant/10 text-on-surface-variant'
+                        : 'border border-sky-500/35 bg-sky-500/15 text-sky-200'
                     }`}>
                       {selectedJourney.status === 'ACTIVE' ? '🟢 ATIVA' : 
                        selectedJourney.status === 'PAUSED' ? '🟡 PAUSADA' :
                        selectedJourney.status === 'ARCHIVED' ? '⚫ ARQUIVADA' : '🔵 RASCUNHO'}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-600 mt-1 flex items-center gap-3">
+                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-on-surface-variant">
                     <span>📊 {nodes.length} blocos</span>
                     <span>🔗 {edges.length} conexões</span>
                     {selectedJourney.status === 'ACTIVE' && (
-                      <span className="text-green-600 font-semibold">✓ Funcionando</span>
+                      <span className="font-semibold text-[#66dd8b]">✓ Funcionando</span>
                     )}
                   </div>
                   
                   {/* Estatísticas */}
                   {stats && selectedJourney.status === 'ACTIVE' && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="text-xs font-semibold text-gray-700 mb-2">📈 Estatísticas</div>
+                    <div className="mt-3 border-t border-outline-variant pt-3">
+                      <div className="mb-2 text-xs font-semibold text-on-surface">📈 Estatísticas</div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <span className="text-gray-500">Enviados:</span>
-                          <span className="ml-1 font-semibold text-blue-600">
+                          <span className="text-on-surface-variant">Enviados:</span>
+                          <span className="ml-1 font-semibold text-secondary">
                             {stats.completed} de {stats.totalContacts}
                           </span>
                         </div>
                         <div>
-                          <span className="text-gray-500">Taxa de sucesso:</span>
-                          <span className="ml-1 font-semibold text-green-600">
+                          <span className="text-on-surface-variant">Taxa de sucesso:</span>
+                          <span className="ml-1 font-semibold text-[#66dd8b]">
                             {stats.successRate.toFixed(1)}%
                           </span>
                         </div>
                         <div>
-                          <span className="text-gray-500">Mensagens:</span>
-                          <span className="ml-1 font-semibold">{stats.totalMessagesSent}</span>
+                          <span className="text-on-surface-variant">Mensagens:</span>
+                          <span className="ml-1 font-semibold text-on-surface">{stats.totalMessagesSent}</span>
                         </div>
                         <div>
-                          <span className="text-gray-500">Falhas:</span>
-                          <span className="ml-1 font-semibold text-red-600">{stats.failed}</span>
+                          <span className="text-on-surface-variant">Falhas:</span>
+                          <span className="ml-1 font-semibold text-red-400">{stats.failed}</span>
                         </div>
                       </div>
                       {stats.totalContacts > 0 && (
                         <div className="mt-2">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div className="h-2 w-full rounded-full bg-surface-container-highest">
                             <div
-                              className="bg-green-500 h-2 rounded-full transition-all"
+                              className="h-2 rounded-full bg-gradient-to-r from-primary to-[#66dd8b] transition-all"
                               style={{ width: `${(stats.completed / stats.totalContacts) * 100}%` }}
                             />
                           </div>
-                          <div className="text-[10px] text-gray-500 mt-1">
+                          <div className="mt-1 text-[10px] text-on-surface-variant">
                             {stats.completed} de {stats.totalContacts} contatos processados
                           </div>
                         </div>
@@ -655,17 +655,17 @@ export default function Journeys() {
                 )}
               </div>
             ) : (
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-on-surface-variant">
                 Selecione ou crie uma jornada para começar a montar o fluxo.
               </div>
             )}
           </div>
 
-          <div className="flex gap-2 pointer-events-auto">
+          <div className="pointer-events-auto flex flex-shrink-0 gap-2">
             {selectedJourney && selectedJourney.status === 'ACTIVE' && (
-              <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                <span className="text-green-600 text-sm font-semibold">✓ Jornada Ativa</span>
-                <span className="text-green-500 text-xs">Funcionando automaticamente</span>
+              <div className="flex items-center gap-2 rounded-lg border border-[#66dd8b]/30 bg-emerald-500/10 px-3 py-2">
+                <span className="text-sm font-semibold text-[#66dd8b]">✓ Jornada Ativa</span>
+                <span className="text-xs text-on-surface-variant">Funcionando automaticamente</span>
               </div>
             )}
             <Button
@@ -679,18 +679,18 @@ export default function Journeys() {
         </div>
 
         {/* Paleta lateral direita */}
-        <div className="absolute top-16 right-4 w-80 bg-white/95 backdrop-blur rounded-lg shadow-xl p-4 pointer-events-auto max-h-[85vh] overflow-y-auto border border-gray-200">
-          <h2 className="text-base font-bold text-gray-800 mb-2">Blocos</h2>
-          <p className="text-xs text-gray-500 mb-4 pb-3 border-b border-gray-200">
+        <div className="pointer-events-auto absolute right-4 top-16 max-h-[85vh] w-80 overflow-y-auto rounded-xl border border-outline-variant bg-[rgba(40,42,40,0.85)] p-4 shadow-forest-glow backdrop-blur-xl">
+          <h2 className="mb-2 font-headline text-base font-bold text-on-surface">Blocos</h2>
+          <p className="mb-4 border-b border-outline-variant pb-3 text-xs text-on-surface-variant">
             💡 Arraste ou clique para adicionar
           </p>
 
           <div className="mb-4">
-            <div className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">TRIGGERS</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">TRIGGERS</div>
             <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => addNode('TRIGGER')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-[#66dd8b]/25 bg-[#66dd8b]/10 p-3 text-[#a7f3d0] transition-all hover:scale-[1.02] hover:border-[#66dd8b]/45 hover:bg-[#66dd8b]/18 hover:shadow-forest-glow"
                 title="Contato entra na jornada"
               >
                 <span className="text-lg mb-1">➕</span>
@@ -700,11 +700,11 @@ export default function Journeys() {
           </div>
 
           <div className="mb-4">
-            <div className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">ACTIONS</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">ACTIONS</div>
             <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Enviar mensagem WhatsApp"
               >
                 <span className="text-lg mb-1">💬</span>
@@ -712,7 +712,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Enviar email"
               >
                 <span className="text-lg mb-1">📧</span>
@@ -720,7 +720,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Adicionar tag"
               >
                 <span className="text-lg mb-1">🏷️</span>
@@ -728,7 +728,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Remover tag"
               >
                 <span className="text-lg mb-1">➖</span>
@@ -736,7 +736,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Atualizar campo do contato"
               >
                 <span className="text-lg mb-1">📝</span>
@@ -744,7 +744,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Adicionar à lista"
               >
                 <span className="text-lg mb-1">📋</span>
@@ -752,7 +752,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Criar ticket"
               >
                 <span className="text-lg mb-1">🎫</span>
@@ -762,11 +762,11 @@ export default function Journeys() {
           </div>
 
           <div className="mb-4">
-            <div className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">CONDITIONS</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">CONDITIONS</div>
             <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Se / então"
               >
                 <span className="text-lg mb-1">🔀</span>
@@ -774,7 +774,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Tem tag"
               >
                 <span className="text-lg mb-1">🏷️</span>
@@ -782,7 +782,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Campo do contato"
               >
                 <span className="text-lg mb-1">📊</span>
@@ -790,7 +790,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Data/Hora"
               >
                 <span className="text-lg mb-1">📅</span>
@@ -798,7 +798,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Recebeu mensagem"
               >
                 <span className="text-lg mb-1">💬</span>
@@ -806,7 +806,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Está na lista"
               >
                 <span className="text-lg mb-1">📋</span>
@@ -816,11 +816,11 @@ export default function Journeys() {
           </div>
 
           <div className="mb-4">
-            <div className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">CONTROLS</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">CONTROLS</div>
             <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Esperar (delay)"
               >
                 <span className="text-lg mb-1">⏱️</span>
@@ -828,7 +828,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Dividir tráfego (A/B)"
               >
                 <span className="text-lg mb-1">🔀</span>
@@ -836,7 +836,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Aguardar evento"
               >
                 <span className="text-lg mb-1">⏳</span>
@@ -844,7 +844,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Loop / Repetir"
               >
                 <span className="text-lg mb-1">🔁</span>
@@ -852,7 +852,7 @@ export default function Journeys() {
               </button>
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center p-3 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 transition-all hover:scale-105 hover:shadow-md"
+                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Parar jornada"
               >
                 <span className="text-lg mb-1">🛑</span>

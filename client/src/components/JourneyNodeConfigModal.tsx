@@ -102,33 +102,14 @@ export default function JourneyNodeConfigModal({
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/65 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          width: '90%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          padding: '24px',
-        }}
+        className="journey-config-modal max-h-[90vh] w-[90%] max-w-[600px] overflow-y-auto rounded-xl border border-outline-variant bg-surface-container-highest p-6 text-on-surface shadow-forest-glow"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ marginTop: 0, marginBottom: '20px' }}>
+        <h2 className="mb-5 mt-0 font-headline text-lg font-bold text-on-surface">
           Configurar {nodeType === 'TRIGGER' ? 'Trigger' : nodeType === 'ACTION' ? 'Ação' : nodeType === 'CONDITION' ? 'Condição' : 'Controle'}
         </h2>
 
@@ -146,7 +127,7 @@ export default function JourneyNodeConfigModal({
             style={{
               width: '100%',
               padding: '10px',
-              border: '1px solid #d1d5db',
+              border: '1px solid rgba(63, 73, 69, 0.55)',
               borderRadius: '6px',
               fontSize: '14px',
             }}
@@ -166,7 +147,7 @@ export default function JourneyNodeConfigModal({
                 style={{
                   width: '100%',
                   padding: '10px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid rgba(63, 73, 69, 0.55)',
                   borderRadius: '6px',
                   fontSize: '14px',
                 }}
@@ -187,7 +168,7 @@ export default function JourneyNodeConfigModal({
                     Lista de contatos *
                   </label>
                   {loadingLists ? (
-                    <p style={{ fontSize: '14px', color: '#6b7280' }}>Carregando listas...</p>
+                    <p style={{ fontSize: '14px', color: '#9ca3af' }}>Carregando listas...</p>
                   ) : (
                     <select
                       value={config.listId || ''}
@@ -196,7 +177,7 @@ export default function JourneyNodeConfigModal({
                       style={{
                         width: '100%',
                         padding: '10px',
-                        border: '1px solid #d1d5db',
+                        border: '1px solid rgba(63, 73, 69, 0.55)',
                         borderRadius: '6px',
                         fontSize: '14px',
                       }}
@@ -209,7 +190,7 @@ export default function JourneyNodeConfigModal({
                       ))}
                     </select>
                   )}
-                  <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                  <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
                     Apenas contatos desta lista entrarão na jornada
                   </p>
                 </div>
@@ -230,7 +211,7 @@ export default function JourneyNodeConfigModal({
                       Executar para contatos já existentes na lista
                     </span>
                   </label>
-                  <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px', marginLeft: '26px' }}>
+                  <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px', marginLeft: '26px' }}>
                     Quando a jornada for ativada, também executará para todos os contatos que já estão nesta lista
                   </p>
                 </div>
@@ -250,7 +231,7 @@ export default function JourneyNodeConfigModal({
                   style={{
                     width: '100%',
                     padding: '10px',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid rgba(63, 73, 69, 0.55)',
                     borderRadius: '6px',
                     fontSize: '14px',
                   }}
@@ -263,7 +244,7 @@ export default function JourneyNodeConfigModal({
                 Canal (opcional)
               </label>
               {loadingChannels ? (
-                <p style={{ fontSize: '14px', color: '#6b7280' }}>Carregando canais...</p>
+                <p style={{ fontSize: '14px', color: '#9ca3af' }}>Carregando canais...</p>
               ) : (
                 <select
                   value={config.channelId || ''}
@@ -271,7 +252,7 @@ export default function JourneyNodeConfigModal({
                   style={{
                     width: '100%',
                     padding: '10px',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid rgba(63, 73, 69, 0.55)',
                     borderRadius: '6px',
                     fontSize: '14px',
                   }}
@@ -300,7 +281,7 @@ export default function JourneyNodeConfigModal({
                 style={{
                   width: '100%',
                   padding: '10px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid rgba(63, 73, 69, 0.55)',
                   borderRadius: '6px',
                   fontSize: '14px',
                 }}
@@ -323,11 +304,11 @@ export default function JourneyNodeConfigModal({
                 <div style={{ 
                   marginBottom: '20px', 
                   padding: '12px', 
-                  backgroundColor: '#f0f9ff', 
-                  border: '1px solid #0ea5e9', 
+                  backgroundColor: 'rgba(6, 78, 59, 0.35)', 
+                  border: '1px solid rgba(52, 211, 153, 0.4)', 
                   borderRadius: '8px' 
                 }}>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#0369a1', fontWeight: '500' }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#a7f3d0', fontWeight: '500' }}>
                     ⚠️ Esta ação enviará uma mensagem WhatsApp. Configure a mensagem abaixo.
                   </p>
                 </div>
@@ -337,7 +318,7 @@ export default function JourneyNodeConfigModal({
                     Canal WhatsApp *
                   </label>
                   {loadingChannels ? (
-                    <p style={{ fontSize: '14px', color: '#6b7280' }}>Carregando canais...</p>
+                    <p style={{ fontSize: '14px', color: '#9ca3af' }}>Carregando canais...</p>
                   ) : (
                     <select
                       value={config.channelId || ''}
@@ -346,7 +327,7 @@ export default function JourneyNodeConfigModal({
                       style={{
                         width: '100%',
                         padding: '10px',
-                        border: '1px solid #d1d5db',
+                        border: '1px solid rgba(63, 73, 69, 0.55)',
                         borderRadius: '6px',
                         fontSize: '14px',
                       }}
@@ -376,7 +357,7 @@ export default function JourneyNodeConfigModal({
                     style={{
                       width: '100%',
                       padding: '12px',
-                      border: config.message ? '2px solid #10b981' : '2px solid #d1d5db',
+                      border: config.message ? '2px solid #34d399' : '2px solid rgba(63, 73, 69, 0.55)',
                       borderRadius: '8px',
                       fontSize: '14px',
                       fontFamily: 'inherit',
@@ -385,12 +366,12 @@ export default function JourneyNodeConfigModal({
                     }}
                   />
                   <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
+                    <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>
                       💡 Use variáveis: {'{'}{'{'}nome{'}'}{'}'}, {'{'}{'{'}telefone{'}'}{'}'}, {'{'}{'{'}email{'}'}{'}'}
                     </p>
                     <span style={{ 
                       fontSize: '12px', 
-                      color: config.message ? '#10b981' : '#ef4444',
+                      color: config.message ? '#66dd8b' : '#f87171',
                       fontWeight: '500'
                     }}>
                       {config.message ? `✓ ${config.message.length} caracteres` : '⚠️ Mensagem obrigatória'}
@@ -402,16 +383,16 @@ export default function JourneyNodeConfigModal({
                     <div style={{ 
                       marginTop: '12px', 
                       padding: '12px', 
-                      backgroundColor: '#f9fafb', 
-                      border: '1px solid #e5e7eb', 
+                      backgroundColor: '#121412', 
+                      border: '1px solid rgba(63, 73, 69, 0.45)', 
                       borderRadius: '6px' 
                     }}>
-                      <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 8px 0', fontWeight: '500' }}>
+                      <p style={{ fontSize: '12px', color: '#9ca3af', margin: '0 0 8px 0', fontWeight: '500' }}>
                         📋 Preview (exemplo com dados fictícios):
                       </p>
                       <p style={{ 
                         fontSize: '14px', 
-                        color: '#1f2937', 
+                        color: '#e5e7eb', 
                         margin: 0,
                         whiteSpace: 'pre-wrap',
                         lineHeight: '1.6'
@@ -441,7 +422,7 @@ export default function JourneyNodeConfigModal({
                   style={{
                     width: '100%',
                     padding: '10px',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid rgba(63, 73, 69, 0.55)',
                     borderRadius: '6px',
                     fontSize: '14px',
                   }}
@@ -462,7 +443,7 @@ export default function JourneyNodeConfigModal({
                   style={{
                     width: '100%',
                     padding: '10px',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid rgba(63, 73, 69, 0.55)',
                     borderRadius: '6px',
                     fontSize: '14px',
                   }}
@@ -484,7 +465,7 @@ export default function JourneyNodeConfigModal({
                 style={{
                   width: '100%',
                   padding: '10px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid rgba(63, 73, 69, 0.55)',
                   borderRadius: '6px',
                   fontSize: '14px',
                 }}
@@ -514,7 +495,7 @@ export default function JourneyNodeConfigModal({
                   style={{
                     width: '100%',
                     padding: '10px',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid rgba(63, 73, 69, 0.55)',
                     borderRadius: '6px',
                     fontSize: '14px',
                   }}
@@ -528,7 +509,7 @@ export default function JourneyNodeConfigModal({
                   Lista de contatos *
                 </label>
                 {loadingLists ? (
-                  <p style={{ fontSize: '14px', color: '#6b7280' }}>Carregando listas...</p>
+                  <p style={{ fontSize: '14px', color: '#9ca3af' }}>Carregando listas...</p>
                 ) : (
                   <select
                     value={config.listId || ''}
@@ -537,7 +518,7 @@ export default function JourneyNodeConfigModal({
                     style={{
                       width: '100%',
                       padding: '10px',
-                      border: '1px solid #d1d5db',
+                      border: '1px solid rgba(63, 73, 69, 0.55)',
                       borderRadius: '6px',
                       fontSize: '14px',
                     }}
@@ -565,7 +546,7 @@ export default function JourneyNodeConfigModal({
                     style={{
                       width: '100%',
                       padding: '10px',
-                      border: '1px solid #d1d5db',
+                      border: '1px solid rgba(63, 73, 69, 0.55)',
                       borderRadius: '6px',
                       fontSize: '14px',
                     }}
@@ -588,7 +569,7 @@ export default function JourneyNodeConfigModal({
                     style={{
                       width: '100%',
                       padding: '10px',
-                      border: '1px solid #d1d5db',
+                      border: '1px solid rgba(63, 73, 69, 0.55)',
                       borderRadius: '6px',
                       fontSize: '14px',
                     }}
@@ -609,7 +590,7 @@ export default function JourneyNodeConfigModal({
                     style={{
                       width: '100%',
                       padding: '10px',
-                      border: '1px solid #d1d5db',
+                      border: '1px solid rgba(63, 73, 69, 0.55)',
                       borderRadius: '6px',
                       fontSize: '14px',
                     }}
@@ -631,7 +612,7 @@ export default function JourneyNodeConfigModal({
                     style={{
                       width: '100%',
                       padding: '10px',
-                      border: '1px solid #d1d5db',
+                      border: '1px solid rgba(63, 73, 69, 0.55)',
                       borderRadius: '6px',
                       fontSize: '14px',
                     }}
@@ -650,7 +631,7 @@ export default function JourneyNodeConfigModal({
                 style={{
                   width: '100%',
                   padding: '10px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid rgba(63, 73, 69, 0.55)',
                   borderRadius: '6px',
                   fontSize: '14px',
                 }}
@@ -674,7 +655,7 @@ export default function JourneyNodeConfigModal({
                 style={{
                   width: '100%',
                   padding: '10px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid rgba(63, 73, 69, 0.55)',
                   borderRadius: '6px',
                   fontSize: '14px',
                 }}
@@ -695,7 +676,7 @@ export default function JourneyNodeConfigModal({
                 style={{
                   width: '100%',
                   padding: '10px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid rgba(63, 73, 69, 0.55)',
                   borderRadius: '6px',
                   fontSize: '14px',
                 }}
@@ -723,7 +704,7 @@ export default function JourneyNodeConfigModal({
                       style={{
                         flex: 1,
                         padding: '10px',
-                        border: '1px solid #d1d5db',
+                        border: '1px solid rgba(63, 73, 69, 0.55)',
                         borderRadius: '6px',
                         fontSize: '14px',
                       }}
@@ -734,7 +715,7 @@ export default function JourneyNodeConfigModal({
                       style={{
                         flex: 1,
                         padding: '10px',
-                        border: '1px solid #d1d5db',
+                        border: '1px solid rgba(63, 73, 69, 0.55)',
                         borderRadius: '6px',
                         fontSize: '14px',
                       }}
@@ -762,12 +743,12 @@ export default function JourneyNodeConfigModal({
                   style={{
                     width: '100%',
                     padding: '10px',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid rgba(63, 73, 69, 0.55)',
                     borderRadius: '6px',
                     fontSize: '14px',
                   }}
                 />
-                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
                   O restante vai para o caminho B
                 </p>
               </div>
@@ -784,7 +765,7 @@ export default function JourneyNodeConfigModal({
                   style={{
                     width: '100%',
                     padding: '10px',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid rgba(63, 73, 69, 0.55)',
                     borderRadius: '6px',
                     fontSize: '14px',
                   }}
@@ -794,7 +775,7 @@ export default function JourneyNodeConfigModal({
                   <option value="list_added">📋 Adicionado à lista</option>
                   <option value="field_updated">📝 Campo atualizado</option>
                 </select>
-                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
                   A jornada aguardará este evento antes de continuar
                 </p>
               </div>
@@ -815,7 +796,7 @@ export default function JourneyNodeConfigModal({
                     style={{
                       width: '100%',
                       padding: '10px',
-                      border: '1px solid #d1d5db',
+                      border: '1px solid rgba(63, 73, 69, 0.55)',
                       borderRadius: '6px',
                       fontSize: '14px',
                     }}
@@ -834,7 +815,7 @@ export default function JourneyNodeConfigModal({
                       style={{
                         flex: 1,
                         padding: '10px',
-                        border: '1px solid #d1d5db',
+                        border: '1px solid rgba(63, 73, 69, 0.55)',
                         borderRadius: '6px',
                         fontSize: '14px',
                       }}
@@ -845,7 +826,7 @@ export default function JourneyNodeConfigModal({
                       style={{
                         flex: 1,
                         padding: '10px',
-                        border: '1px solid #d1d5db',
+                        border: '1px solid rgba(63, 73, 69, 0.55)',
                         borderRadius: '6px',
                         fontSize: '14px',
                       }}
@@ -863,11 +844,11 @@ export default function JourneyNodeConfigModal({
               <div style={{ 
                 marginBottom: '20px', 
                 padding: '12px', 
-                backgroundColor: '#fee2e2', 
-                border: '1px solid #ef4444', 
+                backgroundColor: 'rgba(127, 29, 29, 0.25)', 
+                border: '1px solid rgba(248, 113, 113, 0.5)', 
                 borderRadius: '8px' 
               }}>
-                <p style={{ margin: 0, fontSize: '13px', color: '#991b1b', fontWeight: '500' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: '#fecaca', fontWeight: '500' }}>
                   ⚠️ Esta ação interromperá a jornada para este contato. O contato não continuará no fluxo após este ponto.
                 </p>
               </div>
@@ -876,33 +857,19 @@ export default function JourneyNodeConfigModal({
         )}
 
         {/* Botões */}
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '24px' }}>
+        <div className="mt-6 flex justify-end gap-2.5">
           <button
+            type="button"
             onClick={onClose}
-            style={{
-              padding: '10px 20px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              backgroundColor: 'white',
-              cursor: 'pointer',
-              fontSize: '14px',
-            }}
+            className="cursor-pointer rounded-md border border-outline-variant bg-surface-container px-5 py-2.5 text-sm text-on-surface transition-colors hover:bg-surface-container-lowest"
           >
             Cancelar
           </button>
           <button
+            type="button"
             onClick={handleSave}
             disabled={!label.trim() || (nodeType === 'ACTION' && config.actionType === 'send_message' && (!config.message || !config.channelId))}
-            style={{
-              padding: '10px 20px',
-              border: 'none',
-              borderRadius: '6px',
-              backgroundColor: (!label.trim() || (nodeType === 'ACTION' && config.actionType === 'send_message' && (!config.message || !config.channelId))) ? '#9ca3af' : '#3b82f6',
-              color: 'white',
-              cursor: (!label.trim() || (nodeType === 'ACTION' && config.actionType === 'send_message' && (!config.message || !config.channelId))) ? 'not-allowed' : 'pointer',
-              fontSize: '14px',
-              fontWeight: 'bold',
-            }}
+            className="rounded-md border-none px-5 py-2.5 text-sm font-bold text-[#003919] transition-opacity disabled:cursor-not-allowed disabled:opacity-50 primary-gradient-channel enabled:cursor-pointer enabled:hover:opacity-95"
           >
             Salvar
           </button>
