@@ -33,10 +33,10 @@ export function ConversationCard({
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
       className={`
-        relative p-4 rounded-lg cursor-pointer transition-all duration-200
-        ${isActive 
-          ? 'bg-blue-50 border-2 border-blue-500 shadow-md' 
-          : 'bg-white border border-gray-200 hover:border-blue-300 hover:shadow-sm'
+        relative px-4 py-4 cursor-pointer transition-all duration-200 rounded-none
+        ${isActive
+          ? 'bg-emerald-950/20 border-l-4 border-emerald-400'
+          : 'border-l-4 border-transparent hover:bg-emerald-900/10'
         }
       `}
     >
@@ -45,7 +45,7 @@ export function ConversationCard({
       {/* Badge de mensagens não lidas */}
       {unreadCount > 0 && !isActive && (
         <motion.div
-          className="absolute top-2 right-2 bg-blue-600 text-white text-xs font-bold rounded-full px-2 py-1 min-w-[20px] text-center"
+          className="absolute top-2 right-2 bg-primary text-on-primary text-xs font-bold rounded-full px-2 py-1 min-w-[20px] text-center shadow-emerald-send"
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ 
@@ -60,14 +60,6 @@ export function ConversationCard({
       )}
       
       {/* Indicador de ativo */}
-      {isActive && (
-        <motion.div
-          className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 rounded-r"
-          layoutId="activeConversation"
-          initial={false}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        />
-      )}
     </motion.div>
   );
 }

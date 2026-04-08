@@ -136,44 +136,44 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
+    <div className="flex h-screen bg-background font-body text-on-surface">
       {/* Sidebar */}
       <motion.aside
-        className="w-72 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col shadow-2xl relative z-10 border-r border-slate-700/50"
+        className="relative z-10 flex w-64 flex-col bg-surface-container-low text-on-surface"
         initial={{ x: -300 }}
         animate={{ x: 0 }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
       >
         {/* Header */}
         <motion.div
-          className="p-6 border-b border-slate-700/50 bg-gradient-to-r from-blue-600/20 to-purple-600/20"
+          className="border-b border-primary/10 px-4 py-6"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 via-blue-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/50">
+          <div className="flex items-center gap-3 px-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary-fixed-dim shadow-forest-glow">
               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">CRM System</h2>
-              <p className="text-xs text-slate-400 font-medium">Atendimento Inteligente</p>
+              <h2 className="font-headline text-lg font-bold text-primary">Obsidian CRM</h2>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/60">Emerald Precision</p>
             </div>
           </div>
         </motion.div>
         
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto overflow-x-visible relative sidebar-scroll">
+        <nav className="sidebar-scroll relative flex-1 space-y-1 overflow-y-auto overflow-x-visible p-3">
           <div className="mb-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 mb-2">Principal</p>
+            <p className="mb-2 px-4 text-[10px] font-bold uppercase tracking-[0.18em] text-primary/50">Principal</p>
             <SidebarLink to="/dashboard" icon="📊">Dashboard</SidebarLink>
             <SidebarLink to="/conversations" icon="💬">Conversas</SidebarLink>
           </div>
 
           <div className="mb-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 mb-2">Gestão</p>
+            <p className="mb-2 px-4 text-[10px] font-bold uppercase tracking-[0.18em] text-primary/50">Gestão</p>
             <SidebarDropdownLink
               icon="👥"
               label="Contatos"
@@ -202,7 +202,7 @@ export default function Layout() {
           </div>
 
           <div className="mb-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 mb-2">Configurações</p>
+            <p className="mb-2 px-4 text-[10px] font-bold uppercase tracking-[0.18em] text-primary/50">Configurações</p>
             <SidebarLink to="/users" icon="👤">Usuários</SidebarLink>
             <SidebarLink to="/sectors" icon="🏢">Setores</SidebarLink>
             <SidebarLink to="/pipelines" icon="📈">Pipelines</SidebarLink>
@@ -213,16 +213,16 @@ export default function Layout() {
         </nav>
         
         {/* Footer */}
-        <div className="p-4 border-t border-slate-700/50 space-y-3 bg-slate-800/50">
+        <div className="space-y-3 border-t border-primary/10 bg-surface-container px-3 py-4">
           {/* User Info */}
           {user && (
-            <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-700/30">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">
+            <div className="flex items-center gap-3 rounded-lg bg-surface-container-highest/70 px-3 py-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary-fixed-dim">
                 {user.name?.charAt(0).toUpperCase() || 'U'}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{user.name || 'Usuário'}</p>
-                <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                <p className="truncate text-sm font-medium text-on-surface">{user.name || 'Usuário'}</p>
+                <p className="truncate text-xs text-on-surface-variant">{user.email}</p>
               </div>
             </div>
           )}
@@ -296,18 +296,18 @@ export default function Layout() {
                   transition={{ duration: 0.2 }}
                   className="fixed bottom-24 left-72 z-50"
                 >
-                  <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-72 overflow-hidden">
+                  <div className="w-72 overflow-hidden rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 shadow-forest-glow backdrop-blur-xl">
                     {/* Cabeçalho */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
+                    <div className="flex items-center justify-between border-b border-primary/10 bg-surface-container px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="text-red-500 text-lg">🖥️</span>
-                        <span className="font-semibold text-sm text-slate-800">
+                        <span className="text-sm font-semibold text-on-surface">
                           Indisponível
                         </span>
                       </div>
                       <button
                         onClick={() => setShowPauseModal(false)}
-                        className="text-slate-400 hover:text-slate-600 text-xs"
+                        className="text-xs text-on-surface-variant hover:text-on-surface"
                         aria-label="Fechar"
                       >
                         ✕
@@ -329,7 +329,7 @@ export default function Layout() {
                             applyPause(true, opt.label);
                             setShowPauseModal(false);
                           }}
-                          className="w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-slate-50 text-sm text-slate-700"
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-on-surface-variant transition hover:bg-emerald-900/15 hover:text-on-surface"
                         >
                           <span className="text-lg flex-shrink-0">{opt.icon}</span>
                           <span>{opt.label}</span>
@@ -344,7 +344,7 @@ export default function Layout() {
           
           {isPaused && pauseReason && (
             <motion.div
-              className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-xs text-center"
+              className="rounded-lg border border-primary/20 bg-primary-container/30 p-3 text-center text-xs text-on-secondary-container"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ type: "spring" }}
@@ -361,7 +361,7 @@ export default function Layout() {
             <Button
               variant="ghost"
               onClick={handleLogout}
-              className="w-full text-slate-300 hover:text-white hover:bg-slate-700/50"
+              className="w-full text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
             >
               <span className="flex items-center justify-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -375,7 +375,7 @@ export default function Layout() {
       </motion.aside>
       
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto bg-surface">
         <div className="min-h-full">
           <motion.div
             initial={{ opacity: 0 }}
@@ -390,46 +390,21 @@ export default function Layout() {
 
       {/* Notificação global de tarefa de pipeline (aparece em qualquer página) */}
       {taskNotification && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            maxWidth: '320px',
-            backgroundColor: '#e5e7eb',
-            borderRadius: '12px',
-            padding: '12px 14px',
-            boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
-            zIndex: 4000,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 6,
-            }}
-          >
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>
+        <div className="fixed bottom-6 right-6 z-[4000] max-w-[320px] rounded-xl border border-primary/20 bg-surface-container-highest/95 p-3.5 shadow-forest-glow backdrop-blur-xl">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-sm font-semibold text-on-surface">
               Tarefa de pipeline
             </span>
             <button
               type="button"
               onClick={() => setTaskNotification(null)}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                fontSize: '14px',
-                color: '#4b5563',
-              }}
+              className="cursor-pointer border-none bg-transparent text-sm text-on-surface-variant"
               title="Fechar"
             >
               ✕
             </button>
           </div>
-          <div style={{ fontSize: '12px', color: '#111827', whiteSpace: 'pre-wrap' }}>
+          <div className="whitespace-pre-wrap text-xs text-on-surface-variant">
             {taskNotification.content}
           </div>
         </div>

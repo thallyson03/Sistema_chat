@@ -4,8 +4,65 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
+      colors: {
+        'outline-variant': '#2a2e2a',
+        'primary-fixed-dim': '#6ee7b7',
+        'on-primary-fixed': '#064e3b',
+        tertiary: '#a7f3d0',
+        'surface-tint': '#10b981',
+        outline: '#6b7280',
+        'tertiary-fixed': '#d1fae5',
+        'surface-container': '#1a1c1a',
+        'on-tertiary-fixed-variant': '#065f46',
+        'on-tertiary-container': '#064e3b',
+        'on-error': '#ffffff',
+        'surface-container-low': '#121412',
+        'error-container': '#7f1d1d',
+        'on-tertiary-fixed': '#064e3b',
+        'secondary-container': '#064e3b',
+        'on-secondary': '#ffffff',
+        secondary: '#34d399',
+        'on-surface-variant': '#9ca3af',
+        'inverse-on-surface': '#f3f4f6',
+        'on-secondary-fixed': '#064e3b',
+        'surface-bright': '#222522',
+        'on-secondary-container': '#6ee7b7',
+        surface: '#0e100e',
+        primary: '#10b981',
+        'tertiary-fixed-dim': '#a7f3d0',
+        'on-surface': '#e5e7eb',
+        'tertiary-container': '#065f46',
+        'surface-variant': '#272a27',
+        'primary-container': '#064e3b',
+        'surface-container-highest': '#2e312e',
+        'on-primary': '#ffffff',
+        'inverse-primary': '#10b981',
+        'secondary-fixed-dim': '#34d399',
+        'surface-dim': '#0e100e',
+        'on-error-container': '#fee2e2',
+        'on-primary-fixed-variant': '#065f46',
+        'on-background': '#e5e7eb',
+        background: '#0e100e',
+        'surface-container-lowest': '#0d0f0d',
+      },
+      borderRadius: {
+        DEFAULT: '0.375rem',
+        lg: '0.75rem',
+        xl: '1rem',
+        full: '9999px',
+      },
+      fontFamily: {
+        headline: ['Manrope', 'system-ui', 'sans-serif'],
+        body: ['Inter', 'system-ui', 'sans-serif'],
+        label: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      boxShadow: {
+        'forest-glow': '0 8px 32px rgba(226, 227, 223, 0.04)',
+        'emerald-send': '0 4px 12px rgba(16, 185, 129, 0.2)',
+      },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',
         'slide-in': 'slideIn 0.3s ease-out',
@@ -29,8 +86,3 @@ export default {
   },
   plugins: [],
 }
-
-
-
-
-

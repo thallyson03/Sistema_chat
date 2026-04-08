@@ -6,7 +6,6 @@ import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import { getTimeAgo } from '../utils/timeUtils';
 import { ConversationCard } from '../components/ui/ConversationCard';
-import { Button } from '../components/ui/Button';
 import { IconButton } from '../components/ui/IconButton';
 
 // Função para gerar avatar com iniciais
@@ -27,8 +26,8 @@ const getAvatarUrl = (name: string, size: number = 40): string => {
     .slice(0, 2) || cleanName.charAt(0).toUpperCase() || '?';
   
   const colors = [
-    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-    '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
+    '#065f46', '#047857', '#059669', '#0d9488', '#047857',
+    '#065f46', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0',
   ];
   
   const colorIndex = (cleanName.charCodeAt(0) || 0) % colors.length;
@@ -105,6 +104,15 @@ interface Message {
     fromBot?: boolean;
   };
 }
+
+const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: 'ALL', label: 'Todos' },
+  { value: 'OPEN', label: 'Abertos' },
+  { value: 'WAITING', label: 'Fila' },
+  { value: 'CLOSED', label: 'Fechadas' },
+  { value: 'ARCHIVED', label: 'Arquivadas' },
+  { value: 'BOT', label: 'Bot' },
+];
 
 export default function Conversations() {
   // Base da API (mesma usada pelo axios)
@@ -984,103 +992,44 @@ export default function Conversations() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div>Carregando conversas...</div>
+      <div className="flex min-h-[calc(100vh-60px)] items-center justify-center bg-background font-body text-on-surface">
+        <p className="text-sm text-on-surface-variant">Carregando conversas...</p>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        height: 'calc(100vh - 60px)',
-        overflow: 'hidden',
-        position: 'relative',
-        backgroundColor: 'white',
-      }}
-    >
-      <style>
-        {`
-          @keyframes pulse {
-            0%, 100% {
-              opacity: 1;
-            }
-            50% {
-              opacity: 0.5;
-            }
-          }
-        `}
-      </style>
+    <div className="relative flex h-[calc(100vh-60px)] min-h-0 w-full overflow-hidden bg-background font-body text-on-surface">
       {/* Modal de preview de mídia (imagem/vídeo em tela cheia) */}
       {previewMedia && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: '640px', // alinhado com a área de conversa
-            backgroundColor: 'rgba(0,0,0,0.85)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 3000,
-          }}
+          className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/85 backdrop-blur-sm"
           onClick={() => setPreviewMedia(null)}
         >
           <button
             type="button"
             onClick={() => setPreviewMedia(null)}
-            style={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              background: 'none',
-              border: 'none',
-              color: '#fff',
-              fontSize: '18px',
-              cursor: 'pointer',
-            }}
+            className="absolute right-4 top-4 cursor-pointer border-none bg-transparent text-lg text-on-surface"
           >
             Fechar ✕
           </button>
 
           <div
-            style={{
-              width: '40%',
-              maxWidth: '500px',
-              maxHeight: '40vh',
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '8px',
-            }}
+            className="relative flex max-h-[85vh] w-[min(92vw,720px)] max-w-full items-center justify-center p-2"
             onClick={(e) => e.stopPropagation()}
           >
             {previewMedia.type === 'IMAGE' ? (
               <img
                 src={previewMedia.src}
                 alt="Pré-visualização"
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  objectFit: 'contain',
-                  borderRadius: '8px',
-                }}
+                className="max-h-[85vh] max-w-full rounded-lg object-contain"
               />
             ) : (
               <video
                 src={previewMedia.src}
                 controls
                 autoPlay
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  borderRadius: '8px',
-                  backgroundColor: '#000',
-                }}
+                className="max-h-[85vh] max-w-full rounded-lg bg-black object-contain"
               />
             )}
           </div>
@@ -1088,72 +1037,43 @@ export default function Conversations() {
       )}
 
       {/* Sidebar Esquerda - Lista de Conversas */}
-      <div
-        style={{
-          width: '350px',
-          borderRight: '1px solid #e5e7eb',
-          backgroundColor: 'white',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            padding: '20px',
-            borderBottom: '1px solid #e5e7eb',
-            backgroundColor: 'white',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>Conversas</h2>
+      <div className="flex w-[min(100%,20rem)] shrink-0 flex-col overflow-hidden bg-surface-container-low">
+        <div className="border-b border-primary/10 bg-surface-container-low px-4 py-5">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="font-headline text-lg font-bold tracking-tight text-primary">Conversas</h2>
             <button
+              type="button"
               onClick={() => setShowNewConversationModal(true)}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
+              className="active-gradient-emerald flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold text-on-primary shadow-emerald-send transition hover:brightness-110"
               title="Iniciar nova conversa"
             >
-              📞 Nova Conversa
+              <span className="material-symbols-outlined text-base">add_call</span>
+              Nova
             </button>
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid #e5e7eb',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              backgroundColor: 'white',
-            }}
-          >
-            <option value="ALL">Todas</option>
-            <option value="OPEN">Abertas</option>
-            <option value="WAITING">Fila</option>
-            <option value="CLOSED">Fechadas</option>
-            <option value="ARCHIVED">Arquivadas</option>
-            <option value="BOT">Conversa em bot</option>
-          </select>
+          <div className="flex flex-wrap gap-2">
+            {STATUS_FILTER_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setStatusFilter(opt.value)}
+                className={`rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                  statusFilter === opt.value
+                    ? 'bg-emerald-900/40 text-primary ring-1 ring-primary/20'
+                    : 'text-on-surface-variant hover:bg-surface-container'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
+        <div className="conv-no-scrollbar flex-1 overflow-y-auto py-2">
           {conversations.filter(conv => 
             !!conv.lastMessage || !!conv.lastCustomerMessageAt || !!conv.lastAgentMessageAt
           ).length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6b7280' }}>
+            <div className="px-4 py-10 text-center text-sm text-on-surface-variant">
               <p>Nenhuma conversa encontrada.</p>
             </div>
           ) : (
@@ -1180,42 +1100,37 @@ export default function Conversations() {
                   unreadCount={conv.unreadCount}
                   index={index}
                 >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex items-center gap-2">
                         <img
                           src={getContactAvatar(conv.contact, 32)}
                           alt={conv.contact.name}
-                          className="w-8 h-8 rounded-full flex-shrink-0"
+                          className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-primary/15"
                         />
-                        <h3 className="text-base font-semibold text-gray-900 truncate">
+                        <h3 className="truncate font-headline text-sm font-bold text-on-surface">
                           {conv.contact.name}
                         </h3>
                       </div>
-                      <p className="text-xs text-gray-500 mb-1 truncate">
+                      <p className="mb-1 truncate text-xs text-on-surface-variant">
                         {(conv.channel?.name || 'Sem canal')} • {conv.contact.phone || 'Sem telefone'}
                       </p>
                       {conv.lastMessage && (
-                        <p className="text-sm text-gray-600 truncate mb-2">
+                        <p className="mb-2 truncate text-xs text-outline">
                           {conv.lastMessage}
                         </p>
                       )}
-                      {/* Tempos de atendimento */}
-                      <div className="text-xs text-gray-400">
+                      <div className="text-[10px] uppercase tracking-wider text-on-surface-variant/80">
                         {conv.lastCustomerMessageAt && (
-                          <div>
-                            Cliente: {getTimeAgo(conv.lastCustomerMessageAt)}
-                          </div>
+                          <div>Cliente: {getTimeAgo(conv.lastCustomerMessageAt)}</div>
                         )}
                         {conv.lastAgentMessageAt && (
-                          <div>
-                            Você: {getTimeAgo(conv.lastAgentMessageAt)}
-                          </div>
+                          <div>Você: {getTimeAgo(conv.lastAgentMessageAt)}</div>
                         )}
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2 items-end ml-3">
-                      <span className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 whitespace-nowrap">
+                    <div className="ml-1 flex flex-col items-end gap-2">
+                      <span className="whitespace-nowrap rounded-full bg-primary-container px-2 py-0.5 text-[10px] font-bold text-on-secondary-container">
                         {conv.status}
                       </span>
                     </div>
@@ -1227,89 +1142,41 @@ export default function Conversations() {
         </div>
       </div>
 
-      {/* Área Direita - Chat */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          backgroundColor: 'white',
-          overflow: 'hidden',
-        }}
-      >
+      {/* Área Direita - Chat + painel */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
         {selectedConversation ? (
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Header do Chat */}
-            <div
-              style={{
-                padding: '16px 20px',
-                borderBottom: '1px solid #e5e7eb',
-                backgroundColor: 'white',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {/* Avatar do cliente no header */}
-                <div
-                  style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '50%',
-                    flexShrink: 0,
-                    overflow: 'hidden',
-                    backgroundColor: '#e5e7eb',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '2px solid #e5e7eb',
-                  }}
-                >
+            <div className="flex items-center justify-between gap-3 border-b border-primary/10 bg-surface/60 px-5 py-4 backdrop-blur-xl">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-surface-container-highest ring-2 ring-primary/15">
                   <img
                     src={getContactAvatar(selectedConversation.contact, 48)}
                     alt={selectedConversation.contact.name}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                    }}
+                    className="h-full w-full object-cover"
                     onError={(e) => {
-                      // Se a foto real falhar, usar avatar gerado
                       const target = e.target as HTMLImageElement;
                       target.src = getAvatarUrl(selectedConversation.contact.name, 48);
                     }}
                   />
                 </div>
-                
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
+
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <h3 className="font-headline text-base font-bold text-on-surface">
                       {selectedConversation.contact.name}
                     </h3>
                     <span
-                      style={{
-                        padding: '4px 8px',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        backgroundColor:
-                          selectedConversation.status === 'OPEN'
-                            ? '#dcfce7'
-                            : selectedConversation.status === 'WAITING'
-                            ? '#fef3c7'
-                            : selectedConversation.status === 'CLOSED'
-                            ? '#f3f4f6'
-                            : '#e5e7eb',
-                        color:
-                          selectedConversation.status === 'OPEN'
-                            ? '#166534'
-                            : selectedConversation.status === 'WAITING'
-                            ? '#92400e'
-                            : selectedConversation.status === 'CLOSED'
-                            ? '#374151'
-                            : '#6b7280',
-                      }}
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                        selectedConversation.status === 'OPEN'
+                          ? 'bg-primary-container text-on-secondary-container'
+                          : selectedConversation.status === 'WAITING'
+                          ? 'bg-secondary-container/80 text-on-secondary-container'
+                          : selectedConversation.status === 'CLOSED'
+                          ? 'bg-surface-container-highest text-on-surface-variant'
+                          : 'bg-surface-variant text-on-surface-variant'
+                      }`}
                     >
                       {selectedConversation.status === 'OPEN'
                         ? 'Aberta'
@@ -1320,18 +1187,19 @@ export default function Conversations() {
                         : 'Arquivada'}
                     </span>
                   </div>
-                  <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  <p className="mt-0 text-xs text-on-surface-variant">
                     {(selectedConversation.channel?.name || 'Sem canal')} •{' '}
-                    {selectedConversation.contact?.name ||
-                      selectedConversation.contact?.phone ||
+                    {selectedConversation.contact?.phone ||
+                      selectedConversation.contact?.name ||
                       'Sem telefone'}
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '8px', marginLeft: '15px', alignItems: 'center' }}>
+              <div className="ml-2 flex shrink-0 flex-wrap items-center justify-end gap-2">
                 {/* Ícone de bot/integração vs humano */}
                 {selectedConversation && (
                   <button
+                    type="button"
                     disabled={!currentUser}
                     onClick={async () => {
                       if (!selectedConversation || !currentUser) return;
@@ -1361,19 +1229,11 @@ export default function Conversations() {
                         );
                       }
                     }}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '999px',
-                      border: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: currentUser ? 'pointer' : 'default',
-                      backgroundColor: selectedConversation.inBot ? '#10b981' : '#111827',
-                      color: 'white',
-                      fontSize: '16px',
-                    }}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(63,73,69,0.2)] text-base ${
+                      selectedConversation.inBot
+                        ? 'bg-primary text-on-primary'
+                        : 'bg-surface-container-highest text-on-surface'
+                    } ${currentUser ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
                     title={
                       selectedConversation.inBot
                         ? 'Bot/integração ativo - clique para assumir atendimento'
@@ -1386,6 +1246,7 @@ export default function Conversations() {
 
                 {selectedConversation.status === 'CLOSED' || selectedConversation.status === 'ARCHIVED' ? (
                   <button
+                    type="button"
                     onClick={async () => {
                       try {
                         await api.put(`/api/conversations/${selectedConversation.id}`, { status: 'OPEN' });
@@ -1398,22 +1259,14 @@ export default function Conversations() {
                         alert(error.response?.data?.error || 'Erro ao abrir conversa');
                       }
                     }}
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: '#10b981',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                    }}
+                    className="active-gradient-emerald rounded-lg px-3 py-2 text-xs font-bold text-on-primary shadow-emerald-send"
                     title="Abrir conversa"
                   >
                     Abrir
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={async () => {
                       if (!confirm('Tem certeza que deseja fechar esta conversa?')) return;
                       try {
@@ -1427,51 +1280,27 @@ export default function Conversations() {
                         alert(error.response?.data?.error || 'Erro ao fechar conversa');
                       }
                     }}
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: '#6b7280',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                    }}
+                    className="rounded-lg border border-[rgba(63,73,69,0.2)] bg-surface-container-highest px-3 py-2 text-xs font-bold text-on-surface-variant transition hover:bg-surface-variant"
                     title="Fechar conversa"
                   >
                     Fechar
                   </button>
                 )}
                 <button
+                  type="button"
                   onClick={() => setShowTransferModal(true)}
-                  style={{
-                    padding: '8px 12px',
-                    backgroundColor: '#3b82f6',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    marginRight: '10px',
-                  }}
+                  className="rounded-lg border border-primary/25 bg-transparent px-3 py-2 text-xs font-bold text-primary transition hover:bg-emerald-900/20"
                   title="Transferir conversa"
                 >
                   Transferir
                 </button>
               </div>
-              <span
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#e5e7eb',
-                  fontSize: '12px',
-                }}
-              >
+              <span className="hidden rounded-md bg-surface-container-highest px-2 py-1 text-[11px] text-on-surface-variant sm:inline">
                 {selectedConversation.status}
               </span>
               {currentUser && currentUser.role === 'ADMIN' && (
                 <button
+                  type="button"
                   onClick={async () => {
                     if (!selectedConversation) return;
                     if (
@@ -1483,7 +1312,6 @@ export default function Conversations() {
                     }
                     try {
                       await api.delete(`/api/conversations/${selectedConversation.id}`);
-                      // Remover do estado local
                       setConversations((prev) =>
                         prev.filter((conv) => conv.id !== selectedConversation.id),
                       );
@@ -1494,17 +1322,7 @@ export default function Conversations() {
                       alert(error.response?.data?.error || 'Erro ao excluir conversa');
                     }
                   }}
-                  style={{
-                    marginLeft: '10px',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: '#ef4444',
-                    color: 'white',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
+                  className="rounded-lg bg-error-container px-2.5 py-1.5 text-[11px] font-bold text-on-error-container"
                   title="Excluir conversa (apenas administradores)"
                 >
                   Excluir
@@ -1513,25 +1331,15 @@ export default function Conversations() {
             </div>
 
             {/* Área de Mensagens */}
-            <div
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '20px',
-                backgroundColor: '#f9fafb',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
+            <div className="conv-no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface-container-lowest/40 p-5">
               {loadingMessages ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+                <div className="py-10 text-center text-sm text-on-surface-variant">
                   Carregando mensagens...
                 </div>
               ) : messages.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-                  <p>Nenhuma mensagem ainda.</p>
-                  <p style={{ fontSize: '14px', marginTop: '8px' }}>
+                <div className="py-10 text-center text-on-surface-variant">
+                  <p className="text-sm">Nenhuma mensagem ainda.</p>
+                  <p className="mt-2 text-xs text-outline">
                     Envie uma mensagem para começar a conversa.
                   </p>
                 </div>
@@ -1549,35 +1357,22 @@ export default function Conversations() {
                 >
                   {/* Paginação: carregar mensagens mais antigas */}
                   {hasMoreMessages && !loadingMessages && !loadingMoreMessages && (
-                    <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                    <div className="mb-2 text-center">
                       <button
+                        type="button"
                         onClick={() => {
                           if (selectedConversation) {
                             fetchMessages(selectedConversation.id, { reset: false });
                           }
                         }}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '999px',
-                          border: '1px solid #d1d5db',
-                          backgroundColor: '#f3f4f6',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                        }}
+                        className="cursor-pointer rounded-full border border-[rgba(63,73,69,0.2)] bg-surface-container-highest px-3 py-1.5 text-xs font-medium text-on-surface-variant transition hover:bg-surface-variant"
                       >
                         Carregar mensagens anteriores
                       </button>
                     </div>
                   )}
                   {loadingMoreMessages && (
-                    <div
-                      style={{
-                        textAlign: 'center',
-                        marginBottom: '8px',
-                        color: '#6b7280',
-                        fontSize: '12px',
-                      }}
-                    >
+                    <div className="mb-2 text-center text-xs text-on-surface-variant">
                       Carregando mensagens anteriores...
                     </div>
                   )}
@@ -1620,23 +1415,8 @@ export default function Conversations() {
                     return (
                       <div key={message.id}>
                         {showDateDivider && (
-                          <div
-                            style={{
-                              textAlign: 'center',
-                              margin: '12px 0',
-                              position: 'relative',
-                              fontSize: '11px',
-                              color: '#6b7280',
-                            }}
-                          >
-                            <span
-                              style={{
-                                backgroundColor: '#f9fafb',
-                                padding: '2px 10px',
-                                borderRadius: '999px',
-                                border: '1px solid #e5e7eb',
-                              }}
-                            >
+                          <div className="relative my-3 text-center text-[10px] font-semibold uppercase tracking-widest text-primary/70">
+                            <span className="rounded-full border border-primary/10 bg-emerald-950/25 px-4 py-1">
                               {dateLabel}
                             </span>
                           </div>
@@ -1652,36 +1432,17 @@ export default function Conversations() {
                           type: "spring",
                           stiffness: 200
                         }}
-                        className="flex items-end gap-2 mb-1"
-                        style={{
-                          justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
-                        }}
+                        className={`mb-1 flex items-end gap-2 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                       >
                       {/* Avatar do cliente (só aparece em mensagens do cliente) */}
                       {isFromCustomer && (
-                        <div
-                          style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '50%',
-                            flexShrink: 0,
-                            overflow: 'hidden',
-                            backgroundColor: '#e5e7eb',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-container-highest ring-1 ring-primary/15">
                           <img
                             src={contactAvatar}
                             alt={contactName}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                            }}
+                            className="h-full w-full object-cover"
                             onError={(e) => {
                               // Se falhar, usar SVG inline
                               const target = e.target as HTMLImageElement;
@@ -1692,27 +1453,16 @@ export default function Conversations() {
                       )}
                       
                       <motion.div
-                        className="max-w-[70%] px-0 py-0 rounded-xl relative"
-                        style={{
-                          // Notificação de tarefa em fundo cinza; demais mensagens “soltas” no fundo
-                          backgroundColor: isTaskNotification ? '#e5e7eb' : 'transparent',
-                          color: '#111827',
-                          boxShadow: 'none',
-                          borderRadius: isTaskNotification ? 12 : 0,
-                          padding: isTaskNotification ? '8px 12px' : 0,
-                        }}
+                        className={`relative max-w-[70%] rounded-xl px-0 py-0 ${
+                          isTaskNotification
+                            ? 'rounded-lg bg-surface-container-highest p-3 text-on-surface'
+                            : 'bg-transparent text-on-surface'
+                        }`}
                         whileHover={{ scale: 1.0 }}
                         transition={{ duration: 0.2 }}
                       >
                         {isFromCustomer && (
-                          <div
-                            style={{
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              marginBottom: '4px',
-                              opacity: 0.9,
-                            }}
-                          >
+                          <div className="mb-1 text-xs font-semibold text-on-surface-variant">
                             {contactName}
                           </div>
                         )}
@@ -1808,18 +1558,7 @@ export default function Conversations() {
                                   {openMediaMenuId === message.id && (
                                     <div
                                       onClick={(e) => e.stopPropagation()}
-                                      style={{
-                                        marginTop: 4,
-                                        right: 0,
-                                        position: 'absolute',
-                                        minWidth: '160px',
-                                        backgroundColor: '#FFFFFF',
-                                        boxShadow:
-                                          '0 4px 12px rgba(0,0,0,0.15)',
-                                        borderRadius: '8px',
-                                        padding: '6px 0',
-                                        zIndex: 50,
-                                      }}
+                                      className="absolute right-0 z-50 mt-1 min-w-[160px] rounded-lg border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 py-1.5 shadow-forest-glow backdrop-blur-xl"
                                     >
                                       <button
                                         type="button"
@@ -1827,15 +1566,7 @@ export default function Conversations() {
                                           handleDownloadMedia(message);
                                           setOpenMediaMenuId(null);
                                         }}
-                                        style={{
-                                          width: '100%',
-                                          padding: '6px 14px',
-                                          background: 'none',
-                                          border: 'none',
-                                          textAlign: 'left',
-                                          fontSize: '13px',
-                                          cursor: 'pointer',
-                                        }}
+                                        className="w-full cursor-pointer border-none bg-transparent px-3.5 py-1.5 text-left text-sm text-on-surface hover:bg-emerald-900/20"
                                       >
                                         Baixar
                                       </button>
@@ -2075,17 +1806,7 @@ export default function Conversations() {
                                   {openMediaMenuId === message.id && (
                                     <div
                                       onClick={(e) => e.stopPropagation()}
-                                      style={{
-                                        marginTop: 4,
-                                        right: 0,
-                                        position: 'absolute',
-                                        minWidth: '160px',
-                                        backgroundColor: '#FFFFFF',
-                                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                        borderRadius: '8px',
-                                        padding: '6px 0',
-                                        zIndex: 50,
-                                      }}
+                                      className="absolute right-0 z-50 mt-1 min-w-[160px] rounded-lg border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 py-1.5 shadow-forest-glow backdrop-blur-xl"
                                     >
                                       <button
                                         type="button"
@@ -2093,15 +1814,7 @@ export default function Conversations() {
                                           handleDownloadMedia(message);
                                           setOpenMediaMenuId(null);
                                         }}
-                                        style={{
-                                          width: '100%',
-                                          padding: '6px 14px',
-                                          background: 'none',
-                                          border: 'none',
-                                          textAlign: 'left',
-                                          fontSize: '13px',
-                                          cursor: 'pointer',
-                                        }}
+                                        className="w-full cursor-pointer border-none bg-transparent px-3.5 py-1.5 text-left text-sm text-on-surface hover:bg-emerald-900/20"
                                       >
                                         Baixar
                                       </button>
@@ -2112,16 +1825,9 @@ export default function Conversations() {
                             )}
                             {message.type === 'AUDIO' && (
                               <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '12px',
-                                  padding: '10px 12px',
-                                  backgroundColor: isOwnMessage ? '#DCF8C6' : '#ffffff',
-                                  borderRadius: '999px',
-                                  minWidth: '260px',
-                                  boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-                                }}
+                                className={`flex min-w-[260px] items-center gap-3 rounded-full border border-[rgba(63,73,69,0.2)] px-3 py-2.5 ${
+                                  isOwnMessage ? 'bg-emerald-950/35' : 'bg-surface-container-highest'
+                                }`}
                               >
                                 {/* Botão play/pause customizado, estilo WhatsApp */}
                                 <button
@@ -2316,17 +2022,7 @@ export default function Conversations() {
                                   {openMediaMenuId === message.id && (
                                     <div
                                       onClick={(e) => e.stopPropagation()}
-                                      style={{
-                                        marginTop: 4,
-                                        right: 0,
-                                        position: 'absolute',
-                                        minWidth: '160px',
-                                        backgroundColor: '#FFFFFF',
-                                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                        borderRadius: '8px',
-                                        padding: '6px 0',
-                                        zIndex: 50,
-                                      }}
+                                      className="absolute right-0 z-50 mt-1 min-w-[160px] rounded-lg border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 py-1.5 shadow-forest-glow backdrop-blur-xl"
                                     >
                                       <button
                                         type="button"
@@ -2334,15 +2030,7 @@ export default function Conversations() {
                                           handleDownloadMedia(message);
                                           setOpenMediaMenuId(null);
                                         }}
-                                        style={{
-                                          width: '100%',
-                                          padding: '6px 14px',
-                                          background: 'none',
-                                          border: 'none',
-                                          textAlign: 'left',
-                                          fontSize: '13px',
-                                          cursor: 'pointer',
-                                        }}
+                                        className="w-full cursor-pointer border-none bg-transparent px-3.5 py-1.5 text-left text-sm text-on-surface hover:bg-emerald-900/20"
                                       >
                                         Baixar
                                       </button>
@@ -2352,34 +2040,20 @@ export default function Conversations() {
                               </div>
                             )}
                             {message.type === 'DOCUMENT' && (
-                              <div
-                                style={{
-                                  padding: '12px',
-                                  backgroundColor: 'rgba(0,0,0,0.1)',
-                                  borderRadius: '8px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '10px',
-                                }}
-                              >
-                                <span style={{ fontSize: '24px' }}>📄</span>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontWeight: '600', fontSize: '14px' }}>
+                              <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-emerald-950/30 p-3">
+                                <span className="text-2xl">📄</span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-semibold text-on-surface">
                                     {message.metadata?.fileName || 'Documento'}
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => handleDownloadMedia(message)}
-                                    style={{
-                                      marginTop: '4px',
-                                      padding: '4px 8px',
-                                      borderRadius: '999px',
-                                      border: 'none',
-                                      backgroundColor: isOwnMessage ? '#10b981' : '#e5e7eb',
-                                      color: isOwnMessage ? 'white' : '#111827',
-                                      fontSize: '12px',
-                                      cursor: 'pointer',
-                                    }}
+                                    className={`mt-1 cursor-pointer rounded-full px-2 py-1 text-xs font-bold ${
+                                      isOwnMessage
+                                        ? 'active-gradient-emerald text-on-primary'
+                                        : 'border border-[rgba(63,73,69,0.2)] bg-surface-container-highest text-on-surface'
+                                    }`}
                                   >
                                     Baixar
                                   </button>
@@ -2393,29 +2067,20 @@ export default function Conversations() {
                             Para mídias (imagem, vídeo, áudio, documento) não mostramos mais o "título"/arquivo abaixo. */}
                         {message.content && message.type === 'TEXT' && (
                           <div
-                            style={{
-                              display: 'inline-block',
-                              padding: '8px 12px',
-                              borderRadius: '16px',
-                              backgroundColor: isOwnMessage ? '#dcfce7' : '#ecfdf5', // verdes bem claros
-                              color: '#022c22',
-                              fontSize: '15px',
-                              lineHeight: '1.4',
-                              whiteSpace: 'pre-wrap',   // preserva quebras de linha
-                              wordBreak: 'break-word',  // quebra palavras muito longas
-                            }}
+                            className={`inline-block max-w-full whitespace-pre-wrap break-words px-3 py-2 text-sm leading-relaxed ${
+                              isOwnMessage
+                                ? 'active-gradient-emerald rounded-2xl rounded-br-none text-on-primary shadow-emerald-send'
+                                : 'rounded-2xl rounded-bl-none border border-primary/5 bg-surface-container-highest text-on-surface'
+                            }`}
                           >
                             {message.content}
                           </div>
                         )}
-                        
+
                         <div
-                          style={{
-                            fontSize: '11px',
-                            marginTop: '6px',
-                            opacity: 0.7,
-                            textAlign: isOwnMessage ? 'right' : 'left',
-                          }}
+                          className={`mt-1.5 text-[10px] text-on-surface-variant ${
+                            isOwnMessage ? 'text-right' : 'text-left'
+                          }`}
                         >
                           {formatTime(message.createdAt)}
                         </div>
@@ -2423,27 +2088,11 @@ export default function Conversations() {
                       
                       {/* Avatar do agente (só aparece em mensagens do agente) */}
                       {isOwnMessage && message.user && (
-                        <div
-                          style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '50%',
-                            flexShrink: 0,
-                            overflow: 'hidden',
-                            backgroundColor: '#e5e7eb',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-container-highest ring-1 ring-primary/15">
                           <img
                             src={getAvatarUrl(message.user.name)}
                             alt={message.user.name}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                            }}
+                            className="h-full w-full object-cover"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
                               target.src = getAvatarUrl(message.user!.name);
@@ -2461,25 +2110,10 @@ export default function Conversations() {
             </div>
 
             {/* Input de Mensagem */}
-            <div
-              style={{
-                padding: '16px 20px',
-                borderTop: '1px solid #e5e7eb',
-                backgroundColor: 'white',
-                position: 'relative',
-              }}
-            >
+            <div className="relative border-t border-primary/10 bg-surface-container-low/60 px-5 py-4 backdrop-blur-md">
               {/* Emoji Picker */}
               {showEmojiPicker && (
-                <div
-                  ref={emojiPickerRef}
-                  style={{
-                    position: 'absolute',
-                    bottom: '80px',
-                    left: '20px',
-                    zIndex: 1000,
-                  }}
-                >
+                <div ref={emojiPickerRef} className="absolute bottom-20 left-5 z-[1000]">
                   <EmojiPicker
                     onEmojiClick={handleEmojiClick}
                     width={350}
@@ -2506,8 +2140,9 @@ export default function Conversations() {
                 {/* Botão Respostas Rápidas */}
                 <IconButton
                   onClick={() => setShowQuickReplies(true)}
-                  icon={<span className="text-xl">⚡</span>}
+                  icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">bolt</span>}
                   tooltip="Respostas rápidas"
+                  className="!border !border-[rgba(63,73,69,0.2)] !bg-transparent !text-primary-fixed-dim hover:!bg-emerald-900/25 focus:!ring-primary/30"
                 />
 
                 {/* Botão Emoji */}
@@ -2515,14 +2150,16 @@ export default function Conversations() {
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                   icon={<span className="text-2xl">😊</span>}
                   tooltip="Emojis"
+                  className="!border !border-[rgba(63,73,69,0.2)] !bg-transparent hover:!bg-emerald-900/25 focus:!ring-primary/30"
                 />
 
                 {/* Botão Upload */}
                 <IconButton
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingFile || sending}
-                  icon={<span className="text-xl">📎</span>}
+                  icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">attach_file</span>}
                   tooltip="Enviar arquivo"
+                  className="!border !border-[rgba(63,73,69,0.2)] !bg-transparent !text-primary-fixed-dim hover:!bg-emerald-900/25 focus:!ring-primary/30"
                 />
                 <input
                   ref={fileInputRef}
@@ -2537,8 +2174,9 @@ export default function Conversations() {
                   <IconButton
                     onClick={startRecording}
                     disabled={sending || uploadingFile}
-                    icon={<span className="text-xl">🎤</span>}
+                    icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">mic</span>}
                     tooltip="Gravar áudio"
+                    className="!border !border-[rgba(63,73,69,0.2)] !bg-transparent !text-primary-fixed-dim hover:!bg-emerald-900/25 focus:!ring-primary/30"
                   />
                 ) : (
                   <motion.button
@@ -2567,34 +2205,108 @@ export default function Conversations() {
                   onChange={(e) => setMessageInput(e.target.value)}
                   placeholder={recording ? "Gravando áudio..." : uploadingFile ? "Enviando arquivo..." : "Digite sua mensagem..."}
                   disabled={recording || uploadingFile}
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-full text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all disabled:opacity-60"
-                  whileFocus={{ scale: 1.02 }}
+                  className="min-w-0 flex-1 rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-lowest px-4 py-2.5 text-sm text-on-surface outline-none transition focus:border-primary/40 focus:ring-1 focus:ring-primary/30 disabled:opacity-60"
+                  whileFocus={{ scale: 1.01 }}
                 />
-                
-                <Button
+
+                <motion.button
                   type="submit"
-                  variant="primary"
                   disabled={(!messageInput.trim() && !recording && !uploadingFile) || sending || uploadingFile}
-                  className="px-6 py-3 rounded-full font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex min-w-[3rem] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-on-primary shadow-emerald-send transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 active-gradient-emerald hover:brightness-110"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
                 >
-                  {sending ? 'Enviando...' : uploadingFile ? 'Enviando...' : recording ? 'Gravando...' : 'Enviar'}
-                </Button>
+                  {sending || uploadingFile ? (
+                    <span className="max-w-[4.5rem] truncate text-center text-[11px] font-bold leading-tight">
+                      Enviando…
+                    </span>
+                  ) : recording ? (
+                    <span className="max-w-[4.5rem] truncate text-center text-[11px] font-bold leading-tight">
+                      Gravando…
+                    </span>
+                  ) : (
+                    <span
+                      className="material-symbols-outlined text-[22px]"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      send
+                    </span>
+                  )}
+                </motion.button>
               </motion.form>
             </div>
           </div>
+
+            <aside className="conv-no-scrollbar hidden w-80 shrink-0 flex-col overflow-y-auto border-l border-primary/10 bg-surface-container-low lg:flex">
+              <div className="flex flex-col items-center px-6 py-8 text-center">
+                <div className="relative mb-4 h-24 w-24 rounded-full border-4 border-primary/15 p-0.5 shadow-forest-glow">
+                  <img
+                    src={getContactAvatar(selectedConversation.contact, 96)}
+                    alt={selectedConversation.contact.name}
+                    className="h-full w-full rounded-full object-cover"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = getAvatarUrl(selectedConversation.contact.name, 96);
+                    }}
+                  />
+                  <span className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-4 border-surface-container-low bg-primary" aria-hidden />
+                </div>
+                <h3 className="font-headline text-lg font-bold text-on-surface">
+                  {selectedConversation.contact.name}
+                </h3>
+                <p className="mb-6 text-xs font-semibold text-primary/70">
+                  {(selectedConversation.channel?.name || 'Canal')} • {selectedConversation.contact.phone || '—'}
+                </p>
+                <div className="w-full space-y-5 text-left">
+                  <div>
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary/50">Contato</p>
+                    <div className="flex items-center gap-2 text-sm text-on-surface">
+                      <span className="material-symbols-outlined text-base text-primary-fixed-dim">call</span>
+                      <span>{selectedConversation.contact.phone || '—'}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary/50">Segmentação</p>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full border border-primary/20 bg-primary-container px-3 py-1 text-[10px] font-bold text-on-secondary-container">
+                        {selectedConversation.status}
+                      </span>
+                      <span className="rounded-full border border-[rgba(63,73,69,0.2)] bg-surface-container-highest px-3 py-1 text-[10px] font-bold text-on-surface-variant">
+                        {selectedConversation.channel?.type || 'CANAL'}
+                      </span>
+                      {selectedConversation.inBot && (
+                        <span className="rounded-full border border-primary/20 bg-emerald-950/40 px-3 py-1 text-[10px] font-bold text-primary">
+                          BOT ATIVO
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 border-t border-primary/10 pt-4">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary/50">Ações rápidas</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowTransferModal(true)}
+                      className="group flex w-full items-center justify-between rounded-xl border border-[rgba(63,73,69,0.2)] bg-emerald-950/20 p-3 text-left text-sm text-on-surface transition hover:bg-emerald-900/25"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary-fixed-dim">swap_horiz</span>
+                        Transferir conversa
+                      </span>
+                      <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary">chevron_right</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
         ) : (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              color: '#6b7280',
-            }}
-          >
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: '18px', marginBottom: '8px' }}>Selecione uma conversa</p>
-              <p style={{ fontSize: '14px' }}>Escolha uma conversa da lista para começar a conversar</p>
+          <div className="flex flex-1 flex-col items-center justify-center px-6 text-on-surface-variant">
+            <div className="max-w-sm text-center">
+              <span className="material-symbols-outlined mb-3 text-4xl text-primary/40">forum</span>
+              <p className="font-headline text-lg font-bold text-on-surface">Selecione uma conversa</p>
+              <p className="mt-2 text-sm text-on-surface-variant">
+                Escolha uma conversa na lista para visualizar mensagens e responder.
+              </p>
             </div>
           </div>
         )}
@@ -2613,47 +2325,20 @@ export default function Conversations() {
       {/* Modal de Transferência */}
       {showTransferModal && selectedConversation && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 2000,
-          }}
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={() => setShowTransferModal(false)}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '12px',
-              width: '90%',
-              maxWidth: '500px',
-              padding: '24px',
-            }}
+            className="w-[90%] max-w-lg rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 p-6 shadow-forest-glow backdrop-blur-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px' }}>Transferir Conversa</h2>
-            <p style={{ color: '#6b7280', marginBottom: '20px' }}>
+            <h2 className="font-headline mb-4 text-lg font-bold text-on-surface">Transferir Conversa</h2>
+            <p className="mb-5 text-sm text-on-surface-variant">
               Selecione o setor para transferir a conversa:
             </p>
-            <div
-              style={{
-                maxHeight: '300px',
-                overflowY: 'auto',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                padding: '10px',
-              }}
-            >
+            <div className="max-h-[300px] overflow-y-auto rounded-md bg-surface-container-lowest/80 p-2.5">
               {sectors.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#6b7280', padding: '20px' }}>
-                  Carregando setores...
-                </p>
+                <p className="py-5 text-center text-sm text-on-surface-variant">Carregando setores...</p>
               ) : (
                 sectors.map((sector: any) => (
                   <div
@@ -2673,35 +2358,18 @@ export default function Conversations() {
                         alert(error.response?.data?.error || 'Erro ao transferir conversa');
                       }
                     }}
+                    className="mb-2 cursor-pointer rounded-md border border-[rgba(63,73,69,0.2)] p-3 transition-colors hover:bg-emerald-900/20"
                     style={{
-                      padding: '12px',
-                      marginBottom: '8px',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      transition: 'background-color 0.2s',
-                      border: '1px solid #e5e7eb',
-                      backgroundColor: `${sector.color || '#3b82f6'}10`,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = `${sector.color || '#3b82f6'}20`;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = `${sector.color || '#3b82f6'}10`;
+                      backgroundColor: `${sector.color || '#10b981'}18`,
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="flex items-center justify-between">
                       <div>
-                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{sector.name}</div>
+                        <div className="text-sm font-semibold text-on-surface">{sector.name}</div>
                       </div>
                       <span
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: '999px',
-                          fontSize: '11px',
-                          fontWeight: '700',
-                          backgroundColor: sector.color || '#3b82f6',
-                          color: 'white',
-                        }}
+                        className="rounded-full px-2 py-0.5 text-[11px] font-bold text-on-primary"
+                        style={{ backgroundColor: sector.color || '#10b981' }}
                       >
                         Setor
                       </span>
@@ -2710,18 +2378,11 @@ export default function Conversations() {
                 ))
               )}
             </div>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+            <div className="mt-5 flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => setShowTransferModal(false)}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#e5e7eb',
-                  color: '#374151',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                }}
+                className="rounded-lg border border-[rgba(63,73,69,0.2)] bg-surface-container-highest px-5 py-2.5 text-sm font-semibold text-on-surface transition hover:bg-surface-variant"
               >
                 Cancelar
               </button>
@@ -2733,18 +2394,7 @@ export default function Conversations() {
       {/* Modal de Nova Conversa */}
       {showNewConversationModal && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000,
-          }}
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={() => {
             if (!loadingNewConversation) {
               setShowNewConversationModal(false);
@@ -2753,46 +2403,22 @@ export default function Conversations() {
           }}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '12px',
-              padding: '30px',
-              width: '90%',
-              maxWidth: '400px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-            }}
+            className="w-[90%] max-w-md rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 p-8 shadow-forest-glow backdrop-blur-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '20px', fontWeight: '600' }}>
-              📞 Iniciar Nova Conversa
+            <h3 className="font-headline mb-5 text-xl font-bold text-on-surface">
+              Iniciar nova conversa
             </h3>
 
-            {/* Display do Número */}
-            <div
-              style={{
-                padding: '20px',
-                backgroundColor: '#f3f4f6',
-                borderRadius: '8px',
-                marginBottom: '20px',
-                textAlign: 'center',
-                fontSize: '24px',
-                fontWeight: '600',
-                letterSpacing: '2px',
-                minHeight: '50px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: 'monospace',
-              }}
-            >
+            <div className="mb-5 flex min-h-[52px] items-center justify-center rounded-lg bg-surface-container-lowest px-4 py-5 text-center font-mono text-2xl font-semibold tracking-widest text-on-surface">
               {phoneNumber || 'Digite o número...'}
             </div>
 
-            {/* Teclado Numérico */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
+            <div className="mb-5 grid grid-cols-3 gap-2.5">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', '⌫'].map((key) => (
                 <button
                   key={key}
+                  type="button"
                   onClick={() => {
                     if (key === '⌫') {
                       handleBackspace();
@@ -2801,86 +2427,44 @@ export default function Conversations() {
                     }
                   }}
                   disabled={loadingNewConversation}
-                  style={{
-                    padding: '20px',
-                    fontSize: '20px',
-                    fontWeight: '600',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    backgroundColor: key === '⌫' ? '#ef4444' : key === '+' ? '#3b82f6' : 'white',
-                    color: key === '⌫' || key === '+' ? 'white' : '#111827',
-                    cursor: loadingNewConversation ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseDown={(e) => {
-                    if (!loadingNewConversation) {
-                      e.currentTarget.style.transform = 'scale(0.95)';
-                    }
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                  }}
+                  className={`rounded-lg border-2 p-5 text-xl font-semibold transition ${
+                    key === '⌫'
+                      ? 'border-error-container bg-error-container text-on-error'
+                      : key === '+'
+                      ? 'border-primary bg-primary text-on-primary'
+                      : 'border-[rgba(63,73,69,0.2)] bg-surface-container-low text-on-surface hover:bg-emerald-900/15'
+                  } ${loadingNewConversation ? 'cursor-not-allowed opacity-60' : 'cursor-pointer active:scale-95'}`}
                 >
                   {key}
                 </button>
               ))}
             </div>
 
-            {/* Botões de Ação */}
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="flex flex-wrap gap-2.5">
               <button
+                type="button"
                 onClick={handleClear}
                 disabled={loadingNewConversation || !phoneNumber}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: '#6b7280',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: loadingNewConversation || !phoneNumber ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                }}
+                className="flex-1 min-w-[5rem] rounded-lg bg-surface-container-highest px-3 py-3 text-sm font-medium text-on-surface ring-1 ring-[rgba(63,73,69,0.2)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Limpar
               </button>
               <button
+                type="button"
                 onClick={handleStartNewConversation}
                 disabled={loadingNewConversation || !phoneNumber || phoneNumber.replace(/\D/g, '').length < 10}
-                style={{
-                  flex: 2,
-                  padding: '12px',
-                  backgroundColor: loadingNewConversation || !phoneNumber || phoneNumber.replace(/\D/g, '').length < 10 ? '#9ca3af' : '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: loadingNewConversation || !phoneNumber || phoneNumber.replace(/\D/g, '').length < 10 ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                }}
+                className="min-w-[8rem] flex-[2] rounded-lg px-3 py-3 text-sm font-bold text-on-primary active-gradient-emerald shadow-emerald-send disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
-                {loadingNewConversation ? '⏳ Iniciando...' : '✅ Iniciar Conversa'}
+                {loadingNewConversation ? '⏳ Iniciando...' : '✅ Iniciar conversa'}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   setShowNewConversationModal(false);
                   setPhoneNumber('');
                 }}
                 disabled={loadingNewConversation}
-                style={{
-                  padding: '12px 20px',
-                  backgroundColor: '#e5e7eb',
-                  color: '#374151',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: loadingNewConversation ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                }}
+                className="rounded-lg border border-[rgba(63,73,69,0.2)] bg-surface-container-low px-5 py-3 text-sm font-medium text-on-surface-variant disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancelar
               </button>

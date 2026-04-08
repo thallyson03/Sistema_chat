@@ -17,14 +17,14 @@ export function Button({
   children,
   ...props
 }: ButtonProps) {
-  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface disabled:opacity-50 disabled:cursor-not-allowed';
   
   const variants = {
-    primary: 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white focus:ring-blue-500 shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40',
-    secondary: 'bg-gradient-to-r from-slate-200 to-slate-100 hover:from-slate-300 hover:to-slate-200 text-slate-900 focus:ring-slate-500 shadow-sm hover:shadow',
-    danger: 'bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white focus:ring-red-500 shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40',
-    ghost: 'bg-transparent hover:bg-slate-100 text-slate-700 focus:ring-slate-500',
-    outline: 'border-2 border-slate-300 hover:border-slate-400 bg-white text-slate-700 focus:ring-slate-500 hover:bg-slate-50',
+    primary: 'active-gradient-emerald text-on-primary focus:ring-primary shadow-emerald-send hover:brightness-110',
+    secondary: 'bg-surface-container-highest text-on-surface focus:ring-primary/40 hover:bg-surface-variant',
+    danger: 'bg-error-container text-on-error focus:ring-red-500 hover:brightness-110',
+    ghost: 'bg-transparent text-on-surface-variant focus:ring-primary/40 hover:bg-surface-container-highest hover:text-on-surface',
+    outline: 'border border-[rgba(63,73,69,0.35)] bg-transparent text-on-surface focus:ring-primary/40 hover:bg-surface-container-highest',
   };
 
   const sizes = {

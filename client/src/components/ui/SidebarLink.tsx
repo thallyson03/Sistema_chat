@@ -21,20 +21,20 @@ export function SidebarLink({ to, children, icon }: SidebarLinkProps) {
       <Link
         to={to}
         className={`
-          relative flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group
+          relative flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group
           ${isActive 
-            ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30' 
-            : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
+            ? 'bg-emerald-900/35 text-primary-fixed-dim font-semibold' 
+            : 'text-on-surface-variant hover:bg-emerald-900/20 hover:text-on-surface'
           }
         `}
       >
         {icon && (
-          <span className="text-lg flex-shrink-0 group-hover:scale-110 transition-transform">{icon}</span>
+          <span className="text-lg flex-shrink-0 text-primary-fixed-dim group-hover:scale-110 transition-transform">{icon}</span>
         )}
         <span className="font-medium text-sm">{children}</span>
         {isActive && (
           <motion.div
-            className="absolute left-0 top-0 bottom-0 w-1 bg-white rounded-r-full shadow-lg"
+            className="absolute left-0 top-1 bottom-1 w-1 bg-primary rounded-r-full"
             layoutId="activeIndicator"
             initial={false}
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
@@ -42,7 +42,7 @@ export function SidebarLink({ to, children, icon }: SidebarLinkProps) {
         )}
         {!isActive && (
           <motion.div
-            className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-600/0 to-blue-600/0 group-hover:from-blue-600/10 group-hover:to-blue-600/5 transition-all duration-200"
+            className="absolute inset-0 rounded-lg bg-gradient-to-r from-emerald-900/0 to-emerald-900/0 group-hover:from-emerald-900/20 group-hover:to-emerald-900/5 transition-all duration-200"
           />
         )}
       </Link>
