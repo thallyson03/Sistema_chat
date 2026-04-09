@@ -176,4 +176,23 @@
     background-color: #1a1c1a;
     color: #e5e7eb;
   }
+
+  /* Bots — modal com campos no tema escuro */
+  .bot-modal input[type='text'],
+  .bot-modal input[type='number'],
+  .bot-modal input[type='email'],
+  .bot-modal select,
+  .bot-modal textarea {
+    background-color: #121412 !important;
+    color: #e5e7eb !important;
+    border: 1px solid rgba(63, 73, 69, 0.65) !important;
+  }
+  .bot-modal input::placeholder,
+  .bot-modal textarea::placeholder {
+    color: #9ca3af !important;
+  }
+  .bot-modal option {
+    background-color: #1a1c1a;
+    color: #e5e7eb;
+  }
 }

@@ -181,126 +181,85 @@ export default function Bots() {
   };
 
   if (loading) {
-    return <div style={{ padding: '20px' }}>Carregando...</div>;
+    return <div className="p-5 text-on-surface-variant">Carregando...</div>;
   }
 
   return (
-    <div style={{ padding: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1>Chatbots</h1>
+    <div className="mx-auto max-w-7xl p-6 font-body text-on-surface">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-headline text-3xl font-bold text-on-surface">Chatbots</h1>
+          <p className="mt-1 text-sm text-on-surface-variant">Gerencie bots, fluxos visuais e variáveis por canal.</p>
+        </div>
         <button
           onClick={() => setShowModal(true)}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: 'bold',
-          }}
+          className="primary-gradient-channel rounded-lg px-4 py-2.5 text-sm font-bold text-[#003919] shadow-emerald-send transition hover:brightness-110"
         >
           + Novo Bot
         </button>
       </div>
 
       {bots.length === 0 ? (
-        <div style={{ 
-          textAlign: 'center', 
-          padding: '40px', 
-          backgroundColor: 'white', 
-          borderRadius: '8px',
-          border: '2px dashed #d1d5db',
-        }}>
-          <p style={{ color: '#6b7280', marginBottom: '20px' }}>Nenhum bot criado</p>
+        <div className="rounded-xl border-2 border-dashed border-outline-variant bg-surface-container-low py-10 text-center">
+          <p className="mb-5 text-on-surface-variant">Nenhum bot criado</p>
           <button
             onClick={() => setShowModal(true)}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-            }}
+            className="primary-gradient-channel rounded-lg px-4 py-2 text-sm font-bold text-[#003919] shadow-emerald-send transition hover:brightness-110"
           >
             Criar Primeiro Bot
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: '20px' }}>
+        <div className="grid gap-4">
           {bots.map((bot) => (
             <div
               key={bot.id}
-              style={{
-                backgroundColor: 'white',
-                padding: '20px',
-                borderRadius: '8px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                border: '1px solid #e5e7eb',
-              }}
+              className="rounded-xl border border-outline-variant bg-surface-container-low p-5 shadow-forest-glow"
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                    <h3 style={{ margin: 0, fontSize: '18px' }}>{bot.name}</h3>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <div className="mb-2.5 flex items-center gap-2.5">
+                    <h3 className="m-0 text-lg font-semibold text-on-surface">{bot.name}</h3>
                     <span
-                      style={{
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        backgroundColor: bot.isActive ? '#10b981' : '#ef4444',
-                        color: 'white',
-                        fontWeight: 'bold',
-                      }}
+                      className={`rounded-md px-2 py-0.5 text-xs font-semibold ${
+                        bot.isActive
+                          ? 'border border-primary/25 bg-primary/20 text-primary-fixed-dim'
+                          : 'border border-red-500/25 bg-red-500/10 text-red-300'
+                      }`}
                     >
                       {bot.isActive ? 'Ativo' : 'Pausado'}
                     </span>
                   </div>
                   {bot.description && (
-                    <p style={{ margin: '5px 0', color: '#6b7280', fontSize: '14px' }}>{bot.description}</p>
+                    <p className="my-1 text-sm text-on-surface-variant">{bot.description}</p>
                   )}
                   {bot.channel && (
-                    <p style={{ margin: '5px 0', color: '#6b7280', fontSize: '14px' }}>
-                      <strong>Canal:</strong> {bot.channel.name} ({bot.channel.type})
+                    <p className="my-1 text-sm text-on-surface-variant">
+                      <strong className="text-on-surface">Canal:</strong> {bot.channel.name} ({bot.channel.type})
                     </p>
                   )}
                   {bot._count && (
-                    <div style={{ display: 'flex', gap: '15px', marginTop: '10px', fontSize: '13px', color: '#6b7280' }}>
-                      <span><strong>{bot._count.intents}</strong> Intents</span>
-                      <span><strong>{bot._count.flows}</strong> Fluxos</span>
-                      <span><strong>{bot._count.sessions}</strong> Sessões</span>
+                    <div className="mt-2.5 flex gap-4 text-xs text-on-surface-variant">
+                      <span><strong className="text-primary-fixed-dim">{bot._count.intents}</strong> Intents</span>
+                      <span><strong className="text-primary-fixed-dim">{bot._count.flows}</strong> Fluxos</span>
+                      <span><strong className="text-primary-fixed-dim">{bot._count.sessions}</strong> Sessões</span>
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+                <div className="flex flex-col gap-2">
                   <button
                     onClick={() => handleToggleBotActive(bot)}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: bot.isActive ? '#f59e0b' : '#10b981',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                      bot.isActive
+                        ? 'border border-amber-500/25 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+                        : 'border border-primary/25 bg-primary/10 text-primary-fixed-dim hover:bg-primary/20'
+                    }`}
                   >
                     {bot.isActive ? 'Pausar Bot' : 'Retomar Bot'}
                   </button>
                   <button
                     onClick={() => navigate(`/bots/${bot.id}/flows/visual`)}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#3b82f6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      fontWeight: 'bold',
-                    }}
+                    className="rounded-md border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary-fixed-dim transition hover:bg-primary/20"
                   >
                     🎨 Criar Fluxo Visual
                   </button>
@@ -310,43 +269,19 @@ export default function Bots() {
                       setShowVariablesModal(true);
                       fetchVariables(bot.id);
                     }}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#8b5cf6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
+                    className="rounded-md border border-violet-500/25 bg-violet-500/10 px-3 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/20"
                   >
                     📊 Variáveis
                   </button>
                   <button
                     onClick={() => navigate(`/bots/${bot.id}`)}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#6b7280',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
+                    className="rounded-md border border-outline-variant bg-surface-container-highest px-3 py-1.5 text-xs font-semibold text-on-surface-variant transition hover:bg-surface-container"
                   >
                     Ver Detalhes
                   </button>
                   <button
                     onClick={() => handleDeleteBot(bot.id, bot.name)}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
+                    className="rounded-md border border-red-500/25 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/20"
                   >
                     Deletar
                   </button>
@@ -360,31 +295,14 @@ export default function Bots() {
       {/* Modal Criar Bot */}
       {showModal && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => setShowModal(false)}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              padding: '30px',
-              borderRadius: '8px',
-              maxWidth: '500px',
-              width: '90%',
-            }}
+            className="bot-modal max-h-[90vh] w-[90%] max-w-[540px] overflow-y-auto rounded-xl border border-outline-variant bg-surface-container-highest p-6 text-on-surface shadow-forest-glow"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px' }}>Novo Bot</h2>
+            <h2 className="mb-5 mt-0 font-headline text-xl font-bold text-on-surface">Novo Bot</h2>
             <form onSubmit={handleCreateBot}>
               <div style={{ marginBottom: '15px' }}>
                 <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '14px' }}>
@@ -431,18 +349,18 @@ export default function Bots() {
                   Canal *
                 </label>
                 {channels.length === 0 ? (
-                  <div style={{ 
+                  <div style={{
                     padding: '15px', 
-                    backgroundColor: '#fef3c7', 
+                    backgroundColor: 'rgba(245, 158, 11, 0.12)', 
                     borderRadius: '5px',
-                    border: '1px solid #fbbf24',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
                     marginBottom: '10px',
                   }}>
-                    <p style={{ margin: 0, fontSize: '13px', color: '#92400e' }}>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#fde68a' }}>
                       ⚠️ Nenhum canal disponível. 
                       <a 
                         href="/channels" 
-                        style={{ color: '#3b82f6', textDecoration: 'underline', marginLeft: '5px' }}
+                        style={{ color: '#66dd8b', textDecoration: 'underline', marginLeft: '5px' }}
                       >
                         Crie um canal primeiro
                       </a>
@@ -460,8 +378,9 @@ export default function Bots() {
                     border: '1px solid #d1d5db',
                     borderRadius: '5px',
                     fontSize: '14px',
-                    backgroundColor: channels.length === 0 ? '#f3f4f6' : 'white',
+                    backgroundColor: channels.length === 0 ? '#1f231f' : '#121412',
                     cursor: channels.length === 0 ? 'not-allowed' : 'pointer',
+                    color: '#e5e7eb',
                   }}
                 >
                   <option value="">Selecione um canal</option>
@@ -486,7 +405,8 @@ export default function Bots() {
                     border: '1px solid #d1d5db',
                     borderRadius: '5px',
                     fontSize: '14px',
-                    backgroundColor: 'white',
+                    backgroundColor: '#121412',
+                    color: '#e5e7eb',
                   }}
                 >
                   <option value="">Usar fallback do canal</option>
@@ -499,7 +419,7 @@ export default function Bots() {
               </div>
 
               {/* Configuração de encerramento automático */}
-              <div style={{ marginBottom: '15px', padding: '12px', borderRadius: '6px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb' }}>
+              <div style={{ marginBottom: '15px', padding: '12px', borderRadius: '6px', backgroundColor: 'rgba(46,49,46,0.55)', border: '1px solid rgba(63,73,69,0.55)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '14px', marginBottom: '8px' }}>
                   <input
                     type="checkbox"
@@ -563,7 +483,7 @@ export default function Bots() {
                         }}
                         required
                       />
-                      <small style={{ color: '#6b7280', fontSize: '12px' }}>
+                      <small style={{ color: '#9ca3af', fontSize: '12px' }}>
                         Você pode usar variáveis do bot, por exemplo: {'{{Nome}}'}.
                       </small>
                     </div>
@@ -577,8 +497,8 @@ export default function Bots() {
                   onClick={() => setShowModal(false)}
                   style={{
                     padding: '10px 20px',
-                    backgroundColor: '#6b7280',
-                    color: 'white',
+                    backgroundColor: '#2e312e',
+                    color: '#e5e7eb',
                     border: 'none',
                     borderRadius: '5px',
                     cursor: 'pointer',
@@ -592,8 +512,8 @@ export default function Bots() {
                   disabled={submitting}
                   style={{
                     padding: '10px 20px',
-                    backgroundColor: submitting ? '#9ca3af' : '#3b82f6',
-                    color: 'white',
+                    background: submitting ? '#4b5563' : 'linear-gradient(135deg, #66dd8b 0%, #34d399 100%)',
+                    color: submitting ? '#d1d5db' : '#003919',
                     border: 'none',
                     borderRadius: '5px',
                     cursor: submitting ? 'not-allowed' : 'pointer',
@@ -612,18 +532,7 @@ export default function Bots() {
       {/* Modal de Variáveis */}
       {showVariablesModal && selectedBotId && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => {
             setShowVariablesModal(false);
             setShowVariableForm(false);
@@ -631,19 +540,11 @@ export default function Bots() {
           }}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              padding: '30px',
-              borderRadius: '8px',
-              maxWidth: '700px',
-              width: '90%',
-              maxHeight: '90vh',
-              overflow: 'auto',
-            }}
+            className="bot-modal max-h-[90vh] w-[90%] max-w-[700px] overflow-auto rounded-xl border border-outline-variant bg-surface-container-highest p-6 text-on-surface shadow-forest-glow"
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0 }}>Variáveis do Bot</h2>
+              <h2 style={{ margin: 0, color: '#e5e7eb' }}>Variáveis do Bot</h2>
               <button
                 onClick={() => {
                   setShowVariablesModal(false);
@@ -655,7 +556,7 @@ export default function Bots() {
                   border: 'none',
                   fontSize: '24px',
                   cursor: 'pointer',
-                  color: '#6b7280',
+                  color: '#9ca3af',
                 }}
               >
                 ×
@@ -678,8 +579,8 @@ export default function Bots() {
                   }}
                   style={{
                     padding: '10px 20px',
-                    backgroundColor: '#10b981',
-                    color: 'white',
+                    background: 'linear-gradient(135deg, #66dd8b 0%, #34d399 100%)',
+                    color: '#003919',
                     border: 'none',
                     borderRadius: '5px',
                     cursor: 'pointer',
@@ -692,7 +593,7 @@ export default function Bots() {
                 </button>
 
                 {variables.length === 0 ? (
-                  <p style={{ color: '#6b7280', textAlign: 'center', padding: '40px' }}>
+                  <p style={{ color: '#9ca3af', textAlign: 'center', padding: '40px' }}>
                     Nenhuma variável criada. Use variáveis em mensagens com: {'{{nomeVariavel}}'}
                   </p>
                 ) : (
@@ -702,8 +603,9 @@ export default function Bots() {
                         key={variable.id}
                         style={{
                           padding: '15px',
-                          border: '1px solid #e5e7eb',
+                          border: '1px solid rgba(63,73,69,0.55)',
                           borderRadius: '5px',
+                          backgroundColor: 'rgba(46,49,46,0.45)',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
@@ -717,8 +619,8 @@ export default function Bots() {
                                 padding: '2px 8px',
                                 borderRadius: '3px',
                                 fontSize: '11px',
-                                backgroundColor: variable.isGlobal ? '#3b82f6' : '#6b7280',
-                                color: 'white',
+                                backgroundColor: variable.isGlobal ? 'rgba(102,221,139,0.16)' : 'rgba(156,163,175,0.16)',
+                                color: variable.isGlobal ? '#a7f3d0' : '#d1d5db',
                               }}
                             >
                               {variable.isGlobal ? 'Global' : 'Sessão'}
@@ -728,15 +630,15 @@ export default function Bots() {
                                 padding: '2px 8px',
                                 borderRadius: '3px',
                                 fontSize: '11px',
-                                backgroundColor: '#f3f4f6',
-                                color: '#374151',
+                                backgroundColor: 'rgba(63,73,69,0.35)',
+                                color: '#cbd5e1',
                               }}
                             >
                               {variable.type}
                             </span>
                           </div>
                           {variable.description && (
-                            <p style={{ margin: '5px 0', color: '#6b7280', fontSize: '13px' }}>{variable.description}</p>
+                            <p style={{ margin: '5px 0', color: '#9ca3af', fontSize: '13px' }}>{variable.description}</p>
                           )}
                           {variable.defaultValue && (
                             <p style={{ margin: '5px 0', color: '#9ca3af', fontSize: '12px' }}>
@@ -759,8 +661,8 @@ export default function Bots() {
                             }}
                             style={{
                               padding: '6px 12px',
-                              backgroundColor: '#3b82f6',
-                              color: 'white',
+                              backgroundColor: 'rgba(102,221,139,0.14)',
+                              color: '#a7f3d0',
                               border: 'none',
                               borderRadius: '4px',
                               cursor: 'pointer',
@@ -782,8 +684,8 @@ export default function Bots() {
                             }}
                             style={{
                               padding: '6px 12px',
-                              backgroundColor: '#ef4444',
-                              color: 'white',
+                              backgroundColor: 'rgba(239,68,68,0.16)',
+                              color: '#fca5a5',
                               border: 'none',
                               borderRadius: '4px',
                               cursor: 'pointer',
@@ -837,7 +739,7 @@ export default function Bots() {
                       required
                       style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
                     />
-                    <small style={{ color: '#6b7280' }}>Use em mensagens: {'{{' + variableFormData.name + '}}'}</small>
+                    <small style={{ color: '#9ca3af' }}>Use em mensagens: {'{{' + variableFormData.name + '}}'}</small>
                   </div>
 
                   <div style={{ marginBottom: '15px' }}>
@@ -897,8 +799,8 @@ export default function Bots() {
                       }}
                       style={{
                         padding: '10px 20px',
-                        backgroundColor: '#6b7280',
-                        color: 'white',
+                        backgroundColor: '#2e312e',
+                        color: '#e5e7eb',
                         border: 'none',
                         borderRadius: '5px',
                         cursor: 'pointer',
@@ -910,8 +812,8 @@ export default function Bots() {
                       type="submit"
                       style={{
                         padding: '10px 20px',
-                        backgroundColor: '#10b981',
-                        color: 'white',
+                        background: 'linear-gradient(135deg, #66dd8b 0%, #34d399 100%)',
+                        color: '#003919',
                         border: 'none',
                         borderRadius: '5px',
                         cursor: 'pointer',

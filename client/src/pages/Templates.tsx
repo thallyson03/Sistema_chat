@@ -24,6 +24,12 @@ interface Channel {
   config?: any;
 }
 
+function statusClasses(status?: string) {
+  if (status === 'APPROVED') return 'bg-emerald-900/35 text-primary-fixed-dim border border-primary/25';
+  if (status === 'REJECTED') return 'bg-red-900/35 text-red-300 border border-red-500/25';
+  return 'bg-amber-900/30 text-amber-200 border border-amber-500/25';
+}
+
 export default function Templates() {
   const [templates, setTemplates] = useState<WhatsappTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -178,27 +184,27 @@ export default function Templates() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/60">
-      <div className="max-w-6xl mx-auto px-6 py-6">
+    <div className="min-h-[calc(100vh-60px)] bg-surface font-body text-on-surface">
+      <div className="mx-auto max-w-7xl px-6 py-6">
         {/* Cabeçalho */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Templates WhatsApp</h1>
-            <p className="text-sm text-slate-500 mt-1 max-w-2xl">
+            <h1 className="font-headline text-3xl font-bold text-on-surface">Templates de WhatsApp</h1>
+            <p className="mt-1 max-w-2xl text-sm text-on-surface-variant">
               Gerencie os templates aprovados pela Meta para iniciar conversas fora da janela de
               24h. A criação aqui envia o template para aprovação; o status final (APROVADO/REJEITADO)
               é definido pela Meta.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
+          <div className="flex items-end gap-3">
+            <div className="min-w-[260px]">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
                 Canal WhatsApp Official
               </label>
               <select
                 value={selectedChannelId}
                 onChange={(e) => setSelectedChannelId(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 min-w-[220px]"
+                className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
               >
                 {loadingChannels ? (
                   <option value="">Carregando canais...</option>
@@ -224,81 +230,102 @@ export default function Templates() {
                 setError(null);
               }}
               disabled={!selectedChannelId}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="primary-gradient-channel inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-[#003919] shadow-emerald-send transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span>+ Novo template</span>
             </button>
           </div>
         </div>
 
+        {/* Filtros rápidos */}
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2">
+          <span className="rounded-md bg-primary/20 px-2.5 py-1 text-xs font-semibold text-primary-fixed-dim">
+            Todos
+          </span>
+          <span className="rounded-md bg-surface-container-highest px-2.5 py-1 text-xs text-on-surface-variant">
+            Marketing
+          </span>
+          <span className="rounded-md bg-surface-container-highest px-2.5 py-1 text-xs text-on-surface-variant">
+            Utilitários
+          </span>
+          <span className="rounded-md bg-surface-container-highest px-2.5 py-1 text-xs text-on-surface-variant">
+            Autenticação
+          </span>
+        </div>
+
         {/* Lista */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200">
-          <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-700">
+        <div className="rounded-xl border border-outline-variant bg-surface-container-low shadow-forest-glow">
+          <div className="flex items-center justify-between border-b border-outline-variant px-4 py-3">
+            <span className="text-sm font-medium text-on-surface">
               Templates cadastrados ({templates.length})
             </span>
             {loading && (
-              <span className="text-xs text-slate-400 animate-pulse">Carregando templates…</span>
+              <span className="animate-pulse text-xs text-on-surface-variant">Carregando templates…</span>
             )}
           </div>
 
           {error && (
-            <div className="px-4 py-2 bg-red-50 text-red-600 text-sm border-b border-red-100">
+            <div className="border-b border-red-500/20 bg-red-950/30 px-4 py-2 text-sm text-red-300">
               {error}
             </div>
           )}
 
-          <div className="divide-y divide-slate-100">
+          <div className="p-4">
             {templates.length === 0 && !loading ? (
-              <div className="px-4 py-10 text-center text-slate-400 text-sm">
+              <div className="px-4 py-10 text-center text-sm text-on-surface-variant">
                 Nenhum template encontrado. Clique em &quot;Novo template&quot; para cadastrar o
                 primeiro.
               </div>
             ) : (
-              templates.map((tpl) => (
-                <div
-                  key={tpl.id || `${tpl.name}-${tpl.language}`}
-                  className="px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
-                >
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-900">{tpl.name}</span>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">
-                        {tpl.language}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
-                      <span className="uppercase tracking-wide">
-                        Categoria: <strong className="font-semibold">{tpl.category}</strong>
-                      </span>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {templates.map((tpl) => (
+                  <div
+                    key={tpl.id || `${tpl.name}-${tpl.language}`}
+                    className="rounded-lg border border-outline-variant bg-surface-container-high p-4 transition-colors hover:border-primary/30"
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-lg font-bold text-on-surface">{tpl.name}</div>
+                        <div className="text-[11px] uppercase tracking-wider text-on-surface-variant">
+                          {tpl.category} • {tpl.language}
+                        </div>
+                      </div>
                       {tpl.status && (
                         <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                            tpl.status === 'APPROVED'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                              : tpl.status === 'REJECTED'
-                              ? 'bg-red-50 text-red-700 border border-red-100'
-                              : 'bg-amber-50 text-amber-700 border border-amber-100'
-                          }`}
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClasses(
+                            tpl.status,
+                          )}`}
                         >
                           {tpl.status}
                         </span>
                       )}
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTemplate(tpl)}
-                      disabled={!!deletingId && deletingId === (tpl.id || tpl.name)}
-                      className="px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {deletingId === (tpl.id || tpl.name) ? 'Removendo…' : 'Remover'}
-                    </button>
+                    <div className="mb-4 rounded-md border border-outline-variant bg-surface-container-lowest p-3 text-xs text-on-surface-variant">
+                      Template sincronizado com a API da Meta.
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <button
+                        type="button"
+                        className="rounded-md border border-primary/25 bg-primary/10 px-2.5 py-1.5 font-semibold text-primary-fixed-dim transition hover:bg-primary/20"
+                        disabled
+                        title="Ação visual no momento"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTemplate(tpl)}
+                        disabled={!!deletingId && deletingId === (tpl.id || tpl.name)}
+                        className="rounded-md border border-red-500/25 bg-red-500/10 px-2.5 py-1.5 font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingId === (tpl.id || tpl.name) ? 'Removendo…' : 'Remover'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -306,32 +333,32 @@ export default function Templates() {
 
       {/* Modal de criação */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 relative">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg rounded-xl border border-outline-variant bg-surface-container-highest p-6 text-on-surface shadow-forest-glow">
             <button
               type="button"
               onClick={() => setShowCreateModal(false)}
-              className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 text-sm"
+              className="absolute right-3 top-3 text-sm text-on-surface-variant transition hover:text-on-surface"
             >
               Fechar ✕
             </button>
 
-            <h2 className="text-lg font-semibold text-slate-900 mb-1">Novo template</h2>
-            <p className="text-xs text-slate-500 mb-4">
+            <h2 className="mb-1 text-lg font-semibold text-on-surface">Novo template</h2>
+            <p className="mb-4 text-xs text-on-surface-variant">
               Informe os dados básicos do template. O texto do corpo pode usar variáveis{' '}
-              <code className="px-1 py-0.5 bg-slate-100 rounded text-[11px]">{"{{1}}"}</code>,{' '}
-              <code className="px-1 py-0.5 bg-slate-100 rounded text-[11px]">{"{{2}}"}</code> etc.
+              <code className="rounded bg-surface-container-low px-1 py-0.5 text-[11px]">{"{{1}}"}</code>,{' '}
+              <code className="rounded bg-surface-container-low px-1 py-0.5 text-[11px]">{"{{2}}"}</code> etc.
             </p>
 
             {error && (
-              <div className="mb-3 px-3 py-2 bg-red-50 text-red-600 text-xs rounded border border-red-100">
+              <div className="mb-3 rounded border border-red-500/20 bg-red-950/30 px-3 py-2 text-xs text-red-300">
                 {error}
               </div>
             )}
 
             <form onSubmit={handleCreateTemplate} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
+                <label className="mb-1 block text-xs font-medium text-on-surface-variant">
                   Nome do template
                 </label>
                 <input
@@ -339,19 +366,19 @@ export default function Templates() {
                   value={form.name}
                   onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                   placeholder="ex: notificacao_status_pedido"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
                 />
               </div>
 
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="mb-1 block text-xs font-medium text-on-surface-variant">
                     Categoria
                   </label>
                   <select
                     value={form.category}
                     onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   >
                     <option value="UTILITY">UTILITÁRIO</option>
                     <option value="MARKETING">MARKETING</option>
@@ -360,11 +387,11 @@ export default function Templates() {
                   </select>
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Idioma</label>
+                  <label className="mb-1 block text-xs font-medium text-on-surface-variant">Idioma</label>
                   <select
                     value={form.language}
                     onChange={(e) => setForm((prev) => ({ ...prev, language: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   >
                     <option value="pt_BR">Português (Brasil)</option>
                     <option value="en_US">Inglês (EUA)</option>
@@ -374,7 +401,7 @@ export default function Templates() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
+                <label className="mb-1 block text-xs font-medium text-on-surface-variant">
                   Corpo da mensagem (BODY)
                 </label>
                 <textarea
@@ -382,7 +409,7 @@ export default function Templates() {
                   onChange={(e) => setForm((prev) => ({ ...prev, body: e.target.value }))}
                   rows={5}
                   placeholder="Olá {{1}}, sua solicitação {{2}} foi recebida."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 resize-none"
+                  className="w-full resize-none rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
                 />
               </div>
 
@@ -390,14 +417,14 @@ export default function Templates() {
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50"
+                  className="rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-sm text-on-surface-variant transition hover:bg-surface-container"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={creating}
-                  className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="primary-gradient-channel rounded-lg px-4 py-2 text-sm font-bold text-[#003919] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {creating ? 'Salvando…' : 'Criar template'}
                 </button>

@@ -1037,8 +1037,8 @@ export default function Conversations() {
       )}
 
       {/* Sidebar Esquerda - Lista de Conversas */}
-      <div className="flex w-[min(100%,20rem)] shrink-0 flex-col overflow-hidden bg-surface-container-low">
-        <div className="border-b border-primary/10 bg-surface-container-low px-4 py-5">
+      <div className="flex w-[min(100%,20rem)] shrink-0 flex-col overflow-hidden border-r border-primary/10 bg-surface-container">
+        <div className="border-b border-primary/10 bg-surface-container-high px-4 py-5">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="font-headline text-lg font-bold tracking-tight text-primary">Conversas</h2>
             <button
@@ -1108,11 +1108,11 @@ export default function Conversations() {
                           alt={conv.contact.name}
                           className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-primary/15"
                         />
-                        <h3 className="truncate font-headline text-sm font-bold text-on-surface">
+                        <h3 className="truncate font-headline text-sm font-bold text-primary-fixed-dim">
                           {conv.contact.name}
                         </h3>
                       </div>
-                      <p className="mb-1 truncate text-xs text-on-surface-variant">
+                      <p className="mb-1 truncate text-xs text-primary/80">
                         {(conv.channel?.name || 'Sem canal')} • {conv.contact.phone || 'Sem telefone'}
                       </p>
                       {conv.lastMessage && (
@@ -1120,12 +1120,12 @@ export default function Conversations() {
                           {conv.lastMessage}
                         </p>
                       )}
-                      <div className="text-[10px] uppercase tracking-wider text-on-surface-variant/80">
+                      <div className="text-[10px] uppercase tracking-wider text-primary/65">
                         {conv.lastCustomerMessageAt && (
-                          <div>Cliente: {getTimeAgo(conv.lastCustomerMessageAt)}</div>
+                          <div><span className="text-primary-fixed-dim">Cliente:</span> {getTimeAgo(conv.lastCustomerMessageAt)}</div>
                         )}
                         {conv.lastAgentMessageAt && (
-                          <div>Você: {getTimeAgo(conv.lastAgentMessageAt)}</div>
+                          <div><span className="text-primary-fixed-dim">Você:</span> {getTimeAgo(conv.lastAgentMessageAt)}</div>
                         )}
                       </div>
                     </div>
@@ -1143,7 +1143,7 @@ export default function Conversations() {
       </div>
 
       {/* Área Direita - Chat + painel */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-dim">
         {selectedConversation ? (
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1164,7 +1164,7 @@ export default function Conversations() {
 
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <h3 className="font-headline text-base font-bold text-on-surface">
+                    <h3 className="font-headline text-base font-bold text-primary-fixed-dim">
                       {selectedConversation.contact.name}
                     </h3>
                     <span
@@ -1187,7 +1187,7 @@ export default function Conversations() {
                         : 'Arquivada'}
                     </span>
                   </div>
-                  <p className="mt-0 text-xs text-on-surface-variant">
+                  <p className="mt-0 text-xs text-primary/80">
                     {(selectedConversation.channel?.name || 'Sem canal')} •{' '}
                     {selectedConversation.contact?.phone ||
                       selectedConversation.contact?.name ||
@@ -1331,7 +1331,7 @@ export default function Conversations() {
             </div>
 
             {/* Área de Mensagens */}
-            <div className="conv-no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface-container-lowest/40 p-5">
+            <div className="conv-no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface-container-lowest/70 p-5">
               {loadingMessages ? (
                 <div className="py-10 text-center text-sm text-on-surface-variant">
                   Carregando mensagens...
@@ -1339,7 +1339,7 @@ export default function Conversations() {
               ) : messages.length === 0 ? (
                 <div className="py-10 text-center text-on-surface-variant">
                   <p className="text-sm">Nenhuma mensagem ainda.</p>
-                  <p className="mt-2 text-xs text-outline">
+                  <p className="mt-2 text-xs text-primary/70">
                     Envie uma mensagem para começar a conversa.
                   </p>
                 </div>
@@ -2303,7 +2303,7 @@ export default function Conversations() {
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-on-surface-variant">
             <div className="max-w-sm text-center">
               <span className="material-symbols-outlined mb-3 text-4xl text-primary/40">forum</span>
-              <p className="font-headline text-lg font-bold text-on-surface">Selecione uma conversa</p>
+              <p className="font-headline text-lg font-bold text-primary-fixed-dim">Selecione uma conversa</p>
               <p className="mt-2 text-sm text-on-surface-variant">
                 Escolha uma conversa na lista para visualizar mensagens e responder.
               </p>

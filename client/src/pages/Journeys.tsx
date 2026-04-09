@@ -679,183 +679,183 @@ export default function Journeys() {
         </div>
 
         {/* Paleta lateral direita */}
-        <div className="pointer-events-auto absolute right-4 top-16 max-h-[85vh] w-80 overflow-y-auto rounded-xl border border-outline-variant bg-[rgba(40,42,40,0.85)] p-4 shadow-forest-glow backdrop-blur-xl">
+        <div className="pointer-events-auto absolute right-4 top-24 max-h-[80vh] w-80 overflow-y-auto rounded-xl border border-outline-variant bg-[rgba(40,42,40,0.85)] p-5 shadow-forest-glow backdrop-blur-xl">
           <h2 className="mb-2 font-headline text-base font-bold text-on-surface">Blocos</h2>
           <p className="mb-4 border-b border-outline-variant pb-3 text-xs text-on-surface-variant">
             💡 Arraste ou clique para adicionar
           </p>
 
-          <div className="mb-4">
+          <div className="mb-5">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">TRIGGERS</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2.5">
               <button
                 onClick={() => addNode('TRIGGER')}
-                className="flex flex-col items-center justify-center rounded-lg border border-[#66dd8b]/25 bg-[#66dd8b]/10 p-3 text-[#a7f3d0] transition-all hover:scale-[1.02] hover:border-[#66dd8b]/45 hover:bg-[#66dd8b]/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-[#66dd8b]/25 bg-[#66dd8b]/10 px-2.5 py-3.5 text-[#a7f3d0] transition-all hover:scale-[1.02] hover:border-[#66dd8b]/45 hover:bg-[#66dd8b]/18 hover:shadow-forest-glow"
                 title="Contato entra na jornada"
               >
-                <span className="text-lg mb-1">➕</span>
+                <span className="text-lg">➕</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Entra</span>
               </button>
             </div>
           </div>
 
-          <div className="mb-4">
+          <div className="mb-5">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">ACTIONS</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2.5">
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-secondary/25 bg-secondary/10 px-2.5 py-3.5 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Enviar mensagem WhatsApp"
               >
-                <span className="text-lg mb-1">💬</span>
+                <span className="text-lg">💬</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">WhatsApp</span>
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-secondary/25 bg-secondary/10 px-2.5 py-3.5 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Enviar email"
               >
-                <span className="text-lg mb-1">📧</span>
+                <span className="text-lg">📧</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Email</span>
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-secondary/25 bg-secondary/10 px-2.5 py-3.5 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Adicionar tag"
               >
-                <span className="text-lg mb-1">🏷️</span>
+                <span className="text-lg">🏷️</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Tag +</span>
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-secondary/25 bg-secondary/10 px-2.5 py-3.5 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Remover tag"
               >
-                <span className="text-lg mb-1">➖</span>
+                <span className="text-lg">➖</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Tag -</span>
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-secondary/25 bg-secondary/10 px-2.5 py-3.5 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Atualizar campo do contato"
               >
-                <span className="text-lg mb-1">📝</span>
+                <span className="text-lg">📝</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Campo</span>
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-secondary/25 bg-secondary/10 px-2.5 py-3.5 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Adicionar à lista"
               >
-                <span className="text-lg mb-1">📋</span>
+                <span className="text-lg">📋</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Lista +</span>
               </button>
               <button
                 onClick={() => addNode('ACTION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-secondary/25 bg-secondary/10 p-3 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-secondary/25 bg-secondary/10 px-2.5 py-3.5 text-secondary transition-all hover:scale-[1.02] hover:border-secondary/45 hover:bg-secondary/18 hover:shadow-forest-glow"
                 title="Criar ticket"
               >
-                <span className="text-lg mb-1">🎫</span>
+                <span className="text-lg">🎫</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Ticket</span>
               </button>
             </div>
           </div>
 
-          <div className="mb-4">
+          <div className="mb-5">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">CONDITIONS</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2.5">
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-3.5 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Se / então"
               >
-                <span className="text-lg mb-1">🔀</span>
+                <span className="text-lg">🔀</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Se/Então</span>
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-3.5 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Tem tag"
               >
-                <span className="text-lg mb-1">🏷️</span>
+                <span className="text-lg">🏷️</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Tag</span>
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-3.5 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Campo do contato"
               >
-                <span className="text-lg mb-1">📊</span>
+                <span className="text-lg">📊</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Campo</span>
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-3.5 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Data/Hora"
               >
-                <span className="text-lg mb-1">📅</span>
+                <span className="text-lg">📅</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Data</span>
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-3.5 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Recebeu mensagem"
               >
-                <span className="text-lg mb-1">💬</span>
+                <span className="text-lg">💬</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Mensagem</span>
               </button>
               <button
                 onClick={() => addNode('CONDITION')}
-                className="flex flex-col items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10 p-3 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-3.5 text-amber-100 transition-all hover:scale-[1.02] hover:border-amber-400/45 hover:bg-amber-500/18 hover:shadow-forest-glow"
                 title="Está na lista"
               >
-                <span className="text-lg mb-1">📋</span>
+                <span className="text-lg">📋</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Lista</span>
               </button>
             </div>
           </div>
 
-          <div className="mb-4">
+          <div className="mb-1">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">CONTROLS</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2.5">
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Esperar (delay)"
               >
-                <span className="text-lg mb-1">⏱️</span>
+                <span className="text-lg">⏱️</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Esperar</span>
               </button>
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Dividir tráfego (A/B)"
               >
-                <span className="text-lg mb-1">🔀</span>
+                <span className="text-lg">🔀</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">A/B</span>
               </button>
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Aguardar evento"
               >
-                <span className="text-lg mb-1">⏳</span>
+                <span className="text-lg">⏳</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Evento</span>
               </button>
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Loop / Repetir"
               >
-                <span className="text-lg mb-1">🔁</span>
+                <span className="text-lg">🔁</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Loop</span>
               </button>
               <button
                 onClick={() => addNode('CONTROL')}
-                className="flex flex-col items-center justify-center rounded-lg border border-violet-400/25 bg-violet-500/10 p-3 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
+                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Parar jornada"
               >
-                <span className="text-lg mb-1">🛑</span>
+                <span className="text-lg">🛑</span>
                 <span className="text-[10px] font-semibold text-center leading-tight">Parar</span>
               </button>
             </div>

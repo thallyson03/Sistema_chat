@@ -181,67 +181,37 @@ export default function Pipelines() {
 
   if (loading) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
+      <div className="flex h-[calc(100vh-60px)] items-center justify-center bg-surface font-body text-on-surface-variant">
         Carregando pipelines...
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '20px', height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>Pipelines</h1>
-        <div style={{ display: 'flex', gap: '10px' }}>
+    <div className="flex h-[calc(100vh-60px)] flex-col bg-surface px-5 py-5 font-body text-on-surface">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-primary/60">CRM</p>
+          <h1 className="m-0 font-headline text-3xl font-bold text-on-surface">Pipeline de Vendas</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           {selectedPipeline && (
             <>
               <button
                 onClick={() => setShowEditModal(true)}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#f59e0b',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
+                className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/20"
               >
                 ✏️ Editar funil
               </button>
               <button
                 onClick={() => setShowAutomationModal(true)}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
+                className="rounded-lg border border-primary/25 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary-fixed-dim transition hover:bg-primary/20"
               >
                 ⚡ AUTOMATIZE
               </button>
               <button
                 onClick={() => setShowCreateDealModal(true)}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                }}
+                className="primary-gradient-channel rounded-lg px-4 py-2 text-sm font-bold text-[#003919] shadow-emerald-send transition hover:brightness-110"
               >
                 + Novo Negócio
               </button>
@@ -249,16 +219,7 @@ export default function Pipelines() {
           )}
           <button
             onClick={() => setShowCreateModal(true)}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600',
-            }}
+            className="rounded-lg border border-outline-variant bg-surface-container-highest px-4 py-2 text-sm font-semibold text-on-surface transition hover:bg-surface-container"
           >
             + Novo Pipeline
           </button>
@@ -267,21 +228,16 @@ export default function Pipelines() {
 
       {/* Lista de Pipelines */}
       {pipelines.length > 0 && (
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <div className="mb-4 flex flex-wrap gap-2.5 rounded-xl border border-outline-variant bg-surface-container-low p-3">
           {pipelines.map((pipeline) => (
             <button
               key={pipeline.id}
               onClick={() => handlePipelineSelect(pipeline)}
-              style={{
-                padding: '10px 16px',
-                backgroundColor: selectedPipeline?.id === pipeline.id ? pipeline.color : '#f3f4f6',
-                color: selectedPipeline?.id === pipeline.id ? 'white' : '#1f2937',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: selectedPipeline?.id === pipeline.id ? '600' : '400',
-              }}
+              className={`rounded-lg border px-3.5 py-2 text-sm transition ${
+                selectedPipeline?.id === pipeline.id
+                  ? 'border-primary/40 bg-primary/15 font-semibold text-primary-fixed-dim'
+                  : 'border-outline-variant bg-surface-container-highest text-on-surface-variant hover:bg-surface-container'
+              }`}
             >
               {pipeline.name} ({pipeline._count?.deals || 0})
             </button>
@@ -291,34 +247,13 @@ export default function Pipelines() {
 
       {/* Barra de ações em massa para deals selecionados */}
       {selectedPipeline && selectedDealIds.length > 0 && (
-        <div
-          style={{
-            marginBottom: '12px',
-            padding: '10px 16px',
-            borderRadius: '8px',
-            backgroundColor: '#fef3c7',
-            border: '1px solid #fcd34d',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '13px',
-          }}
-        >
+        <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-900/25 px-4 py-2.5 text-sm text-amber-100">
           <span>
             {selectedDealIds.length} negócio(s) selecionado(s)
           </span>
           <button
             onClick={handleDeleteSelectedDeals}
-            style={{
-              padding: '6px 12px',
-              backgroundColor: '#ef4444',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: '500',
-            }}
+            className="rounded-md border border-red-500/25 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/20"
           >
             Excluir selecionados
           </button>
@@ -327,16 +262,7 @@ export default function Pipelines() {
 
       {/* Visualização do Pipeline (Kanban) */}
       {selectedPipeline && (
-        <div
-          style={{
-            flex: 1,
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            display: 'flex',
-            gap: '16px',
-            paddingBottom: '20px',
-          }}
-        >
+        <div className="flex flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4">
           {selectedPipeline.stages
             .filter((stage) => stage.isActive)
             .sort((a, b) => a.order - b.order)
@@ -345,55 +271,20 @@ export default function Pipelines() {
                 key={stage.id}
                 onDragOver={handleDragOver}
                 onDrop={() => handleDrop(stage.id)}
-                style={{
-                  minWidth: '300px',
-                  backgroundColor: '#f9fafb',
-                  borderRadius: '8px',
-                  padding: '16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  maxHeight: '100%',
-                }}
+                className="flex max-h-full min-w-[300px] flex-col rounded-xl border border-outline-variant bg-surface-container-low p-4 shadow-forest-glow"
               >
                 {/* Header da Stage */}
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '16px',
-                    paddingBottom: '12px',
-                    borderBottom: '2px solid',
-                    borderColor: stage.color,
-                  }}
-                >
+                <div className="mb-4 flex items-center justify-between border-b-2 pb-3" style={{ borderColor: stage.color }}>
                   <div>
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        color: '#1f2937',
-                      }}
-                    >
-                      {stage.name}
-                    </h3>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    <h3 className="m-0 text-base font-semibold text-on-surface">{stage.name}</h3>
+                    <p className="mt-1 text-xs text-on-surface-variant">
                       {stage.deals?.length || 0} negócios • {stage.probability}% probabilidade
                     </p>
                   </div>
                 </div>
 
                 {/* Lista de Deals */}
-                <div
-                  style={{
-                    flex: 1,
-                    overflowY: 'auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                  }}
-                >
+                <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
                   {stage.deals && stage.deals.length > 0 ? (
                     stage.deals.map((deal) => (
                       <div
@@ -401,34 +292,13 @@ export default function Pipelines() {
                         draggable
                         onDragStart={() => handleDragStart(deal.id, stage.id)}
                         onClick={() => navigate(`/pipelines/deals/${deal.id}`)}
-                        style={{
-                          backgroundColor: 'white',
-                          borderRadius: '8px',
-                          padding: '12px',
-                          cursor: 'pointer',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                          transition: 'all 0.2s',
-                          border: selectedDealIds.includes(deal.id)
-                            ? '2px solid #3b82f6'
-                            : '1px solid #e5e7eb',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-                          e.currentTarget.style.transform = 'translateY(-2px)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-                          e.currentTarget.style.transform = 'translateY(0)';
-                        }}
+                        className={`cursor-pointer rounded-lg border p-3 transition-all hover:-translate-y-0.5 hover:shadow-forest-glow ${
+                          selectedDealIds.includes(deal.id)
+                            ? 'border-primary/45 bg-primary/10'
+                            : 'border-outline-variant bg-surface-container-high'
+                        }`}
                       >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '4px',
-                          }}
-                        >
+                        <div className="mb-1 flex items-center justify-between">
                           <input
                             type="checkbox"
                             checked={selectedDealIds.includes(deal.id)}
@@ -439,19 +309,10 @@ export default function Pipelines() {
                             onClick={(e) => e.stopPropagation()}
                           />
                         </div>
-                        <div style={{ marginBottom: '8px' }}>
-                          <h4
-                            style={{
-                              margin: 0,
-                              fontSize: '14px',
-                              fontWeight: '600',
-                              color: '#1f2937',
-                            }}
-                          >
-                            {deal.name}
-                          </h4>
+                        <div className="mb-2">
+                          <h4 className="m-0 text-sm font-semibold text-on-surface">{deal.name}</h4>
                           {deal.customFields && Object.keys(deal.customFields).length > 0 && (
-                            <div style={{ marginTop: '4px', fontSize: '11px', color: '#6b7280' }}>
+                            <div className="mt-1 text-[11px] text-on-surface-variant">
                               {Object.entries(deal.customFields).slice(0, 2).map(([key, value]) => (
                                 <div key={key}>
                                   <strong>{key}:</strong> {String(value)}
@@ -461,46 +322,25 @@ export default function Pipelines() {
                           )}
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <span
-                            style={{
-                              fontSize: '16px',
-                              fontWeight: '600',
-                              color: '#10b981',
-                            }}
-                          >
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-base font-semibold text-primary-fixed-dim">
                             {formatCurrency(Number(deal.value || 0), deal.currency)}
                           </span>
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              backgroundColor: '#e5e7eb',
-                              color: '#6b7280',
-                            }}
-                          >
+                          <span className="rounded-md bg-surface-container-highest px-1.5 py-0.5 text-[11px] text-on-surface-variant">
                             {deal.probability}%
                           </span>
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#6b7280' }}>
+                        <div className="flex items-center justify-between text-xs text-on-surface-variant">
                           <span>{deal.contact.name}</span>
                           {deal.assignedTo && (
-                            <span style={{ fontSize: '11px' }}>👤 {deal.assignedTo.name}</span>
+                            <span className="text-[11px]">👤 {deal.assignedTo.name}</span>
                           )}
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div
-                      style={{
-                        padding: '40px 20px',
-                        textAlign: 'center',
-                        color: '#9ca3af',
-                        fontSize: '14px',
-                      }}
-                    >
+                    <div className="px-5 py-10 text-center text-sm text-on-surface-variant">
                       Nenhum negócio nesta etapa
                     </div>
                   )}

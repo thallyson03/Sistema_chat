@@ -139,7 +139,7 @@ export default function Layout() {
     <div className="flex h-screen bg-background font-body text-on-surface">
       {/* Sidebar */}
       <motion.aside
-        className="relative z-10 flex w-64 flex-col bg-surface-container-low text-on-surface"
+        className="relative z-10 flex w-64 flex-col bg-surface-container-lowest text-on-surface"
         initial={{ x: -300 }}
         animate={{ x: 0 }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
@@ -213,7 +213,7 @@ export default function Layout() {
         </nav>
         
         {/* Footer */}
-        <div className="space-y-3 border-t border-primary/10 bg-surface-container px-3 py-4">
+        <div className="space-y-3 border-t border-primary/10 bg-surface-container-low px-3 py-4">
           {/* User Info */}
           {user && (
             <div className="flex items-center gap-3 rounded-lg bg-surface-container-highest/70 px-3 py-2.5">

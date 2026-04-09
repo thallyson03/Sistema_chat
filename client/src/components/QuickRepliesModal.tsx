@@ -174,99 +174,38 @@ export default function QuickRepliesModal({
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 2000,
-      }}
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          width: '90%',
-          maxWidth: '600px',
-          maxHeight: '80vh',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-        }}
+        className="flex max-h-[80vh] w-[90%] max-w-[640px] flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-highest text-on-surface shadow-forest-glow"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          style={{
-            padding: '20px',
-            borderBottom: '1px solid #e5e7eb',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '600' }}>Respostas Rápidas</h2>
+        <div className="flex items-center justify-between border-b border-outline-variant px-5 py-4">
+          <h2 className="m-0 font-headline text-xl font-bold text-primary-fixed-dim">Respostas Rápidas</h2>
           <button
             onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '24px',
-              cursor: 'pointer',
-              color: '#6b7280',
-              padding: '0',
-              width: '30px',
-              height: '30px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-0 text-2xl leading-none text-on-surface-variant transition hover:bg-surface-container-low hover:text-on-surface"
           >
             ×
           </button>
         </div>
 
         {/* Filtros */}
-        <div
-          style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid #e5e7eb',
-            display: 'flex',
-            gap: '10px',
-            flexWrap: 'wrap',
-          }}
-        >
+        <div className="flex flex-wrap gap-2.5 border-b border-outline-variant px-5 py-4">
           <input
             type="text"
             placeholder="Buscar respostas rápidas..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: '200px',
-              padding: '8px 12px',
-              border: '1px solid #e5e7eb',
-              borderRadius: '6px',
-              fontSize: '14px',
-            }}
+            className="min-w-[200px] flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
           />
           {categories.length > 0 && (
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              style={{
-                padding: '8px 12px',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                fontSize: '14px',
-                cursor: 'pointer',
-              }}
+              className="cursor-pointer rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
             >
               <option value="">Todas as categorias</option>
               {categories.map((cat) => (
@@ -279,113 +218,52 @@ export default function QuickRepliesModal({
         </div>
 
         {/* Lista de Respostas Rápidas */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '10px',
-          }}
-        >
+        <div className="flex-1 overflow-y-auto p-3">
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+            <div className="p-10 text-center text-on-surface-variant">
               Carregando...
             </div>
           ) : filteredQuickReplies.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+            <div className="p-10 text-center text-on-surface-variant">
               <p>Nenhuma resposta rápida encontrada.</p>
-              {searchTerm && <p style={{ fontSize: '14px', marginTop: '8px' }}>Tente buscar com outros termos.</p>}
+              {searchTerm && <p className="mt-2 text-sm">Tente buscar com outros termos.</p>}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="flex flex-col gap-2">
               {filteredQuickReplies.map((qr) => (
                 <div
                   key={qr.id}
                   onClick={() => handleSelect(qr)}
-                  style={{
-                    padding: '12px 16px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    backgroundColor: 'white',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f9fafb';
-                    e.currentTarget.style.borderColor = '#3b82f6';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'white';
-                    e.currentTarget.style.borderColor = '#e5e7eb';
-                  }}
+                  className="cursor-pointer rounded-lg border border-outline-variant bg-surface-container-low px-4 py-3 transition-colors hover:border-primary/35 hover:bg-surface-container"
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '6px' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: '600', fontSize: '15px' }}>{qr.name}</span>
+                  <div className="mb-1.5 flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="mb-1 flex items-center gap-2">
+                        <span className="text-[15px] font-semibold text-primary-fixed-dim">{qr.name}</span>
                         {qr.isGlobal && (
-                          <span
-                            style={{
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              backgroundColor: '#dbeafe',
-                              color: '#1e40af',
-                              fontSize: '11px',
-                              fontWeight: '600',
-                            }}
-                          >
+                          <span className="rounded-md bg-primary/20 px-1.5 py-0.5 text-[11px] font-semibold text-primary-fixed-dim">
                             Global
                           </span>
                         )}
                         {qr.category && (
-                          <span
-                            style={{
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              backgroundColor: '#f3f4f6',
-                              color: '#6b7280',
-                              fontSize: '11px',
-                            }}
-                          >
+                          <span className="rounded-md bg-surface-container-highest px-1.5 py-0.5 text-[11px] text-on-surface-variant">
                             {qr.category}
                           </span>
                         )}
                       </div>
                       {qr.shortcut && (
-                        <div
-                          style={{
-                            fontSize: '12px',
-                            color: '#6b7280',
-                            fontFamily: 'monospace',
-                            marginBottom: '4px',
-                          }}
-                        >
-                          Atalho: <span style={{ fontWeight: '600' }}>{qr.shortcut}</span>
+                        <div className="mb-1 text-xs text-on-surface-variant" style={{ fontFamily: 'monospace' }}>
+                          Atalho: <span className="font-semibold text-primary-fixed-dim">{qr.shortcut}</span>
                         </div>
                       )}
                     </div>
                     {qr.type !== 'TEXT' && (
-                      <span
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          backgroundColor: '#e5e7eb',
-                          fontSize: '11px',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
+                      <span className="whitespace-nowrap rounded-md bg-surface-container-highest px-2 py-1 text-[11px] text-on-surface-variant">
                         {qr.type}
                       </span>
                     )}
                   </div>
-                  <div
-                    style={{
-                      fontSize: '14px',
-                      color: '#374151',
-                      lineHeight: '1.5',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                    }}
-                  >
+                  <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface">
                     {qr.previewContent || qr.content}
                   </div>
                 </div>
@@ -395,102 +273,46 @@ export default function QuickRepliesModal({
 
           {/* Templates WhatsApp Official (quando canalId for fornecido) */}
           {channelId && (
-            <div style={{ marginTop: '16px', borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
-              <h3
-                style={{
-                  margin: '0 0 8px 0',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: '#111827',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
+            <div className="mt-4 border-t border-outline-variant pt-3">
+              <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary-fixed-dim">
                 Templates WhatsApp
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    color: '#6b7280',
-                  }}
-                >
+                <span className="text-[11px] font-medium text-on-surface-variant">
                   (usados para iniciar conversa fora da janela de 24h)
                 </span>
               </h3>
 
               {loadingTemplates ? (
-                <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280', fontSize: '13px' }}>
+                <div className="p-5 text-center text-[13px] text-on-surface-variant">
                   Carregando templates...
                 </div>
               ) : templates.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '10px', color: '#9ca3af', fontSize: '12px' }}>
+                <div className="p-2.5 text-center text-xs text-on-surface-variant">
                   Nenhum template encontrado para este canal.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div className="flex flex-col gap-1.5">
                   {templates.map((tpl) => (
                     <div
                       key={tpl.id || `${tpl.name}-${tpl.language}`}
                       onClick={() => handleSelectTemplate(tpl)}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #e5e7eb',
-                        cursor: 'pointer',
-                        backgroundColor: '#f9fafb',
-                        transition: 'all 0.2s',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#eff6ff';
-                        e.currentTarget.style.borderColor = '#3b82f6';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f9fafb';
-                        e.currentTarget.style.borderColor = '#e5e7eb';
-                      }}
+                      className="cursor-pointer rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5 transition-colors hover:border-primary/35 hover:bg-surface-container"
                     >
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          marginBottom: '4px',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontWeight: 600, fontSize: '14px' }}>{tpl.name}</span>
-                          <span
-                            style={{
-                              padding: '2px 6px',
-                              borderRadius: '999px',
-                              backgroundColor: '#e5e7eb',
-                              fontSize: '11px',
-                            }}
-                          >
+                      <div className="mb-1 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-on-surface">{tpl.name}</span>
+                          <span className="rounded-full bg-surface-container-highest px-1.5 py-0.5 text-[11px] text-on-surface-variant">
                             {tpl.language}
                           </span>
                         </div>
                         {tpl.status && (
                           <span
-                            style={{
-                              padding: '2px 6px',
-                              borderRadius: '999px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              backgroundColor:
-                                tpl.status === 'APPROVED'
-                                  ? '#dcfce7'
-                                  : tpl.status === 'REJECTED'
-                                  ? '#fee2e2'
-                                  : '#fef9c3',
-                              color:
-                                tpl.status === 'APPROVED'
-                                  ? '#166534'
-                                  : tpl.status === 'REJECTED'
-                                  ? '#b91c1c'
-                                  : '#854d0e',
-                            }}
+                            className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                              tpl.status === 'APPROVED'
+                                ? 'bg-emerald-900/40 text-primary-fixed-dim'
+                                : tpl.status === 'REJECTED'
+                                ? 'bg-red-900/40 text-red-300'
+                                : 'bg-amber-900/40 text-amber-200'
+                            }`}
                           >
                             {tpl.status}
                           </span>
@@ -498,14 +320,7 @@ export default function QuickRepliesModal({
                       </div>
                       {tpl.body && (
                         <p
-                          style={{
-                            margin: 0,
-                            fontSize: '12px',
-                            color: '#4b5563',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
+                          className="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-on-surface-variant"
                           title={tpl.body}
                         >
                           {tpl.body}

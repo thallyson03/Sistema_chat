@@ -111,27 +111,27 @@ export default function Sectors() {
   });
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="mx-auto max-w-7xl p-8 font-body text-on-surface">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Setores</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="font-headline text-3xl font-bold text-on-surface">Setores</h1>
+          <p className="text-sm text-on-surface-variant">
             Organize times, filas e canais por áreas da sua empresa.
           </p>
         </div>
         <button
           onClick={handleCreate}
-          className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 px-5 py-2 text-sm font-semibold text-slate-950 shadow-md hover:shadow-lg hover:brightness-105 transition"
+          className="primary-gradient-channel inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-semibold text-[#003919] shadow-emerald-send transition hover:brightness-105"
         >
-          + Novo Setor
+          + Novo setor
         </button>
       </div>
 
       {/* Busca */}
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div className="relative w-full max-w-md">
-          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 text-sm">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-outline-variant bg-surface-container-low p-3">
+        <div className="relative w-full max-w-[28rem]">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-on-surface-variant">
             🔍
           </span>
           <input
@@ -139,22 +139,30 @@ export default function Sectors() {
             placeholder="Buscar por nome ou descrição..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-full border border-slate-200 bg-white/80 pl-9 pr-3 py-2.5 text-sm text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none transition"
+            className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest py-2.5 pl-9 pr-3 text-sm text-on-surface outline-none transition focus:border-primary/40 focus:ring-1 focus:ring-primary/30"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
+            Filtros
+          </button>
+          <button className="rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
+            Exportar
+          </button>
         </div>
       </div>
 
       {/* Lista de Setores */}
       {loading ? (
-        <div className="flex justify-center py-16 text-slate-500 text-sm">
+        <div className="flex justify-center py-16 text-sm text-on-surface-variant">
           Carregando setores...
         </div>
       ) : filteredSectors.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+        <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
           <p className="text-sm mb-4">Nenhum setor encontrado.</p>
           <button
             onClick={handleCreate}
-            className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-slate-800 transition"
+            className="primary-gradient-channel inline-flex items-center justify-center rounded-lg px-4 py-2 text-xs font-semibold text-[#003919] shadow-emerald-send transition hover:brightness-105"
           >
             Criar primeiro setor
           </button>
@@ -164,7 +172,7 @@ export default function Sectors() {
           {filteredSectors.map((sector) => (
             <div
               key={sector.id}
-              className="group relative rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition card-hover overflow-hidden"
+              className="group relative overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low shadow-forest-glow transition hover:border-primary/35"
             >
               <div
                 className="h-1.5 w-full bg-gradient-to-r"
@@ -178,10 +186,10 @@ export default function Sectors() {
                       style={{ backgroundColor: sector.color }}
                     />
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-900">
+                      <h3 className="text-sm font-semibold text-on-surface">
                         {sector.name}
                       </h3>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                      <p className="text-[11px] uppercase tracking-wide text-on-surface-variant">
                         Setor operacional
                       </p>
                     </div>
@@ -189,8 +197,8 @@ export default function Sectors() {
                   <span
                     className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                       sector.isActive
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                        : 'bg-rose-50 text-rose-700 border border-rose-100'
+                        ? 'bg-primary/20 text-primary-fixed-dim border border-primary/25'
+                        : 'bg-on-surface-variant/20 text-on-surface-variant border border-on-surface-variant/25'
                     }`}
                   >
                     <span className="mr-1 text-[8px]">
@@ -201,23 +209,23 @@ export default function Sectors() {
                 </div>
 
                 {sector.description && (
-                  <p className="text-xs text-slate-600 mb-3 line-clamp-3">
+                  <p className="mb-3 line-clamp-3 text-xs text-on-surface-variant">
                     {sector.description}
                   </p>
                 )}
 
                 <div className="mt-auto">
-                  <div className="flex gap-4 text-[11px] text-slate-500 mb-3">
+                  <div className="mb-3 flex gap-4 text-[11px] text-on-surface-variant">
                     <span className="flex items-center gap-1">
-                      <span className="text-slate-400">📡</span>
-                      <span className="font-semibold text-slate-700">
+                      <span className="text-primary/70">📡</span>
+                      <span className="font-semibold text-primary-fixed-dim">
                         {sector._count?.channels || 0}
                       </span>
                       <span>canais</span>
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="text-slate-400">👤</span>
-                      <span className="font-semibold text-slate-700">
+                      <span className="text-primary/70">👤</span>
+                      <span className="font-semibold text-primary-fixed-dim">
                         {sector._count?.users || 0}
                       </span>
                       <span>usuários</span>
@@ -227,13 +235,13 @@ export default function Sectors() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleEdit(sector)}
-                      className="flex-1 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      className="flex-1 inline-flex items-center justify-center rounded-md border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary-fixed-dim transition hover:bg-primary/20"
                     >
                       Editar
                     </button>
                     <button
                       onClick={() => handleDelete(sector.id)}
-                      className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition"
+                      className="inline-flex items-center justify-center rounded-md border border-red-500/25 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/20"
                     >
                       Remover
                     </button>
@@ -248,26 +256,26 @@ export default function Sectors() {
       {/* Modal de Criar/Editar */}
       {showModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => setShowModal(false)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-6 relative"
+            className="relative w-full max-w-md rounded-xl border border-outline-variant bg-surface-container-highest p-6 shadow-forest-glow"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">
+                <h2 className="text-lg font-bold text-on-surface">
                   {editingSector ? 'Editar setor' : 'Novo setor'}
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-on-surface-variant">
                   Defina nome, cor e status para organizar seus canais e usuários.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 text-xs"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-container-low text-xs text-on-surface-variant hover:bg-surface-container"
               >
                 ✕
               </button>
@@ -275,7 +283,7 @@ export default function Sectors() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Nome <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -284,12 +292,12 @@ export default function Sectors() {
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Ex: Vendas, Suporte, Financeiro"
                   required
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/30"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Descrição (opcional)
                 </label>
                 <textarea
@@ -297,12 +305,12 @@ export default function Sectors() {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Descreva o propósito deste setor"
                   rows={3}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none resize-y"
+                  className="w-full resize-y rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/30"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Cor
                 </label>
                 <div className="flex items-center gap-3">
@@ -310,25 +318,25 @@ export default function Sectors() {
                     type="color"
                     value={formData.color}
                     onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                    className="h-10 w-14 rounded-lg border border-slate-200 cursor-pointer"
+                    className="h-10 w-14 cursor-pointer rounded-lg border border-outline-variant bg-surface-container-low"
                   />
                   <input
                     type="text"
                     value={formData.color}
                     onChange={(e) => setFormData({ ...formData, color: e.target.value })}
                     placeholder="#3B82F6"
-                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                    className="flex-1 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm font-mono text-on-surface outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/30"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-on-surface">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
+                    className="h-4 w-4 rounded border-outline-variant bg-surface-container-lowest text-primary focus:ring-primary/50"
                   />
                   <span className="font-semibold">Ativo</span>
                 </label>
@@ -338,13 +346,13 @@ export default function Sectors() {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-full bg-slate-900 px-5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  className="primary-gradient-channel rounded-lg px-5 py-2 text-xs font-semibold text-[#003919] hover:brightness-110"
                 >
                   {editingSector ? 'Salvar alterações' : 'Criar setor'}
                 </button>

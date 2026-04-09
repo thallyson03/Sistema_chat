@@ -228,27 +228,27 @@ export default function Users() {
   });
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="mx-auto max-w-7xl p-8 font-body text-on-surface">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Usuários</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="font-headline text-3xl font-bold text-on-surface">Usuários</h1>
+          <p className="text-sm text-on-surface-variant">
             Gerencie os usuários da equipe, suas funções e setores de atendimento.
           </p>
         </div>
         <button
           onClick={handleCreate}
-          className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 px-5 py-2 text-sm font-semibold text-slate-950 shadow-md hover:shadow-lg hover:brightness-105 transition"
+          className="primary-gradient-channel inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-semibold text-[#003919] shadow-emerald-send transition hover:brightness-105"
         >
-          + Novo Usuário
+          👥 Novo Usuário
         </button>
       </div>
 
       {/* Busca */}
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div className="relative w-full max-w-md">
-          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 text-sm">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-outline-variant bg-surface-container-low p-3">
+        <div className="relative w-full max-w-[28rem]">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-on-surface-variant text-sm">
             🔍
           </span>
           <input
@@ -256,22 +256,30 @@ export default function Users() {
             placeholder="Buscar por nome, e-mail ou função..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-full border border-slate-200 bg-white/80 pl-9 pr-3 py-2.5 text-sm text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none transition"
+            className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest py-2.5 pl-9 pr-3 text-sm text-on-surface outline-none transition focus:border-primary/40 focus:ring-1 focus:ring-primary/30"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
+            Filtros
+          </button>
+          <button className="rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
+            Exportar
+          </button>
         </div>
       </div>
 
       {/* Lista de Usuários */}
       {loading ? (
-        <div className="flex justify-center py-16 text-slate-500 text-sm">
+        <div className="flex justify-center py-16 text-on-surface-variant text-sm">
           Carregando usuários...
         </div>
       ) : filteredUsers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+        <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
           <p className="text-sm mb-4">Nenhum usuário encontrado.</p>
           <button
             onClick={handleCreate}
-            className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-slate-800 transition"
+            className="primary-gradient-channel inline-flex items-center justify-center rounded-lg px-4 py-2 text-xs font-semibold text-[#003919] shadow-emerald-send transition hover:brightness-105"
           >
             Criar primeiro usuário
           </button>
@@ -281,39 +289,44 @@ export default function Users() {
           {filteredUsers.map((user) => (
             <div
               key={user.id}
-              className="group relative rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition card-hover overflow-hidden"
+              className="group relative overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low shadow-forest-glow transition hover:border-primary/35"
             >
               <div className="p-5 flex flex-col h-full">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex-1">
-                    <h3 className="text-sm font-semibold text-slate-900">
+                    <h3 className="text-sm font-semibold text-on-surface">
                       {user.name}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-1 break-all">
+                    <p className="mt-1 break-all text-xs text-on-surface-variant">
                       {user.email}
                     </p>
                     <div className="flex flex-wrap items-center gap-2 mt-3">
                       <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white ${
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
                           user.role === 'ADMIN'
-                            ? 'bg-rose-500'
+                            ? 'bg-red-900/40 text-red-300 border border-red-500/25'
                             : user.role === 'SUPERVISOR'
-                            ? 'bg-amber-500'
-                            : 'bg-sky-500'
+                            ? 'bg-amber-900/40 text-amber-200 border border-amber-500/25'
+                            : 'bg-primary/20 text-primary-fixed-dim border border-primary/25'
                         }`}
                       >
                         {user.role}
                       </span>
                       {!user.isActive && (
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-100">
+                        <span className="inline-flex items-center rounded-full border border-on-surface-variant/20 bg-surface-container-highest px-2 py-0.5 text-[10px] font-semibold text-on-surface-variant">
                           Inativo
+                        </span>
+                      )}
+                      {user.isActive && (
+                        <span className="inline-flex items-center rounded-full border border-primary/25 bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary-fixed-dim">
+                          Ativo
                         </span>
                       )}
                     </div>
 
                     {user.sectors && user.sectors.length > 0 && (
                       <div className="mt-3">
-                        <div className="text-[11px] text-slate-500 mb-1">
+                        <div className="mb-1 text-[11px] text-on-surface-variant">
                           Setores:
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -337,15 +350,15 @@ export default function Users() {
                       </div>
                     )}
 
-                    <div className="flex gap-4 mt-3 text-[11px] text-slate-500">
+                    <div className="mt-3 flex gap-4 text-[11px] text-on-surface-variant">
                       <span>
-                        <span className="font-semibold text-slate-700">
+                        <span className="font-semibold text-primary-fixed-dim">
                           {user._count?.assignedConversations || 0}
                         </span>{' '}
                         conversas
                       </span>
                       <span>
-                        <span className="font-semibold text-slate-700">
+                        <span className="font-semibold text-primary-fixed-dim">
                           {user._count?.assignedTickets || 0}
                         </span>{' '}
                         tickets
@@ -355,13 +368,13 @@ export default function Users() {
                   <div className="flex flex-col gap-2">
                     <button
                       onClick={() => handleEdit(user)}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      className="inline-flex items-center justify-center rounded-md border border-primary/25 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary-fixed-dim transition hover:bg-primary/20"
                     >
                       Editar
                     </button>
                     <button
                       onClick={() => handleDelete(user.id)}
-                      className="inline-flex items-center justify-center rounded-full bg-red-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-red-600 transition"
+                      className="inline-flex items-center justify-center rounded-md border border-red-500/25 bg-red-500/10 px-3 py-1.5 text-[11px] font-semibold text-red-300 transition hover:bg-red-500/20"
                     >
                       Deletar
                     </button>
@@ -376,26 +389,26 @@ export default function Users() {
       {/* Modal de Criar/Editar */}
       {showModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => setShowModal(false)}
         >
           <div
-            className="w-full max-w-xl rounded-2xl bg-white shadow-2xl p-6 max-h-[90vh] overflow-y-auto"
+            className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-outline-variant bg-surface-container-highest p-6 shadow-forest-glow"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">
+                <h2 className="text-lg font-bold text-on-surface">
                   {editingUser ? 'Editar usuário' : 'Novo usuário'}
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-on-surface-variant">
                   Defina dados de acesso, função e setores em que o usuário poderá atuar.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 text-xs"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-container-low text-xs text-on-surface-variant hover:bg-surface-container"
               >
                 ✕
               </button>
@@ -403,7 +416,7 @@ export default function Users() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Nome <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -412,12 +425,12 @@ export default function Users() {
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Ex: João Silva"
                   required
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Email <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -426,12 +439,12 @@ export default function Users() {
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="exemplo@email.com"
                   required
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Senha {!editingUser && <span className="text-red-500">*</span>}
                 </label>
                 <input
@@ -442,23 +455,23 @@ export default function Users() {
                     editingUser ? 'Deixe em branco para não alterar' : 'Mínimo 6 caracteres'
                   }
                   required={!editingUser}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                 />
                 {editingUser && (
-                  <p className="mt-1 text-[11px] text-slate-500">
+                  <p className="mt-1 text-[11px] text-on-surface-variant">
                     Deixe em branco para manter a senha atual.
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Função
                 </label>
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                 >
                   <option value="AGENT">Agente</option>
                   <option value="SUPERVISOR">Supervisor</option>
@@ -467,25 +480,25 @@ export default function Users() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Setores que pode atender
                 </label>
-                <div className="border border-slate-200 rounded-lg p-2.5 max-h-56 overflow-y-auto space-y-1">
+                <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-low p-2.5">
                   {sectors.length === 0 ? (
-                    <p className="text-xs text-slate-500 m-0">
+                    <p className="m-0 text-xs text-on-surface-variant">
                       Nenhum setor cadastrado. Crie setores primeiro.
                     </p>
                   ) : (
                     sectors.map((sector) => (
                       <label
                         key={sector.id}
-                        className="flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer hover:bg-slate-50 text-xs text-slate-700"
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs text-on-surface hover:bg-surface-container-highest"
                       >
                         <input
                           type="checkbox"
                           checked={formData.sectorIds.includes(sector.id)}
                           onChange={() => handleToggleSector(sector.id)}
-                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
+                          className="h-4 w-4 rounded border-outline-variant bg-surface-container-lowest text-primary focus:ring-primary/50"
                         />
                         <div
                           className="h-4 w-4 rounded-md flex-shrink-0"
@@ -499,23 +512,23 @@ export default function Users() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Pipelines que pode acessar
                 </label>
-                <div className="border border-slate-200 rounded-lg p-2.5 max-h-56 overflow-y-auto space-y-1">
+                <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-low p-2.5">
                   {pipelines.length === 0 ? (
-                    <p className="text-xs text-slate-500 m-0">Nenhum pipeline cadastrado.</p>
+                    <p className="m-0 text-xs text-on-surface-variant">Nenhum pipeline cadastrado.</p>
                   ) : (
                     pipelines.map((pipeline) => (
                       <label
                         key={pipeline.id}
-                        className="flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer hover:bg-slate-50 text-xs text-slate-700"
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs text-on-surface hover:bg-surface-container-highest"
                       >
                         <input
                           type="checkbox"
                           checked={formData.pipelineIds.includes(pipeline.id)}
                           onChange={() => handleTogglePipeline(pipeline.id)}
-                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
+                          className="h-4 w-4 rounded border-outline-variant bg-surface-container-lowest text-primary focus:ring-primary/50"
                         />
                         <span>{pipeline.name}</span>
                       </label>
@@ -525,23 +538,23 @@ export default function Users() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
                   Canais que pode acessar
                 </label>
-                <div className="border border-slate-200 rounded-lg p-2.5 max-h-56 overflow-y-auto space-y-1">
+                <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-low p-2.5">
                   {channels.length === 0 ? (
-                    <p className="text-xs text-slate-500 m-0">Nenhum canal cadastrado.</p>
+                    <p className="m-0 text-xs text-on-surface-variant">Nenhum canal cadastrado.</p>
                   ) : (
                     channels.map((channel) => (
                       <label
                         key={channel.id}
-                        className="flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer hover:bg-slate-50 text-xs text-slate-700"
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs text-on-surface hover:bg-surface-container-highest"
                       >
                         <input
                           type="checkbox"
                           checked={formData.channelIds.includes(channel.id)}
                           onChange={() => handleToggleChannel(channel.id)}
-                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
+                          className="h-4 w-4 rounded border-outline-variant bg-surface-container-lowest text-primary focus:ring-primary/50"
                         />
                         <span>
                           {channel.name} ({channel.type})
@@ -553,12 +566,12 @@ export default function Users() {
               </div>
 
               <div>
-                <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-on-surface">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/60"
+                    className="h-4 w-4 rounded border-outline-variant bg-surface-container-lowest text-primary focus:ring-primary/50"
                   />
                   <span className="font-semibold">Ativo</span>
                 </label>
@@ -568,13 +581,13 @@ export default function Users() {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-full bg-slate-900 px-5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  className="primary-gradient-channel rounded-lg px-5 py-2 text-xs font-semibold text-[#003919] hover:brightness-110"
                 >
                   {editingUser ? 'Salvar alterações' : 'Criar usuário'}
                 </button>

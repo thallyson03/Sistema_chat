@@ -966,24 +966,25 @@ export default function DealDetail() {
   };
 
   if (loading) {
-    return <div style={{ padding: '20px' }}>Carregando...</div>;
+    return <div className="p-5 text-on-surface-variant">Carregando...</div>;
   }
 
   if (!deal) {
-    return <div style={{ padding: '20px' }}>Negócio não encontrado</div>;
+    return <div className="p-5 text-on-surface-variant">Negócio não encontrado</div>;
   }
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
+    <div className="flex h-[calc(100vh-60px)] overflow-hidden bg-surface font-body text-on-surface">
       {/* Sidebar Esquerda - Informações do Lead */}
       <div
         style={{
           width: '400px',
-          backgroundColor: '#0f766e',
+          backgroundColor: '#1a1c1a',
           color: 'white',
           display: 'flex',
           flexDirection: 'column',
           overflowY: 'auto',
+          borderRight: '1px solid rgba(63, 73, 69, 0.35)',
         }}
       >
         {/* Header */}
@@ -1521,13 +1522,13 @@ export default function DealDetail() {
       </div>
 
       {/* Área Direita - Chat */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#f9fafb' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#0e100e' }}>
         {/* Header do Chat */}
         <div
           style={{
             padding: '16px 20px',
-            backgroundColor: 'white',
-            borderBottom: '1px solid #e5e7eb',
+            backgroundColor: '#1a1c1a',
+            borderBottom: '1px solid rgba(63, 73, 69, 0.35)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -1547,11 +1548,11 @@ export default function DealDetail() {
                   width: '40px',
                   height: '40px',
                   borderRadius: '50%',
-                  backgroundColor: '#3b82f6',
+                  backgroundColor: '#064e3b',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'white',
+                  color: '#66dd8b',
                   fontWeight: '600',
                 }}
               >
@@ -1559,8 +1560,8 @@ export default function DealDetail() {
               </div>
             )}
             <div>
-              <div style={{ fontWeight: '600', fontSize: '16px' }}>{deal.contact.name}</div>
-              <div style={{ fontSize: '12px', color: '#6b7280' }}>
+              <div style={{ fontWeight: '600', fontSize: '16px', color: '#e5e7eb' }}>{deal.contact.name}</div>
+              <div style={{ fontSize: '12px', color: '#9ca3af' }}>
                 {deal.contact.phone || 'Sem telefone'}
               </div>
             </div>
@@ -1584,7 +1585,7 @@ export default function DealDetail() {
                     style={{
                       padding: '8px 12px',
                       backgroundColor: '#10b981',
-                      color: 'white',
+                      color: '#003919',
                       border: 'none',
                       borderRadius: '6px',
                       cursor: 'pointer',
@@ -1610,8 +1611,8 @@ export default function DealDetail() {
                     }}
                     style={{
                       padding: '8px 12px',
-                      backgroundColor: '#6b7280',
-                      color: 'white',
+                      backgroundColor: '#2e312e',
+                      color: '#e5e7eb',
                       border: 'none',
                       borderRadius: '6px',
                       cursor: 'pointer',
@@ -1627,8 +1628,8 @@ export default function DealDetail() {
                   onClick={() => setShowTransferModal(true)}
                   style={{
                     padding: '8px 12px',
-                    backgroundColor: '#3b82f6',
-                    color: 'white',
+                    backgroundColor: '#10b981',
+                    color: '#003919',
                     border: 'none',
                     borderRadius: '6px',
                     cursor: 'pointer',
@@ -1646,7 +1647,8 @@ export default function DealDetail() {
                 style={{
                   padding: '6px 12px',
                   borderRadius: '6px',
-                  backgroundColor: '#e5e7eb',
+                  backgroundColor: '#2e312e',
+                  color: '#9ca3af',
                   fontSize: '12px',
                 }}
               >
@@ -1698,7 +1700,7 @@ export default function DealDetail() {
             flex: 1,
             overflowY: 'auto',
             padding: '20px',
-            backgroundColor: '#f9fafb',
+            backgroundColor: '#121412',
             display: 'flex',
             flexDirection: 'column',
             gap: '12px',
@@ -2218,8 +2220,8 @@ export default function DealDetail() {
           <div
             style={{
               padding: '16px 20px',
-              borderTop: '1px solid #e5e7eb',
-              backgroundColor: 'white',
+              borderTop: '1px solid rgba(63, 73, 69, 0.35)',
+              backgroundColor: '#1a1c1a',
               position: 'relative',
             }}
           >
@@ -2329,10 +2331,12 @@ export default function DealDetail() {
                 style={{
                   flex: 1,
                   padding: '10px 14px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid rgba(63, 73, 69, 0.45)',
                   borderRadius: '6px',
                   fontSize: '14px',
                   opacity: recording || uploadingFile ? 0.6 : 1,
+                  backgroundColor: '#0d0f0d',
+                  color: '#e5e7eb',
                 }}
               />
               <button
@@ -2340,8 +2344,8 @@ export default function DealDetail() {
                 disabled={(!messageInput.trim() && !recording && !uploadingFile) || sending || uploadingFile}
                 style={{
                   padding: '10px 20px',
-                  backgroundColor: (messageInput.trim() || recording) && !sending && !uploadingFile ? '#3b82f6' : '#9ca3af',
-                  color: 'white',
+                  backgroundColor: (messageInput.trim() || recording) && !sending && !uploadingFile ? '#10b981' : '#2e312e',
+                  color: (messageInput.trim() || recording) && !sending && !uploadingFile ? '#003919' : '#9ca3af',
                   border: 'none',
                   borderRadius: '6px',
                   cursor: (messageInput.trim() || recording) && !sending && !uploadingFile ? 'pointer' : 'not-allowed',
@@ -2379,15 +2383,16 @@ export default function DealDetail() {
             bottom: 24,
             right: 24,
             maxWidth: '320px',
-            backgroundColor: '#e5e7eb',
+            backgroundColor: '#1a1c1a',
+            border: '1px solid rgba(63, 73, 69, 0.35)',
             borderRadius: '12px',
             padding: '12px 14px',
-            boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
+            boxShadow: '0 8px 32px rgba(226, 227, 223, 0.08)',
             zIndex: 3000,
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>Tarefa de pipeline</span>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#66dd8b' }}>Tarefa de pipeline</span>
             <button
               type="button"
               onClick={() => setTaskNotification(null)}
@@ -2396,14 +2401,14 @@ export default function DealDetail() {
                 background: 'transparent',
                 cursor: 'pointer',
                 fontSize: '14px',
-                color: '#4b5563',
+                color: '#9ca3af',
               }}
               title="Fechar"
             >
               ✕
             </button>
           </div>
-          <div style={{ fontSize: '12px', color: '#111827', whiteSpace: 'pre-wrap' }}>
+          <div style={{ fontSize: '12px', color: '#e5e7eb', whiteSpace: 'pre-wrap' }}>
             {taskNotification.content}
           </div>
         </div>
@@ -2418,17 +2423,19 @@ export default function DealDetail() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
             zIndex: 2000,
+            backdropFilter: 'blur(4px)',
           }}
           onClick={() => setShowTransferModal(false)}
         >
           <div
             style={{
-              backgroundColor: 'white',
+              backgroundColor: '#1a1c1a',
+              border: '1px solid rgba(63, 73, 69, 0.35)',
               borderRadius: '12px',
               width: '90%',
               maxWidth: '500px',
@@ -2436,21 +2443,22 @@ export default function DealDetail() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px' }}>Transferir Conversa</h2>
-            <p style={{ color: '#6b7280', marginBottom: '20px' }}>
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#e5e7eb' }}>Transferir Conversa</h2>
+            <p style={{ color: '#9ca3af', marginBottom: '20px' }}>
               Selecione o usuário para transferir a conversa:
             </p>
             <div
               style={{
                 maxHeight: '300px',
                 overflowY: 'auto',
-                border: '1px solid #e5e7eb',
+                border: '1px solid rgba(63, 73, 69, 0.35)',
                 borderRadius: '6px',
                 padding: '10px',
+                backgroundColor: '#121412',
               }}
             >
               {users.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#6b7280', padding: '20px' }}>
+                <p style={{ textAlign: 'center', color: '#9ca3af', padding: '20px' }}>
                   Carregando usuários...
                 </p>
               ) : (
@@ -2477,19 +2485,20 @@ export default function DealDetail() {
                       borderRadius: '6px',
                       cursor: 'pointer',
                       transition: 'background-color 0.2s',
-                      border: '1px solid #e5e7eb',
+                      border: '1px solid rgba(63, 73, 69, 0.35)',
+                      backgroundColor: '#1a1c1a',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#f3f4f6';
+                      e.currentTarget.style.backgroundColor = '#2e312e';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'white';
+                      e.currentTarget.style.backgroundColor = '#1a1c1a';
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{user.name}</div>
-                        <div style={{ color: '#6b7280', fontSize: '12px' }}>{user.email}</div>
+                        <div style={{ fontWeight: '600', fontSize: '14px', color: '#e5e7eb' }}>{user.name}</div>
+                        <div style={{ color: '#9ca3af', fontSize: '12px' }}>{user.email}</div>
                       </div>
                     </div>
                   </div>
@@ -2502,8 +2511,9 @@ export default function DealDetail() {
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
-                  border: '1px solid #d1d5db',
-                  backgroundColor: 'white',
+                  border: '1px solid rgba(63, 73, 69, 0.35)',
+                  backgroundColor: '#2e312e',
+                  color: '#e5e7eb',
                   cursor: 'pointer',
                   fontSize: '13px',
                 }}

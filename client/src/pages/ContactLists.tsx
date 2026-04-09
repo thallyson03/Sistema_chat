@@ -175,22 +175,22 @@ export default function ContactLists() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-xl text-gray-600">Carregando listas...</div>
+      <div className="flex h-[calc(100vh-60px)] items-center justify-center bg-surface font-body text-on-surface-variant">
+        <div className="text-base">Carregando listas...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-[calc(100vh-60px)] bg-gray-50">
+    <div className="flex h-[calc(100vh-60px)] bg-surface font-body text-on-surface">
       {/* Lateral esquerda: lista de listas */}
-      <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Listas de Contatos</h1>
-          <p className="text-xs text-gray-500">Organize contatos em listas para segmentação</p>
+      <div className="flex w-80 flex-col border-r border-outline-variant bg-surface-container-low">
+        <div className="glass-channel-card border-b border-outline-variant p-4">
+          <h1 className="mb-1 font-headline text-xl font-bold text-on-surface">Listas de Contatos</h1>
+          <p className="text-xs text-on-surface-variant">Organize contatos em listas para segmentação</p>
         </div>
 
-        <div className="p-4 border-b border-gray-200">
+        <div className="border-b border-outline-variant p-4">
           <Button
             variant="primary"
             onClick={() => setShowCreateModal(true)}
@@ -200,18 +200,18 @@ export default function ContactLists() {
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="flex-1 space-y-2 overflow-y-auto p-4">
           {lists.length === 0 && (
-            <p className="text-xs text-gray-500">Nenhuma lista criada ainda.</p>
+            <p className="text-xs text-on-surface-variant">Nenhuma lista criada ainda.</p>
           )}
           {lists.map((list) => (
             <button
               key={list.id}
               onClick={() => handleSelectList(list)}
-              className={`w-full text-left px-3 py-2 rounded border text-sm mb-1 ${
+              className={`mb-1 w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                 selectedList?.id === list.id
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 hover:bg-gray-50'
+                  ? 'border-primary/45 bg-primary/10 text-primary-fixed-dim'
+                  : 'border-outline-variant bg-surface-container hover:bg-surface-container-highest'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -221,7 +221,7 @@ export default function ContactLists() {
                 />
                 <div className="flex-1">
                   <div className="font-semibold truncate">{list.name}</div>
-                  <div className="text-[11px] text-gray-500 mt-1">
+                  <div className="mt-1 text-[11px] text-on-surface-variant">
                     {list._count.members} contato(s)
                   </div>
                 </div>
@@ -242,12 +242,12 @@ export default function ContactLists() {
                     className="w-4 h-4 rounded-full"
                     style={{ backgroundColor: selectedList.color }}
                   />
-                  <h2 className="text-2xl font-bold text-gray-800">{selectedList.name}</h2>
+                  <h2 className="text-2xl font-bold text-on-surface">{selectedList.name}</h2>
                 </div>
                 {selectedList.description && (
-                  <p className="text-gray-600 mb-2">{selectedList.description}</p>
+                  <p className="mb-2 text-on-surface-variant">{selectedList.description}</p>
                 )}
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-on-surface-variant">
                   {selectedList._count.members} contato(s) nesta lista
                 </p>
               </div>
@@ -270,37 +270,37 @@ export default function ContactLists() {
             </div>
 
             {loadingListContacts ? (
-              <div className="text-center py-8 text-gray-500">Carregando contatos...</div>
+              <div className="py-8 text-center text-on-surface-variant">Carregando contatos...</div>
             ) : listContacts.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="py-8 text-center text-on-surface-variant">
                 <p className="mb-2">Esta lista está vazia.</p>
                 <p className="text-sm">Clique em "Adicionar Contatos" para começar.</p>
               </div>
             ) : (
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+              <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low shadow-forest-glow">
+                <table className="min-w-full divide-y divide-outline-variant">
+                  <thead className="bg-surface-container-high">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-on-surface-variant">
                         Nome
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-on-surface-variant">
                         Telefone
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-on-surface-variant">
                         Email
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-on-surface-variant">
                         Canal
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-on-surface-variant">
                         Ações
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="divide-y divide-outline-variant bg-surface-container-low">
                     {listContacts.map((contact) => (
-                      <tr key={contact.id}>
+                      <tr key={contact.id} className="hover:bg-surface-container-highest/50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             {contact.profilePicture ? (
@@ -310,26 +310,28 @@ export default function ContactLists() {
                                 className="h-8 w-8 rounded-full mr-3"
                               />
                             ) : (
-                              <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-semibold mr-3">
+                              <div className="mr-3 flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-xs font-semibold text-primary-fixed-dim">
                                 {contact.name.charAt(0).toUpperCase()}
                               </div>
                             )}
-                            <div className="text-sm font-medium text-gray-900">{contact.name}</div>
+                            <div className="text-sm font-medium text-on-surface">{contact.name}</div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-on-surface-variant">
                           {contact.phone || 'N/A'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-on-surface-variant">
                           {contact.email || 'N/A'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {contact.channel.name}
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-on-surface-variant">
+                          <span className="rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs text-primary-fixed-dim">
+                            {contact.channel.name}
+                          </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <td className="whitespace-nowrap px-6 py-4 text-sm">
                           <button
                             onClick={() => handleRemoveContact(contact.id)}
-                            className="text-red-600 hover:text-red-800"
+                            className="text-red-400 transition-colors hover:text-red-300"
                           >
                             Remover
                           </button>
@@ -342,7 +344,7 @@ export default function ContactLists() {
             )}
           </div>
         ) : (
-          <div className="text-center py-12 text-gray-500">
+          <div className="py-12 text-center text-on-surface-variant">
             <p className="text-lg mb-2">Nenhuma lista selecionada</p>
             <p className="text-sm">Selecione uma lista à esquerda ou crie uma nova.</p>
           </div>
@@ -351,57 +353,57 @@ export default function ContactLists() {
 
       {/* Modal de criar lista */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md"
+            className="w-full max-w-md rounded-xl border border-outline-variant bg-surface-container-highest p-8 text-on-surface shadow-forest-glow"
           >
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Nova Lista</h2>
+            <h2 className="mb-6 text-2xl font-bold text-on-surface">Nova Lista</h2>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-on-surface-variant">
                   Nome da Lista *
                 </label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-3 text-on-surface focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   placeholder="Ex: Clientes VIP"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-on-surface-variant">
                   Descrição
                 </label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-3 text-on-surface focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   rows={3}
                   placeholder="Descrição opcional da lista"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-on-surface-variant">
                   Cor
                 </label>
                 <input
                   type="color"
                   value={formData.color}
                   onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                  className="w-full h-10 border border-gray-300 rounded-lg cursor-pointer"
+                  className="h-10 w-full cursor-pointer rounded-lg border border-outline-variant bg-surface-container-lowest"
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
               <Button
-                variant="default"
+                variant="secondary"
                 onClick={() => {
                   setShowCreateModal(false);
                   setFormData({ name: '', description: '', color: '#3B82F6' });
@@ -419,25 +421,25 @@ export default function ContactLists() {
 
       {/* Modal de adicionar contatos */}
       {showAddContactsModal && selectedList && (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white p-8 rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-outline-variant bg-surface-container-highest p-8 text-on-surface shadow-forest-glow"
           >
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">
+            <h2 className="mb-6 text-2xl font-bold text-on-surface">
               Adicionar Contatos - {selectedList.name}
             </h2>
 
             <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-4">
+              <p className="mb-4 text-sm text-on-surface-variant">
                 Selecione os contatos que deseja adicionar a esta lista:
               </p>
-              <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4">
+              <div className="max-h-96 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-low p-4">
                 {contacts.map((contact) => (
                   <label
                     key={contact.id}
-                    className="flex items-center p-3 hover:bg-gray-50 rounded cursor-pointer"
+                    className="flex cursor-pointer items-center rounded p-3 hover:bg-surface-container-highest"
                   >
                     <input
                       type="checkbox"
@@ -452,25 +454,25 @@ export default function ContactLists() {
                       className="mr-3"
                     />
                     <div>
-                      <div className="font-medium text-gray-800">{contact.name}</div>
+                      <div className="font-medium text-on-surface">{contact.name}</div>
                       {contact.phone && (
-                        <div className="text-sm text-gray-600">{contact.phone}</div>
+                        <div className="text-sm text-on-surface-variant">{contact.phone}</div>
                       )}
                       {contact.email && (
-                        <div className="text-sm text-gray-600">{contact.email}</div>
+                        <div className="text-sm text-on-surface-variant">{contact.email}</div>
                       )}
                     </div>
                   </label>
                 ))}
               </div>
-              <p className="text-sm text-gray-600 mt-4">
+              <p className="mt-4 text-sm text-primary/80">
                 {selectedContactIds.length} contato(s) selecionado(s)
               </p>
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
               <Button
-                variant="default"
+                variant="secondary"
                 onClick={() => {
                   setShowAddContactsModal(false);
                   setSelectedContactIds([]);
