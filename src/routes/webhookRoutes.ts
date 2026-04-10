@@ -77,20 +77,13 @@ async function resolveWebhookAppSecret(req: Request): Promise<string | null> {
 
     const channels = await prisma.channel.findMany({
       where: { type: 'WHATSAPP' },
-      select: { config: true },
+      select: { id: true, name: true, config: true },
     });
+
+    const candidates: Array<{ channelId: string; channelName: string; cfg: any }> = [];
 
     for (const channel of channels) {
       const cfg = (channel.config || {}) as any;
-      const provider = String(cfg.provider || '').toLowerCase();
-      if (provider !== 'whatsapp_official' && provider !== 'meta') continue;
-
-      const samePhoneNumber =
-        !phoneNumberId ||
-        String(cfg.phoneNumberId || '').trim() === String(phoneNumberId).trim();
-
-      if (!samePhoneNumber) continue;
-
       const appSecret =
         cfg.appSecret ||
         cfg.whatsappAppSecret ||
@@ -98,7 +91,45 @@ async function resolveWebhookAppSecret(req: Request): Promise<string | null> {
         null;
 
       if (typeof appSecret === 'string' && appSecret.trim()) {
-        return appSecret.trim();
+        candidates.push({
+          channelId: channel.id,
+          channelName: channel.name,
+          cfg,
+        });
+      }
+    }
+
+    // 1) Prioriza canal com mesmo phone_number_id do payload
+    for (const candidate of candidates) {
+      const cfgPhone = String(candidate.cfg.phoneNumberId || '').trim();
+      if (phoneNumberId && cfgPhone && cfgPhone === String(phoneNumberId).trim()) {
+        const secret =
+          candidate.cfg.appSecret ||
+          candidate.cfg.whatsappAppSecret ||
+          candidate.cfg.metaAppSecret;
+        console.log('[WebhookWhatsApp] 🔐 App Secret resolvido por phone_number_id:', {
+          channelId: candidate.channelId,
+          channelName: candidate.channelName,
+          phoneNumberId,
+        });
+        return String(secret).trim();
+      }
+    }
+
+    // 2) Fallback: primeiro canal WhatsApp que tenha appSecret
+    if (candidates.length > 0) {
+      const candidate = candidates[0];
+      const secret =
+        candidate.cfg.appSecret ||
+        candidate.cfg.whatsappAppSecret ||
+        candidate.cfg.metaAppSecret;
+      console.log('[WebhookWhatsApp] 🔐 App Secret resolvido por fallback de canal:', {
+        channelId: candidate.channelId,
+        channelName: candidate.channelName,
+        hasPhoneInPayload: !!phoneNumberId,
+      });
+      if (typeof secret === 'string' && secret.trim()) {
+        return secret.trim();
       }
     }
   } catch (error: any) {
@@ -110,6 +141,7 @@ async function resolveWebhookAppSecret(req: Request): Promise<string | null> {
 
   const fallback = process.env.WHATSAPP_APP_SECRET;
   if (typeof fallback === 'string' && fallback.trim()) {
+    console.log('[WebhookWhatsApp] 🔐 Usando App Secret global (.env) como fallback.');
     return fallback.trim();
   }
   return null;
