@@ -1,10 +1,10 @@
 import axios from 'axios';
+import { getPublicApiOrigin } from '../config/publicUrl';
 
-const API_BASE = 'http://localhost:3007';
-
-// Configurar axios com interceptor para adicionar token automaticamente
+// Mesmo domínio (Coolify): baseURL vazio → URLs relativas /api/...
+// API em outro host: defina VITE_API_BASE_URL no build
 const api = axios.create({
-  baseURL: API_BASE,
+  baseURL: getPublicApiOrigin(),
 });
 
 // Interceptor para adicionar token em todas as requisições

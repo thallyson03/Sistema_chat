@@ -75,6 +75,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Servir arquivos de upload (público para Evolution API poder baixar)
 import path from 'path';
+import fs from 'fs';
 app.use('/api/media/file', express.static(path.join(__dirname, '../uploads'), {
   setHeaders: (res, filePath) => {
     // Permitir CORS para Evolution API baixar arquivos
@@ -129,6 +130,28 @@ app.use('/api/whatsapp', webhookRoutes);
 // Rotas para n8n e bots
 app.use('/api/webhooks/n8n', n8nWebhookRoutes);
 app.use('/api/bots', botRoutes);
+
+// SPA (Vite build) — Coolify / produção com um único domínio
+const clientDistPath = path.join(__dirname, '../client/dist');
+const clientIndexHtml = path.join(clientDistPath, 'index.html');
+const serveStatic =
+  (process.env.SERVE_STATIC === 'true' || process.env.NODE_ENV === 'production') &&
+  fs.existsSync(clientIndexHtml);
+
+if (serveStatic) {
+  app.use(express.static(clientDistPath, { index: false }));
+  app.get('*', (req, res, next) => {
+    if (req.method !== 'GET') return next();
+    if (
+      req.path.startsWith('/api') ||
+      req.path.startsWith('/webhooks') ||
+      req.path.startsWith('/socket.io')
+    ) {
+      return next();
+    }
+    res.sendFile(path.resolve(clientIndexHtml));
+  });
+}
 
 // Middleware de tratamento de erros global
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

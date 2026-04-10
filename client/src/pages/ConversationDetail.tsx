@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import api from '../utils/api';
+import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl } from '../config/publicUrl';
 
 // Componente de Player de Áudio estilo WhatsApp
 function AudioPlayer({ 
@@ -293,7 +294,7 @@ export default function ConversationDetail() {
     }
 
     // Conectar ao Socket.IO para atualizações em tempo real
-    const socket: Socket = io('http://localhost:3007', {
+    const socket: Socket = io(getPublicApiOrigin(), {
       transports: ['websocket', 'polling'],
     });
 
@@ -523,7 +524,7 @@ export default function ConversationDetail() {
                     {message.type === 'IMAGE' && (
                       <div style={{ position: 'relative' }}>
                         <img
-                          src={`http://localhost:3007/api/media/${message.id}`}
+                          src={getMessageMediaUrl(message.id)}
                           alt={message.content || 'Imagem'}
                           style={{
                             maxWidth: '100%',
@@ -544,7 +545,7 @@ export default function ConversationDetail() {
                               if (message.metadata.mediaUrl.startsWith('http')) {
                                 target.src = message.metadata.mediaUrl;
                               } else {
-                                target.src = `http://localhost:3007${message.metadata.mediaUrl}`;
+                                target.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
                               }
                               console.log('🔄 Tentando URL alternativa:', target.src);
                             } else {
@@ -571,7 +572,7 @@ export default function ConversationDetail() {
                     {message.type === 'VIDEO' && (
                       <div style={{ position: 'relative' }}>
                         <video
-                          src={`http://localhost:3007/api/media/${message.id}`}
+                          src={getMessageMediaUrl(message.id)}
                           controls
                           style={{
                             maxWidth: '100%',
@@ -591,7 +592,7 @@ export default function ConversationDetail() {
                               if (message.metadata.mediaUrl.startsWith('http')) {
                                 target.src = message.metadata.mediaUrl;
                               } else {
-                                target.src = `http://localhost:3007${message.metadata.mediaUrl}`;
+                                target.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
                               }
                               console.log('🔄 Tentando URL alternativa:', target.src);
                             }
@@ -619,7 +620,7 @@ export default function ConversationDetail() {
                     )}
                     {message.type === 'AUDIO' && (
                       <AudioPlayer 
-                        src={`http://localhost:3007/api/media/${message.id}`}
+                        src={getMessageMediaUrl(message.id)}
                         duration={message.metadata?.mediaMetadata?.seconds}
                         isUserMessage={!!message.user}
                         messageId={message.id}

@@ -1,0 +1,45 @@
+# Uso local ou referência. No Coolify costuma bastar o Dockerfile + Postgres gerenciado.
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sistema_atendimento
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ''
+    restart: unless-stopped
+    ports:
+      - '3007:3007'
+    environment:
+      NODE_ENV: production
+      PORT: '3007'
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/sistema_atendimento?schema=public
+      JWT_SECRET: ${JWT_SECRET:-troque-em-producao}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3007}
+      APP_URL: ${APP_URL:-http://localhost:3007}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3007}
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  uploads_data:

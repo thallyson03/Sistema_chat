@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import api from '../utils/api';
+import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl } from '../config/publicUrl';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import CustomFieldsManager from '../components/CustomFieldsManager';
@@ -186,7 +187,7 @@ export default function DealDetail() {
       fetchMessages(conversation.id, { reset: true });
 
       // Conectar ao Socket.IO
-      const socket: Socket = io('http://localhost:3007', {
+      const socket: Socket = io(getPublicApiOrigin(), {
         transports: ['websocket', 'polling'],
       });
 
@@ -1807,7 +1808,7 @@ export default function DealDetail() {
                         {message.type === 'IMAGE' && (
                           <div style={{ position: 'relative', display: 'inline-block' }}>
                             <img
-                              src={`http://localhost:3007/api/media/${message.id}`}
+                              src={getMessageMediaUrl(message.id)}
                               alt={message.content || 'Imagem'}
                               style={{
                                 maxWidth: '100%',
@@ -1822,7 +1823,7 @@ export default function DealDetail() {
                                 if (message.metadata?.mediaUrl) {
                                   imgEl.src = message.metadata.mediaUrl.startsWith('http')
                                     ? message.metadata.mediaUrl
-                                    : `http://localhost:3007${message.metadata.mediaUrl}`;
+                                    : resolveMediaMetadataUrl(message.metadata.mediaUrl);
                                 }
                               }}
                             />
@@ -1909,7 +1910,7 @@ export default function DealDetail() {
                             }}
                           >
                             <video
-                              src={`http://localhost:3007/api/media/${message.id}`}
+                              src={getMessageMediaUrl(message.id)}
                               controls
                               style={{
                                 maxWidth: '100%',
@@ -1921,7 +1922,7 @@ export default function DealDetail() {
                                 if (message.metadata?.mediaUrl) {
                                   videoEl.src = message.metadata.mediaUrl.startsWith('http')
                                     ? message.metadata.mediaUrl
-                                    : `http://localhost:3007${message.metadata.mediaUrl}`;
+                                    : resolveMediaMetadataUrl(message.metadata.mediaUrl);
                                 }
                               }}
                             />
@@ -2122,7 +2123,7 @@ export default function DealDetail() {
                               </div>
                             </div>
                             <audio
-                              src={`http://localhost:3007/api/media/${message.id}`}
+                              src={getMessageMediaUrl(message.id)}
                               controls={false}
                               style={{ display: 'none' }}
                               preload="metadata"
@@ -2176,7 +2177,11 @@ export default function DealDetail() {
                             {message.metadata.fileName || 'Documento'}
                           </div>
                           <a
-                            href={`http://localhost:3007${message.metadata.mediaUrl}`}
+                            href={
+                              message.metadata.mediaUrl
+                                ? resolveMediaMetadataUrl(message.metadata.mediaUrl)
+                                : '#'
+                            }
                             download
                             style={{
                               color: isOwnMessage ? 'white' : '#3b82f6',

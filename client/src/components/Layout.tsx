@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
+import { getPublicApiOrigin } from '../config/publicUrl';
 import { SidebarLink } from './ui/SidebarLink';
 import { SidebarDropdownLink } from './ui/SidebarDropdownLink';
 import { Button } from './ui/Button';
@@ -21,7 +22,7 @@ export default function Layout() {
 
   // Conexão global com Socket.IO para notificações de tarefa (vale para todo o sistema)
   useEffect(() => {
-    const socket: Socket = io('http://localhost:3007', {
+    const socket: Socket = io(getPublicApiOrigin(), {
       transports: ['websocket', 'polling'],
     });
 

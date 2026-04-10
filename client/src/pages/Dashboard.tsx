@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '../components/ui/Card';
 
@@ -16,7 +16,7 @@ export default function Dashboard() {
     const fetchStats = async () => {
       try {
         const token = localStorage.getItem('token');
-        const response = await axios.get('http://localhost:3007/api/conversations/stats', {
+        const response = await api.get('/api/conversations/stats', {
           headers: { Authorization: `Bearer ${token}` },
         });
         setStats(response.data);

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
+import { getPublicApiOrigin } from '../config/publicUrl';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import { getTimeAgo } from '../utils/timeUtils';
@@ -116,8 +117,7 @@ const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
 
 export default function Conversations() {
   // Base da API (mesma usada pelo axios)
-  const apiBase =
-    (api.defaults.baseURL || '').replace(/\/$/, '') || 'http://localhost:3007';
+  const apiBase = (api.defaults.baseURL || '').replace(/\/$/, '') || getPublicApiOrigin();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -206,7 +206,7 @@ export default function Conversations() {
     window.addEventListener('selectConversation', handleSelectConversation);
 
     // Conectar ao Socket.IO para atualizações em tempo real
-    const socket: Socket = io('http://localhost:3007', {
+    const socket: Socket = io(getPublicApiOrigin(), {
       transports: ['websocket', 'polling'],
     });
 
