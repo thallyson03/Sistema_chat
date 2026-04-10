@@ -71,6 +71,50 @@ async function resolveWebhookVerifyTokens(): Promise<string[]> {
   return Array.from(tokens);
 }
 
+async function resolveWebhookAppSecret(req: Request): Promise<string | null> {
+  try {
+    const phoneNumberId = req.body?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
+
+    const channels = await prisma.channel.findMany({
+      where: { type: 'WHATSAPP' },
+      select: { config: true },
+    });
+
+    for (const channel of channels) {
+      const cfg = (channel.config || {}) as any;
+      const provider = String(cfg.provider || '').toLowerCase();
+      if (provider !== 'whatsapp_official' && provider !== 'meta') continue;
+
+      const samePhoneNumber =
+        !phoneNumberId ||
+        String(cfg.phoneNumberId || '').trim() === String(phoneNumberId).trim();
+
+      if (!samePhoneNumber) continue;
+
+      const appSecret =
+        cfg.appSecret ||
+        cfg.whatsappAppSecret ||
+        cfg.metaAppSecret ||
+        null;
+
+      if (typeof appSecret === 'string' && appSecret.trim()) {
+        return appSecret.trim();
+      }
+    }
+  } catch (error: any) {
+    console.warn(
+      '[WebhookWhatsApp] ⚠️ Falha ao buscar App Secret por canal, usando fallback global:',
+      error?.message,
+    );
+  }
+
+  const fallback = process.env.WHATSAPP_APP_SECRET;
+  if (typeof fallback === 'string' && fallback.trim()) {
+    return fallback.trim();
+  }
+  return null;
+}
+
 // Middleware para log de todas as requisições ao webhook
 router.use('/whatsapp', (req: Request, res: Response, next: Function) => {
   console.log('🔔 [WebhookMiddleware] Requisição recebida:', {
@@ -149,7 +193,8 @@ router.post('/whatsapp', async (req: Request, res: Response) => {
     console.log('📨 ============================================');
 
     // Validação opcional de assinatura (X-Hub-Signature-256) do WhatsApp/META
-    const appSecret = process.env.WHATSAPP_APP_SECRET;
+    // Preferência: segredo por canal (config da interface). Fallback: .env
+    const appSecret = await resolveWebhookAppSecret(req);
     const signatureHeader = req.headers['x-hub-signature-256'] as string | undefined;
 
     if (appSecret) {

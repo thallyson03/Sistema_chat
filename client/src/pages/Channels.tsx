@@ -102,6 +102,7 @@ export default function Channels() {
     secondarySectorIds: [] as string[],
     provider: 'evolution', // 'evolution' ou 'whatsapp_official'
     whatsappToken: '',
+    whatsappAppSecret: '',
     whatsappPhoneNumberId: '',
     whatsappBusinessAccountId: '',
     whatsappWebhookVerifyToken: '',
@@ -173,6 +174,7 @@ export default function Channels() {
 
         if (formData.provider === 'whatsapp_official') {
           channelData.config.token = formData.whatsappToken || undefined;
+          channelData.config.appSecret = formData.whatsappAppSecret || undefined;
           channelData.config.phoneNumberId = formData.whatsappPhoneNumberId || undefined;
           channelData.config.businessAccountId = formData.whatsappBusinessAccountId || undefined;
           channelData.config.webhookVerifyToken = formData.whatsappWebhookVerifyToken || undefined;
@@ -188,6 +190,7 @@ export default function Channels() {
         secondarySectorIds: [],
         provider: 'evolution',
         whatsappToken: '',
+        whatsappAppSecret: '',
         whatsappPhoneNumberId: '',
         whatsappBusinessAccountId: '',
         whatsappWebhookVerifyToken: '',
@@ -690,7 +693,7 @@ export default function Channels() {
               {formData.type === 'WHATSAPP' && formData.provider === 'whatsapp_official' && (
                 <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-3">
                   <p className="text-[11px] text-primary-fixed-dim">
-                    Preencha com Access Token, Phone Number ID, WABA ID e Verify Token obtidos no painel do Meta.
+                    Preencha com Access Token, App Secret, Phone Number ID, WABA ID e Verify Token obtidos no painel do Meta.
                   </p>
                   <div className="space-y-2">
                     <label className="block text-[11px] font-semibold text-on-surface">
@@ -728,6 +731,18 @@ export default function Channels() {
                       value={formData.whatsappToken}
                       onChange={(e) => setFormData({ ...formData, whatsappToken: e.target.value })}
                       placeholder="EAAG..."
+                      className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-on-surface">
+                      App Secret
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.whatsappAppSecret}
+                      onChange={(e) => setFormData({ ...formData, whatsappAppSecret: e.target.value })}
+                      placeholder="Segredo do app Meta"
                       className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                     />
                   </div>
