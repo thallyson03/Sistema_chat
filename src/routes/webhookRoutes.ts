@@ -147,6 +147,20 @@ async function resolveWebhookAppSecret(req: Request): Promise<string | null> {
   return null;
 }
 
+function digitsOnlyPhone(value: string | undefined | null): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+/** Tipos do Cloud API que não são “conversa do cliente” e não devem virar mensagem no CRM. */
+const WHATSAPP_OFFICIAL_IGNORE_TYPES = new Set([
+  'system',
+  'reaction',
+  'unsupported',
+  'unknown',
+  'ephemeral',
+  'protocol_message',
+]);
+
 async function resolveWhatsAppOfficialChannel(value: any) {
   const payloadPhoneNumberId = String(value?.metadata?.phone_number_id || '').trim();
 
@@ -357,6 +371,38 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
     const messageType = message.type;
     const timestamp = new Date(parseInt(message.timestamp) * 1000);
 
+    if (!messageId || typeof messageId !== 'string') {
+      console.warn('[WhatsAppOfficial] ⚠️ Evento sem id de mensagem, ignorando');
+      return;
+    }
+
+    // Idempotência: a Meta reenvia o webhook em retry; o wamid é único.
+    const already = await prisma.message.findFirst({
+      where: { externalId: messageId },
+      select: { id: true },
+    });
+    if (already) {
+      console.log('[WhatsAppOfficial] ℹ️ Mensagem já registrada (webhook duplicado/retry), ignorando:', messageId);
+      return;
+    }
+
+    const typeNorm = String(messageType || '').toLowerCase();
+    if (WHATSAPP_OFFICIAL_IGNORE_TYPES.has(typeNorm)) {
+      console.log('[WhatsAppOfficial] ℹ️ Tipo ignorado (não é mensagem conversacional do cliente):', messageType);
+      return;
+    }
+
+    // Eco / linha do negócio: se "from" for o mesmo número exibido do WhatsApp Business, não tratar como cliente.
+    const businessDigits = digitsOnlyPhone(value?.metadata?.display_phone_number);
+    const fromDigits = digitsOnlyPhone(phoneNumber);
+    if (businessDigits.length >= 8 && fromDigits.length >= 8 && businessDigits === fromDigits) {
+      console.log('[WhatsAppOfficial] ℹ️ Ignorando mensagem com remetente = número do negócio (eco/metadata):', {
+        from: phoneNumber,
+        display: value?.metadata?.display_phone_number,
+      });
+      return;
+    }
+
     // Tentar obter o nome de perfil enviado pelo WhatsApp Official
     // Estrutura padrão: entry[0].changes[0].value.contacts[0].profile.name
     let profileName: string | null = null;
@@ -528,6 +574,20 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         messageContent = message.text?.body || '';
         messageTypeDb = 'TEXT';
         break;
+      case 'button':
+        messageContent =
+          message.button?.text || message.button?.payload || message.button?.title || '';
+        messageTypeDb = 'TEXT';
+        break;
+      case 'interactive':
+        messageContent =
+          message.interactive?.button_reply?.title ||
+          message.interactive?.button_reply?.id ||
+          message.interactive?.list_reply?.title ||
+          message.interactive?.list_reply?.id ||
+          '';
+        messageTypeDb = 'TEXT';
+        break;
       case 'image':
         messageContent = message.image?.caption || '';
         messageTypeDb = 'IMAGE';
@@ -554,8 +614,20 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         mediaId = message.document?.id || null;
         break;
       default:
-        messageContent = `[Mensagem do tipo: ${messageType}]`;
-        messageTypeDb = 'TEXT';
+        console.log(
+          '[WhatsAppOfficial] ℹ️ Tipo não mapeado para persistência, ignorando (evita “fantasma” no chat):',
+          messageType,
+        );
+        return;
+    }
+
+    // Evita gravar bolha vazia para tipos que exigem corpo (texto/botão/interativo).
+    if (
+      (messageType === 'text' || messageType === 'button' || messageType === 'interactive') &&
+      (!messageContent || !String(messageContent).trim())
+    ) {
+      console.log('[WhatsAppOfficial] ℹ️ Mensagem sem conteúdo útil, ignorando:', messageType);
+      return;
     }
 
     // Criar mensagem no banco
@@ -791,17 +863,24 @@ async function handleNewMessage(data: any) {
     // Quando message = data.message, o key está em data.key, não em message.key
     const messageKey = message.key || data.key;
     
+    const rawFromMe =
+      messageKey?.fromMe ??
+      data.key?.fromMe ??
+      (message as any).fromMe ??
+      (data as any).fromMe;
+
     console.log('📩 [handleNewMessage] Processando mensagem:', {
       hasMessageKey: !!message.key,
       hasDataKey: !!data.key,
       hasMessageKeyFinal: !!messageKey,
-      fromMe: messageKey?.fromMe,
+      fromMe: rawFromMe,
       remoteJid: messageKey?.remoteJid || message.from || data.key?.remoteJid,
       messageId: messageKey?.id || data.key?.id,
     });
     
     // Ignorar mensagens enviadas pelo próprio sistema (fromMe)
-    const fromMe = messageKey?.fromMe;
+    const fromMe =
+      rawFromMe === true || rawFromMe === 'true' || rawFromMe === 1 || rawFromMe === '1';
     if (fromMe) {
       console.log('ℹ️ [handleNewMessage] Mensagem ignorada (enviada pelo sistema)');
       return;
