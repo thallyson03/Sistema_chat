@@ -1039,6 +1039,19 @@ export default function Conversations() {
       {/* Sidebar Esquerda - Lista de Conversas */}
       <div className="flex w-[min(100%,20rem)] shrink-0 flex-col overflow-hidden border-r border-primary/10 bg-surface-container">
         <div className="border-b border-primary/10 bg-surface-container-high px-4 py-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-400 shadow-lg ring-1 ring-white/10">
+              <img
+                src="/ceape-bot.png"
+                alt="Ceape chat"
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="font-headline text-base font-bold leading-tight text-primary">Ceape chat</p>
+              <p className="text-[10px] font-medium text-primary/70">Atendimento e performance</p>
+            </div>
+          </div>
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="font-headline text-lg font-bold tracking-tight text-primary">Conversas</h2>
             <button
