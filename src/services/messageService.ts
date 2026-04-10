@@ -6,6 +6,7 @@ import { WhatsAppOfficialService } from './whatsappOfficialService';
 import fs from 'fs';
 import path from 'path';
 import { convertOggToMp3, convertWebmToOgg } from '../utils/audioConverter';
+import { resolvePublicAppBaseUrl } from '../utils/publicBaseUrl';
 
 export interface SendMessageData {
   conversationId: string;
@@ -160,12 +161,14 @@ export class MessageService {
               ? 'document'
               : 'image';
 
-          // Construir URL pública completa para a mídia (WhatsApp Official exige link HTTP/HTTPS válido)
-          const baseUrl =
-            process.env.API_BASE_URL ||
-            process.env.NGROK_URL ||
-            process.env.APP_URL ||
-            '';
+          // URL pública: prioriza config do canal (publicAppUrl), depois env válido (ignora só "https")
+          const channelPublicOverride =
+            channelConfig.publicAppUrl ||
+            channelConfig.publicBaseUrl ||
+            channelConfig.mediaBaseUrl ||
+            null;
+
+          const baseUrl = resolvePublicAppBaseUrl(channelPublicOverride) || '';
 
           const fullMediaUrl = data.mediaUrl.startsWith('http')
             ? data.mediaUrl
@@ -181,6 +184,7 @@ export class MessageService {
             originalUrl: data.mediaUrl,
             fullMediaUrl,
             baseUrl,
+            channelPublicOverride: channelPublicOverride || undefined,
             mediaType,
             isValidHttpUrl,
           });
@@ -188,10 +192,11 @@ export class MessageService {
           if (!isValidHttpUrl) {
             console.error(
               '❌ [MessageService] URL de mídia inválida para WhatsApp Official. ' +
-                'Configure API_BASE_URL ou NGROK_URL no .env com uma URL pública (https) e tente novamente.'
+                'Defina APP_URL ou PUBLIC_APP_URL com URL completa (ex: https://crm.seudominio.com). ' +
+                'Valores como só "https" ou sem host em API_BASE_URL são ignorados.'
             );
             throw new Error(
-              'URL de mídia inválida para WhatsApp Official. Verifique a configuração de API_BASE_URL/NGROK_URL.'
+              'URL de mídia inválida para WhatsApp Official. Configure APP_URL ou PUBLIC_APP_URL com a URL pública completa (https://...).'
             );
           }
 
@@ -386,8 +391,13 @@ export class MessageService {
 
         // Enviar mídia se houver URL
         if (data.mediaUrl && messageType !== MessageType.TEXT) {
-          // Usar API_BASE_URL (ngrok) para URLs públicas acessíveis pela Evolution API
-          const baseUrl = process.env.API_BASE_URL || process.env.NGROK_URL || process.env.APP_URL || 'http://localhost:3007';
+          // URL pública para a Evolution baixar mídia (override no config do canal ou env)
+          const evoOverride =
+            (channel.config as any)?.publicAppUrl ||
+            (channel.config as any)?.publicBaseUrl ||
+            (channel.config as any)?.mediaBaseUrl ||
+            null;
+          const baseUrl = resolvePublicAppBaseUrl(evoOverride) || 'http://localhost:3007';
           const fullMediaUrl = data.mediaUrl.startsWith('http') 
             ? data.mediaUrl 
             : `${baseUrl}${data.mediaUrl}`;

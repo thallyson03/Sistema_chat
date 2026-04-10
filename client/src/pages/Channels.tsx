@@ -108,6 +108,7 @@ export default function Channels() {
     whatsappPhoneNumberId: '',
     whatsappBusinessAccountId: '',
     whatsappWebhookVerifyToken: '',
+    whatsappPublicAppUrl: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -126,6 +127,7 @@ export default function Channels() {
       whatsappPhoneNumberId: '',
       whatsappBusinessAccountId: '',
       whatsappWebhookVerifyToken: '',
+      whatsappPublicAppUrl: '',
     });
   };
 
@@ -195,6 +197,7 @@ export default function Channels() {
           channelData.config.phoneNumberId = formData.whatsappPhoneNumberId || undefined;
           channelData.config.businessAccountId = formData.whatsappBusinessAccountId || undefined;
           channelData.config.webhookVerifyToken = formData.whatsappWebhookVerifyToken || undefined;
+          channelData.config.publicAppUrl = formData.whatsappPublicAppUrl?.trim() || undefined;
         }
       }
 
@@ -233,6 +236,7 @@ export default function Channels() {
       whatsappPhoneNumberId: cfg.phoneNumberId || '',
       whatsappBusinessAccountId: cfg.businessAccountId || '',
       whatsappWebhookVerifyToken: cfg.webhookVerifyToken || '',
+      whatsappPublicAppUrl: cfg.publicAppUrl || '',
     });
     setShowModal(true);
   };
@@ -756,6 +760,23 @@ export default function Channels() {
                   <p className="text-[11px] text-primary-fixed-dim">
                     Preencha com Access Token, App Secret, Phone Number ID, WABA ID e Verify Token obtidos no painel do Meta.
                   </p>
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-on-surface">
+                      URL pública do sistema (mídia / áudio para a Meta)
+                    </label>
+                    <input
+                      type="url"
+                      value={formData.whatsappPublicAppUrl}
+                      onChange={(e) =>
+                        setFormData({ ...formData, whatsappPublicAppUrl: e.target.value })
+                      }
+                      placeholder="https://crm.chat.chatia.qzz.io"
+                      className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                    />
+                    <p className="text-[10px] text-on-surface-variant">
+                      Mesma URL que você usa no navegador (com https), sem barra no final. Obrigatória para enviar áudio/imagem pela Cloud API se as variáveis de ambiente estiverem incorretas.
+                    </p>
+                  </div>
                   <div className="space-y-2">
                     <label className="block text-[11px] font-semibold text-on-surface">
                       URL do Webhook (colar no Meta)
