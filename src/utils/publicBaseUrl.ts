@@ -27,12 +27,14 @@ export function resolvePublicAppBaseUrl(override?: string | null): string | null
     candidates.push(String(override).trim());
   }
 
-  candidates.push(
+  for (const v of [
     process.env.PUBLIC_APP_URL,
     process.env.APP_URL,
     process.env.API_BASE_URL,
     process.env.NGROK_URL,
-  );
+  ]) {
+    if (v) candidates.push(v);
+  }
 
   const cors = process.env.CORS_ORIGIN;
   if (cors) {

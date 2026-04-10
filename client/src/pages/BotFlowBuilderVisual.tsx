@@ -6072,10 +6072,6 @@ export default function BotFlowBuilderVisual() {
                   <input
                     type="text"
                     value={stepFormData.config.variableName || ''}
-                    onChange={(e) => setStepFormData({
-                      ...stepFormData,
-                      config: { ...stepFormData.config, variableName: e.target.value },
-                    })}
                     placeholder="email"
                     style={{
                       width: '100%',
@@ -6090,7 +6086,6 @@ export default function BotFlowBuilderVisual() {
                         ...stepFormData,
                         config: { ...stepFormData.config, variableName: varName },
                       });
-                      // Atualizar lista de variáveis disponíveis
                       if (varName && !availableVariables.includes(varName)) {
                         setAvailableVariables([...availableVariables, varName]);
                       }
