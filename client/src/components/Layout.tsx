@@ -153,14 +153,12 @@ export default function Layout() {
           transition={{ delay: 0.2 }}
         >
           <div className="flex items-center gap-3 px-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary-fixed-dim shadow-forest-glow">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-400 shadow-lg">
+              <span className="text-xl">💬</span>
             </div>
             <div>
-              <h2 className="font-headline text-lg font-bold text-primary">Obsidian CRM</h2>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/60">Emerald Precision</p>
+              <h2 className="font-headline text-lg font-bold text-primary">Ceape chat</h2>
+              <p className="text-[11px] font-medium text-primary/70">Atendimento e performance</p>
             </div>
           </div>
         </motion.div>
