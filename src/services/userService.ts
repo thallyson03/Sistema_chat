@@ -299,6 +299,22 @@ export class UserService {
   }
 
   async setPause(userId: string, pause: boolean, reason?: string, pausedUntil?: Date) {
+    if (pause) {
+      const openCount = await prisma.conversation.count({
+        where: {
+          assignedToId: userId,
+          status: { in: ['OPEN', 'WAITING'] },
+        },
+      });
+      if (openCount > 0) {
+        throw new Error(
+          openCount === 1
+            ? 'Não é possível pausar: você tem 1 atendimento em aberto. Transfira, finalize ou arquive antes.'
+            : `Não é possível pausar: você tem ${openCount} atendimentos em aberto. Transfira, finalize ou arquive antes.`,
+        );
+      }
+    }
+
     const updateData: any = {
       isPaused: pause,
       pausedAt: pause ? new Date() : null,
@@ -323,18 +339,30 @@ export class UserService {
   }
 
   async getPauseStatus(userId: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        isPaused: true,
-        pausedAt: true,
-        pausedUntil: true,
-        pauseReason: true,
-      },
-    });
+    const [user, openAssignedConversationsCount] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          isPaused: true,
+          pausedAt: true,
+          pausedUntil: true,
+          pauseReason: true,
+        },
+      }),
+      prisma.conversation.count({
+        where: {
+          assignedToId: userId,
+          status: { in: ['OPEN', 'WAITING'] },
+        },
+      }),
+    ]);
 
-    return user;
+    if (!user) {
+      return null;
+    }
+
+    return { ...user, openAssignedConversationsCount };
   }
 }
 

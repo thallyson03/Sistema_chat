@@ -12,6 +12,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const [isPaused, setIsPaused] = useState(false);
   const [pauseReason, setPauseReason] = useState<string | null>(null);
+  const [openAssignedConversationsCount, setOpenAssignedConversationsCount] = useState(0);
   const [loadingPause, setLoadingPause] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [showPauseModal, setShowPauseModal] = useState(false);
@@ -71,6 +72,14 @@ export default function Layout() {
     fetchUser();
   }, []);
 
+  useEffect(() => {
+    const onFocus = () => {
+      void fetchPauseStatus();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
   const fetchUser = async () => {
     try {
       const response = await api.get('/api/auth/me');
@@ -88,6 +97,11 @@ export default function Layout() {
       const response = await api.get(`/api/users/${userId}/pause`);
       setIsPaused(response.data.isPaused || false);
       setPauseReason(response.data.pauseReason || null);
+      setOpenAssignedConversationsCount(
+        typeof response.data.openAssignedConversationsCount === 'number'
+          ? response.data.openAssignedConversationsCount
+          : 0,
+      );
     } catch (error) {
       console.error('Erro ao buscar status de pausa:', error);
     } finally {
@@ -118,6 +132,15 @@ export default function Layout() {
     if (isPaused) {
       applyPause(false);
       setShowPauseModal(false);
+      return;
+    }
+    if (openAssignedConversationsCount > 0) {
+      const n = openAssignedConversationsCount;
+      alert(
+        n === 1
+          ? 'Não é possível pausar: você tem 1 atendimento em aberto. Transfira, finalize ou arquive antes.'
+          : `Não é possível pausar: você tem ${n} atendimentos em aberto. Transfira, finalize ou arquive antes.`,
+      );
       return;
     }
     // Se está ativo, abrir modal de seleção de motivo
@@ -242,7 +265,14 @@ export default function Layout() {
                   variant={isPaused ? 'danger' : 'primary'}
                   onClick={handlePauseClick}
                   className="w-full"
-                  title={isPaused ? 'Retomar atendimento' : 'Pausar atendimento'}
+                  disabled={!isPaused && openAssignedConversationsCount > 0}
+                  title={
+                    isPaused
+                      ? 'Retomar atendimento'
+                      : openAssignedConversationsCount > 0
+                        ? `Pausa bloqueada: ${openAssignedConversationsCount} atendimento(s) em aberto (OPEN/WAITING). Transfira ou finalize antes.`
+                        : 'Pausar atendimento'
+                  }
                 >
                   <span className="flex items-center justify-center gap-2">
                     {isPaused ? (
