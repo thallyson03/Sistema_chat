@@ -147,6 +147,34 @@ async function resolveWebhookAppSecret(req: Request): Promise<string | null> {
   return null;
 }
 
+async function resolveWhatsAppOfficialChannel(value: any) {
+  const payloadPhoneNumberId = String(value?.metadata?.phone_number_id || '').trim();
+
+  const channels = await prisma.channel.findMany({
+    where: { type: 'WHATSAPP' },
+    select: { id: true, name: true, config: true, status: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const officialChannels = channels.filter((channel) => {
+    const cfg = (channel.config || {}) as any;
+    const provider = String(cfg.provider || '').toLowerCase();
+    return provider === 'whatsapp_official' || provider === 'meta';
+  });
+
+  if (officialChannels.length === 0) return null;
+
+  if (payloadPhoneNumberId) {
+    const matchByPhoneId = officialChannels.find((channel) => {
+      const cfg = (channel.config || {}) as any;
+      return String(cfg.phoneNumberId || '').trim() === payloadPhoneNumberId;
+    });
+    if (matchByPhoneId) return matchByPhoneId;
+  }
+
+  return officialChannels[0];
+}
+
 // Middleware para log de todas as requisições ao webhook
 router.use('/whatsapp', (req: Request, res: Response, next: Function) => {
   console.log('🔔 [WebhookMiddleware] Requisição recebida:', {
@@ -349,67 +377,79 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       );
     }
 
-    // Buscar ou criar contato
+    // Resolve canal oficial correto a partir do phone_number_id do payload.
+    // Isso evita criar conversa sem canal quando existir contato legado órfão.
+    let whatsappChannel = await resolveWhatsAppOfficialChannel(value);
+    if (!whatsappChannel) {
+      console.log('[WhatsAppOfficial] ⚠️ Canal WhatsApp Official não encontrado. Criando automaticamente...');
+      try {
+        whatsappChannel = await prisma.channel.create({
+          data: {
+            name: 'WhatsApp Official',
+            type: 'WHATSAPP',
+            status: 'ACTIVE',
+            config: {
+              provider: 'whatsapp_official',
+              phoneNumberId: value?.metadata?.phone_number_id || process.env.WHATSAPP_DEV_PHONE_NUMBER_ID,
+              businessAccountId: process.env.WHATSAPP_DEV_WABA_ID,
+            },
+          },
+        });
+      } catch (createError: any) {
+        console.error('[WhatsAppOfficial] ❌ Erro ao criar canal automaticamente:', createError);
+        return;
+      }
+    }
+
+    // Buscar ou criar contato (sempre no canal oficial resolvido)
     let contact = await prisma.contact.findFirst({
       where: {
         phone: phoneNumber,
+        channelId: whatsappChannel.id,
       },
       include: {
         channel: true,
       },
     });
 
-    // Se não encontrou contato, buscar canal WhatsApp Official
+    // Se não encontrou no canal correto, tenta recuperar contato legado sem canal e re-vincular
     if (!contact) {
-      console.log('[WhatsAppOfficial] 🔍 Contato não encontrado, buscando canal WhatsApp...');
-      
-      let whatsappChannel = await prisma.channel.findFirst({
+      const orphanContact = await prisma.contact.findFirst({
         where: {
-          type: 'WHATSAPP',
-          // Adicionar flag para identificar canal oficial (pode ser adicionado ao schema depois)
-        },
-      });
-
-      // Se não encontrou canal, criar um automaticamente para WhatsApp Official
-      if (!whatsappChannel) {
-        console.log('[WhatsAppOfficial] ⚠️ Canal WhatsApp não encontrado. Criando canal automaticamente...');
-        
-        try {
-          whatsappChannel = await prisma.channel.create({
-            data: {
-              name: 'WhatsApp Official',
-              type: 'WHATSAPP',
-              status: 'ACTIVE',
-              config: {
-                provider: 'whatsapp_official',
-                phoneNumberId: process.env.WHATSAPP_DEV_PHONE_NUMBER_ID,
-                businessAccountId: process.env.WHATSAPP_DEV_WABA_ID,
-              },
-            },
-          });
-          console.log('[WhatsAppOfficial] ✅ Canal WhatsApp criado automaticamente:', whatsappChannel.id);
-        } catch (createError: any) {
-          console.error('[WhatsAppOfficial] ❌ Erro ao criar canal:', createError);
-          console.error('[WhatsAppOfficial] 💡 Dica: Crie um canal WhatsApp manualmente no sistema');
-          return;
-        }
-      } else {
-        console.log('[WhatsAppOfficial] ✅ Canal WhatsApp encontrado:', whatsappChannel.id);
-      }
-
-      // Criar contato
-      contact = await prisma.contact.create({
-        data: {
-          // Usar profile.name se disponível, senão fallback para número
-          name: profileName || phoneNumber,
           phone: phoneNumber,
-          channelId: whatsappChannel.id,
-          channelIdentifier: phoneNumber, // Usar phone como identifier
+          channelId: null,
         },
-        include: {
-          channel: true,
-        },
+        include: { channel: true },
       });
+
+      if (orphanContact) {
+        contact = await prisma.contact.update({
+          where: { id: orphanContact.id },
+          data: {
+            channelId: whatsappChannel.id,
+            channelIdentifier: orphanContact.channelIdentifier || phoneNumber,
+          },
+          include: { channel: true },
+        });
+        console.log('[WhatsAppOfficial] 🔗 Contato órfão re-vinculado ao canal:', {
+          contactId: contact.id,
+          channelId: whatsappChannel.id,
+        });
+      } else {
+        // Criar contato
+        contact = await prisma.contact.create({
+          data: {
+            // Usar profile.name se disponível, senão fallback para número
+            name: profileName || phoneNumber,
+            phone: phoneNumber,
+            channelId: whatsappChannel.id,
+            channelIdentifier: phoneNumber, // Usar phone como identifier
+          },
+          include: {
+            channel: true,
+          },
+        });
+      }
     } else if (profileName && profileName.trim().length > 0 && contact.name !== profileName) {
       // Se o contato já existe e temos um profile.name mais "bonito",
       // atualizar o nome salvo (sem alterar telefone/canal).
@@ -435,6 +475,15 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
     if (!contact) {
       console.error('[WhatsAppOfficial] ❌ Não foi possível criar/encontrar contato');
       return;
+    }
+
+    // Garantia extra: contato não pode ficar sem canal neste fluxo
+    if (!contact.channelId) {
+      contact = await prisma.contact.update({
+        where: { id: contact.id },
+        data: { channelId: whatsappChannel.id },
+        include: { channel: true },
+      });
     }
 
     // Buscar ou criar conversa
