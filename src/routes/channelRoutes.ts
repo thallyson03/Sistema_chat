@@ -10,6 +10,7 @@ router.use(authenticateToken);
 
 // Rotas de leitura de canais (qualquer usuário autenticado)
 router.get('/', channelController.getChannels.bind(channelController));
+router.get('/health/panel', channelController.getHealthPanel.bind(channelController));
 router.get('/check/whatsapp-official', channelController.checkWhatsAppOfficial.bind(channelController));
 router.get('/:id', channelController.getChannelById.bind(channelController));
 router.get('/:id/qrcode', channelController.getQRCode.bind(channelController));

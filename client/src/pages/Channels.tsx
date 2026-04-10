@@ -25,6 +25,31 @@ interface Channel {
   }>;
 }
 
+interface ChannelHealthItem {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  provider: string;
+  checks: {
+    credentialsOk: boolean;
+    webhookReady: boolean;
+  };
+  metrics: {
+    conversationCount: number;
+    lastActivityAt: string | null;
+  };
+}
+
+interface ChannelHealthPanel {
+  summary: {
+    total: number;
+    active: number;
+    withIssues: number;
+  };
+  items: ChannelHealthItem[];
+}
+
 function typeLabel(type: string): string {
   const map: Record<string, string> = {
     WHATSAPP: 'WhatsApp',
@@ -63,6 +88,7 @@ function channelMetaLine(channel: Channel): string {
 export default function Channels() {
   const metaWebhookUrl = 'https://crm.chat.chatia.qzz.io/api/webhooks/whatsapp';
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [healthPanel, setHealthPanel] = useState<ChannelHealthPanel | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
@@ -88,6 +114,7 @@ export default function Channels() {
   useEffect(() => {
     fetchChannels();
     fetchSectors();
+    fetchHealthPanel();
   }, []);
 
   useEffect(() => {
@@ -113,6 +140,15 @@ export default function Channels() {
       console.error('Erro ao carregar canais:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchHealthPanel = async () => {
+    try {
+      const response = await api.get('/api/channels/health/panel');
+      setHealthPanel(response.data || null);
+    } catch (error) {
+      console.error('Erro ao carregar painel de saúde dos canais:', error);
     }
   };
 
@@ -157,6 +193,7 @@ export default function Channels() {
         whatsappWebhookVerifyToken: '',
       });
       fetchChannels();
+      fetchHealthPanel();
       alert('Canal criado com sucesso!');
     } catch (error: any) {
       alert(error.response?.data?.error || 'Erro ao criar canal');
@@ -169,6 +206,7 @@ export default function Channels() {
     try {
       await api.get(`/api/channels/${channelId}/status`);
       fetchChannels(); // Recarregar lista
+      fetchHealthPanel();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Erro ao atualizar status');
     }
@@ -248,6 +286,7 @@ export default function Channels() {
       console.log('✅ Canal excluído com sucesso:', response.data);
       setSuccessMessage('Canal excluído com sucesso!');
       fetchChannels();
+      fetchHealthPanel();
     } catch (error: any) {
       console.error('❌ Erro ao excluir canal:', error);
       console.error('Status:', error.response?.status);
@@ -268,6 +307,57 @@ export default function Channels() {
   return (
     <div className="min-h-full bg-surface px-6 py-8 font-body text-on-surface md:px-10">
       <div className="mx-auto max-w-6xl">
+        {healthPanel && (
+          <div className="mb-6 rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-low/70 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-headline text-sm font-bold text-on-surface">Painel de Saúde dos Canais</h2>
+              <button
+                type="button"
+                onClick={fetchHealthPanel}
+                className="rounded-md border border-[rgba(63,73,69,0.25)] bg-surface-container-highest px-3 py-1 text-[11px] font-semibold text-on-surface-variant transition hover:bg-surface-variant"
+              >
+                Atualizar painel
+              </button>
+            </div>
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded-lg border border-[rgba(63,73,69,0.2)] bg-surface-container-highest p-2.5 text-xs text-on-surface-variant">
+                Total de canais: <span className="font-semibold text-on-surface">{healthPanel.summary.total}</span>
+              </div>
+              <div className="rounded-lg border border-primary/20 bg-primary/10 p-2.5 text-xs text-primary-fixed-dim">
+                Ativos: <span className="font-semibold">{healthPanel.summary.active}</span>
+              </div>
+              <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+                Com pendências: <span className="font-semibold">{healthPanel.summary.withIssues}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {healthPanel.items.slice(0, 6).map((item) => {
+                const ok = item.checks.credentialsOk && item.checks.webhookReady;
+                return (
+                  <div
+                    key={item.id}
+                    className="flex flex-col gap-1 rounded-lg border border-[rgba(63,73,69,0.2)] bg-surface-container-highest px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="text-on-surface">
+                      <span className="font-semibold">{item.name}</span>{' '}
+                      <span className="text-on-surface-variant">({typeLabel(item.type)} / {item.provider})</span>
+                    </div>
+                    <div className={`font-semibold ${ok ? 'text-[#66dd8b]' : 'text-amber-300'}`}>
+                      {ok ? 'Saudável' : 'Requer atenção'}
+                    </div>
+                    <div className="text-on-surface-variant">
+                      Conv: {item.metrics.conversationCount} · Última atividade:{' '}
+                      {item.metrics.lastActivityAt
+                        ? new Date(item.metrics.lastActivityAt).toLocaleString('pt-BR')
+                        : 'n/a'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="mb-10 flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div>
             <h1 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface">

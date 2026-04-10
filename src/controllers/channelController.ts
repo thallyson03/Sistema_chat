@@ -1,10 +1,82 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { ChannelService } from '../services/channelService';
+import prisma from '../config/database';
 
 const channelService = new ChannelService();
 
 export class ChannelController {
+  async getHealthPanel(req: AuthRequest, res: Response) {
+    try {
+      const channels = await prisma.channel.findMany({
+        include: {
+          conversations: {
+            select: {
+              id: true,
+              lastMessageAt: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      const items = channels.map((channel) => {
+        const cfg = (channel.config || {}) as any;
+        const provider = String(cfg.provider || (channel.type === 'WHATSAPP' ? 'evolution' : 'native'));
+        const isWhatsAppOfficial = provider === 'whatsapp_official' || provider === 'meta';
+        const hasToken = !!(cfg.token && String(cfg.token).trim());
+        const hasPhoneNumberId = !!(cfg.phoneNumberId && String(cfg.phoneNumberId).trim());
+        const hasWabaId = !!(cfg.businessAccountId && String(cfg.businessAccountId).trim());
+        const hasVerifyToken = !!(
+          (cfg.webhookVerifyToken && String(cfg.webhookVerifyToken).trim()) ||
+          (cfg.verifyToken && String(cfg.verifyToken).trim()) ||
+          (cfg.metaWebhookVerifyToken && String(cfg.metaWebhookVerifyToken).trim())
+        );
+
+        const credentialsOk = !isWhatsAppOfficial || (hasToken && hasPhoneNumberId && hasWabaId);
+        const webhookReady = !isWhatsAppOfficial || hasVerifyToken;
+        const conversationCount = channel.conversations.length;
+        const lastActivityAt = channel.conversations
+          .map((c) => c.lastMessageAt)
+          .filter(Boolean)
+          .sort((a, b) => new Date(b as Date).getTime() - new Date(a as Date).getTime())[0] || null;
+
+        return {
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          status: channel.status,
+          provider,
+          checks: {
+            credentialsOk,
+            webhookReady,
+            hasToken,
+            hasPhoneNumberId,
+            hasWabaId,
+            hasVerifyToken,
+          },
+          metrics: {
+            conversationCount,
+            lastActivityAt,
+          },
+        };
+      });
+
+      const summary = {
+        total: items.length,
+        active: items.filter((i) => i.status === 'ACTIVE').length,
+        withIssues: items.filter((i) => !i.checks.credentialsOk || !i.checks.webhookReady).length,
+      };
+
+      res.json({ summary, items });
+    } catch (error: any) {
+      console.error('[ChannelController] ❌ Erro ao montar painel de saúde:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
   async getChannels(req: AuthRequest, res: Response) {
     try {
       console.log('[ChannelController] 📡 Buscando canais...');
@@ -193,8 +265,6 @@ export class ChannelController {
 
   async checkWhatsAppOfficial(req: AuthRequest, res: Response) {
     try {
-      const prisma = (await import('../config/database')).default;
-      
       // Buscar todos os canais WhatsApp
       const whatsappChannels = await prisma.channel.findMany({
         where: {
