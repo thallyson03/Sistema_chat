@@ -19,6 +19,58 @@ export function setSocketIO(socketIO: any) {
 
 const router = Router();
 
+async function resolveWebhookVerifyTokens(): Promise<string[]> {
+  const tokens = new Set<string>();
+
+  // Fallback global (.env) para manter compatibilidade
+  if (process.env.WHATSAPP_DEV_WEBHOOK_VERIFY_TOKEN) {
+    tokens.add(process.env.WHATSAPP_DEV_WEBHOOK_VERIFY_TOKEN);
+  }
+  if (process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
+    tokens.add(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN);
+  }
+
+  // Tokens por canal (configuráveis pela interface)
+  try {
+    const channels = await prisma.channel.findMany({
+      where: {
+        type: 'WHATSAPP',
+      },
+      select: {
+        id: true,
+        config: true,
+      },
+    });
+
+    for (const channel of channels) {
+      const cfg = (channel.config || {}) as any;
+      const provider = String(cfg.provider || '').toLowerCase();
+
+      // Foca apenas em canais Meta/Official
+      if (provider !== 'whatsapp_official' && provider !== 'meta') continue;
+
+      const tokenCandidates = [
+        cfg.webhookVerifyToken,
+        cfg.verifyToken,
+        cfg.metaWebhookVerifyToken,
+      ];
+
+      for (const t of tokenCandidates) {
+        if (typeof t === 'string' && t.trim()) {
+          tokens.add(t.trim());
+        }
+      }
+    }
+  } catch (error: any) {
+    console.warn(
+      '[WebhookWhatsApp] ⚠️ Falha ao buscar verify token por canal, usando apenas .env:',
+      error?.message,
+    );
+  }
+
+  return Array.from(tokens);
+}
+
 // Middleware para log de todas as requisições ao webhook
 router.use('/whatsapp', (req: Request, res: Response, next: Function) => {
   console.log('🔔 [WebhookMiddleware] Requisição recebida:', {
@@ -42,12 +94,14 @@ router.use('/whatsapp', (req: Request, res: Response, next: Function) => {
  * GET: Verificação do webhook (handshake)
  * POST: Recebimento de eventos (mensagens, status, etc.)
  */
-router.get('/whatsapp', (req: Request, res: Response) => {
+router.get('/whatsapp', async (req: Request, res: Response) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  const verifyToken = process.env.WHATSAPP_DEV_WEBHOOK_VERIFY_TOKEN || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+  const verifyTokens = await resolveWebhookVerifyTokens();
+  const tokenStr = typeof token === 'string' ? token : '';
+  const tokenMatch = verifyTokens.includes(tokenStr);
 
   console.log('[WebhookWhatsApp] 🔐 ============================================');
   console.log('[WebhookWhatsApp] 🔐 Verificação do webhook (GET)');
@@ -55,7 +109,7 @@ router.get('/whatsapp', (req: Request, res: Response) => {
   console.log('[WebhookWhatsApp] 🔐 Query params:', JSON.stringify(req.query, null, 2));
   console.log('[WebhookWhatsApp] 🔐 Mode:', mode);
   console.log('[WebhookWhatsApp] 🔐 Token recebido:', token);
-  console.log('[WebhookWhatsApp] 🔐 Token esperado:', verifyToken);
+  console.log('[WebhookWhatsApp] 🔐 Total de tokens válidos carregados:', verifyTokens.length);
   console.log('[WebhookWhatsApp] 🔐 Challenge:', challenge);
   console.log('[WebhookWhatsApp] 🔐 ============================================');
 
@@ -70,13 +124,14 @@ router.get('/whatsapp', (req: Request, res: Response) => {
     });
   }
 
-  if (mode === 'subscribe' && token === verifyToken) {
+  if (mode === 'subscribe' && tokenMatch) {
     console.log('[WebhookWhatsApp] ✅ Webhook verificado com sucesso!');
     res.status(200).send(challenge);
   } else {
     console.warn('[WebhookWhatsApp] ⚠️ Verificação falhou:', {
       mode,
-      tokenMatch: token === verifyToken,
+      tokenMatch,
+      availableTokens: verifyTokens.length,
     });
     res.status(403).send('Forbidden');
   }

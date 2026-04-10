@@ -61,6 +61,7 @@ function channelMetaLine(channel: Channel): string {
 }
 
 export default function Channels() {
+  const metaWebhookUrl = 'https://crm.chat.chatia.qzz.io/api/webhooks/whatsapp';
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -77,6 +78,7 @@ export default function Channels() {
     whatsappToken: '',
     whatsappPhoneNumberId: '',
     whatsappBusinessAccountId: '',
+    whatsappWebhookVerifyToken: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -137,6 +139,7 @@ export default function Channels() {
           channelData.config.token = formData.whatsappToken || undefined;
           channelData.config.phoneNumberId = formData.whatsappPhoneNumberId || undefined;
           channelData.config.businessAccountId = formData.whatsappBusinessAccountId || undefined;
+          channelData.config.webhookVerifyToken = formData.whatsappWebhookVerifyToken || undefined;
         }
       }
 
@@ -151,6 +154,7 @@ export default function Channels() {
         whatsappToken: '',
         whatsappPhoneNumberId: '',
         whatsappBusinessAccountId: '',
+        whatsappWebhookVerifyToken: '',
       });
       fetchChannels();
       alert('Canal criado com sucesso!');
@@ -596,8 +600,35 @@ export default function Channels() {
               {formData.type === 'WHATSAPP' && formData.provider === 'whatsapp_official' && (
                 <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-3">
                   <p className="text-[11px] text-primary-fixed-dim">
-                    Preencha com o Access Token, Phone Number ID e WABA ID obtidos no painel do Meta.
+                    Preencha com Access Token, Phone Number ID, WABA ID e Verify Token obtidos no painel do Meta.
                   </p>
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-on-surface">
+                      URL do Webhook (colar no Meta)
+                    </label>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        type="text"
+                        value={metaWebhookUrl}
+                        readOnly
+                        className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(metaWebhookUrl);
+                            alert('URL do webhook copiada!');
+                          } catch {
+                            alert('Não foi possível copiar automaticamente.');
+                          }
+                        }}
+                        className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary-fixed-dim transition hover:bg-primary/20"
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     <label className="block text-[11px] font-semibold text-on-surface">
                       Access Token
@@ -639,6 +670,23 @@ export default function Channels() {
                         className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                       />
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-on-surface">
+                      Webhook Verify Token
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.whatsappWebhookVerifyToken}
+                      onChange={(e) =>
+                        setFormData({ ...formData, whatsappWebhookVerifyToken: e.target.value })
+                      }
+                      placeholder="Ex: meta_verify_token_2026"
+                      className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                    />
+                    <p className="text-[10px] text-on-surface-variant">
+                      Use o mesmo valor no campo &quot;Verify Token&quot; ao validar o webhook no Meta.
+                    </p>
                   </div>
                 </div>
               )}
