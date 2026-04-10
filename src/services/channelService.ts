@@ -373,21 +373,24 @@ export class ChannelService {
       where: { channelId: id },
     });
 
-    console.log('[ChannelService] Relacionamentos encontrados (serão preservados):', {
+    console.log('[ChannelService] Relacionamentos encontrados:', {
       conversations: conversationsCount,
       contacts: contactsCount,
     });
 
+    if (conversationsCount > 0 || contactsCount > 0) {
+      throw new Error(
+        `Não é possível excluir o canal porque ele possui ${conversationsCount} conversa(s) e ${contactsCount} contato(s) vinculados. Edite/desative o canal ou reatribua os vínculos antes de excluir.`
+      );
+    }
+
     try {
-      // Deletar apenas o canal
-      // Com onDelete: SetNull no schema, os contatos e conversas terão channelId = null
-      // mas os dados históricos serão preservados
+      // Deletar canal apenas quando não houver vínculos
       await prisma.channel.delete({
         where: { id },
       });
       
       console.log('[ChannelService] ✅ Canal deletado com sucesso');
-      console.log(`[ChannelService] ℹ️ ${conversationsCount} conversa(s) e ${contactsCount} contato(s) foram preservados (channelId definido como null)`);
     } catch (error: any) {
       console.error('[ChannelService] ❌ Erro ao deletar canal:', error.message);
       console.error('[ChannelService] Código:', error.code);

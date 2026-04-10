@@ -31,7 +31,7 @@ export class MessageService {
     });
     
     // Buscar conversa com canal e contato
-    const conversation = await prisma.conversation.findUnique({
+    let conversation = await prisma.conversation.findUnique({
       where: { id: data.conversationId },
       include: {
         channel: true,
@@ -48,7 +48,28 @@ export class MessageService {
     let status: MessageStatus = MessageStatus.SENT;
 
     if (!conversation.channel) {
-      throw new Error('Conversa não possui canal associado');
+      // Recuperação automática: se a conversa perdeu channelId, mas o contato ainda tem,
+      // reassociamos para evitar falha no envio.
+      if (conversation.contact?.channelId) {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { channelId: conversation.contact.channelId },
+        });
+
+        conversation = await prisma.conversation.findUnique({
+          where: { id: data.conversationId },
+          include: {
+            channel: true,
+            contact: true,
+          },
+        });
+      }
+    }
+
+    if (!conversation?.channel) {
+      throw new Error(
+        'Conversa sem canal associado. Vincule um canal ao contato/conversa antes de enviar mensagens.'
+      );
     }
 
     // Garantir que channel não é null para TypeScript

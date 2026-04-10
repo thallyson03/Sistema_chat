@@ -23,6 +23,7 @@ interface Channel {
       color: string;
     };
   }>;
+  config?: any;
 }
 
 interface ChannelHealthItem {
@@ -91,6 +92,7 @@ export default function Channels() {
   const [healthPanel, setHealthPanel] = useState<ChannelHealthPanel | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [checkingConnection, setCheckingConnection] = useState(false);
@@ -111,6 +113,21 @@ export default function Channels() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      type: 'WHATSAPP',
+      primarySectorId: '',
+      secondarySectorIds: [],
+      provider: 'evolution',
+      whatsappToken: '',
+      whatsappAppSecret: '',
+      whatsappPhoneNumberId: '',
+      whatsappBusinessAccountId: '',
+      whatsappWebhookVerifyToken: '',
+    });
+  };
 
   useEffect(() => {
     fetchChannels();
@@ -153,7 +170,7 @@ export default function Channels() {
     }
   };
 
-  const handleCreateChannel = async (e: FormEvent) => {
+  const handleCreateOrUpdateChannel = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
@@ -181,28 +198,43 @@ export default function Channels() {
         }
       }
 
-      await api.post('/api/channels', channelData);
+      if (editingChannelId) {
+        await api.put(`/api/channels/${editingChannelId}`, channelData);
+      } else {
+        await api.post('/api/channels', channelData);
+      }
       setShowModal(false);
-      setFormData({
-        name: '',
-        type: 'WHATSAPP',
-        primarySectorId: '',
-        secondarySectorIds: [],
-        provider: 'evolution',
-        whatsappToken: '',
-        whatsappAppSecret: '',
-        whatsappPhoneNumberId: '',
-        whatsappBusinessAccountId: '',
-        whatsappWebhookVerifyToken: '',
-      });
+      setEditingChannelId(null);
+      resetForm();
       fetchChannels();
       fetchHealthPanel();
-      alert('Canal criado com sucesso!');
+      alert(editingChannelId ? 'Canal atualizado com sucesso!' : 'Canal criado com sucesso!');
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Erro ao criar canal');
+      alert(error.response?.data?.error || (editingChannelId ? 'Erro ao atualizar canal' : 'Erro ao criar canal'));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleEditChannel = (channel: Channel) => {
+    const cfg: any = channel.config || {};
+    const provider = cfg.provider === 'whatsapp_official' ? 'whatsapp_official' : 'evolution';
+    const secondaryIds = (channel.secondarySectors || []).map((s) => s.sector.id);
+
+    setEditingChannelId(channel.id);
+    setFormData({
+      name: channel.name || '',
+      type: channel.type || 'WHATSAPP',
+      primarySectorId: channel.sectorId || '',
+      secondarySectorIds: secondaryIds,
+      provider,
+      whatsappToken: cfg.token || '',
+      whatsappAppSecret: cfg.appSecret || '',
+      whatsappPhoneNumberId: cfg.phoneNumberId || '',
+      whatsappBusinessAccountId: cfg.businessAccountId || '',
+      whatsappWebhookVerifyToken: cfg.webhookVerifyToken || '',
+    });
+    setShowModal(true);
   };
 
   const handleRefreshStatus = async (channelId: string) => {
@@ -372,7 +404,11 @@ export default function Channels() {
           </div>
           <button
             type="button"
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              setEditingChannelId(null);
+              resetForm();
+              setShowModal(true);
+            }}
             className="primary-gradient-channel inline-flex items-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold text-on-primary-channel shadow-lg shadow-[#66dd8b]/10 transition hover:opacity-90 active:scale-[0.98]"
           >
             <span className="material-symbols-outlined text-lg">add</span>
@@ -386,7 +422,11 @@ export default function Channels() {
             <p className="mb-4 text-sm">Nenhum canal configurado.</p>
             <button
               type="button"
-              onClick={() => setShowModal(true)}
+              onClick={() => {
+                setEditingChannelId(null);
+                resetForm();
+                setShowModal(true);
+              }}
               className="primary-gradient-channel inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-xs font-semibold text-on-primary-channel transition hover:opacity-90 active:scale-[0.98]"
             >
               Criar primeiro canal
@@ -471,6 +511,16 @@ export default function Channels() {
                             type="button"
                             onClick={() => {
                               setOpenMenuId(null);
+                              handleEditChannel(channel);
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs font-semibold text-on-surface transition hover:bg-surface-container-low"
+                          >
+                            Editar canal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuId(null);
                               setDeleteTarget({ id: channel.id, name: channel.name });
                             }}
                             className="w-full px-3 py-2 text-left text-xs font-semibold text-red-300 transition hover:bg-red-950/40"
@@ -535,11 +585,15 @@ export default function Channels() {
         </div>
       </div>
 
-      {/* Modal de criar canal */}
+      {/* Modal de criar/editar canal */}
       {showModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowModal(false)}
+          onClick={() => {
+            setShowModal(false);
+            setEditingChannelId(null);
+            resetForm();
+          }}
         >
           <div
             className="relative w-full max-w-lg rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 p-6 shadow-forest-glow backdrop-blur-xl"
@@ -547,21 +601,27 @@ export default function Channels() {
           >
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="font-headline text-lg font-bold text-on-surface">Criar novo canal</h2>
+                <h2 className="font-headline text-lg font-bold text-on-surface">
+                  {editingChannelId ? 'Editar canal' : 'Criar novo canal'}
+                </h2>
                 <p className="text-xs text-on-surface-variant">
                   Configure integrações com WhatsApp, email e outros canais de atendimento.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingChannelId(null);
+                  resetForm();
+                }}
                 className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-container-low text-xs text-on-surface-variant hover:bg-surface-variant"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateChannel} className="space-y-4">
+            <form onSubmit={handleCreateOrUpdateChannel} className="space-y-4">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-on-surface">
                   Nome do canal
@@ -657,6 +717,7 @@ export default function Channels() {
                       })
                     }
                     className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                    disabled={!!editingChannelId}
                   >
                     <option value="WHATSAPP">WhatsApp</option>
                     <option value="TELEGRAM">Telegram</option>
@@ -799,7 +860,11 @@ export default function Channels() {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingChannelId(null);
+                    resetForm();
+                  }}
                   className="rounded-lg border border-[rgba(63,73,69,0.25)] bg-surface-container-highest px-4 py-1.5 text-xs font-semibold text-on-surface-variant transition hover:bg-surface-variant"
                 >
                   Cancelar
@@ -809,7 +874,13 @@ export default function Channels() {
                   disabled={submitting}
                   className="primary-gradient-channel rounded-lg px-5 py-1.5 text-xs font-semibold text-on-primary-channel transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {submitting ? 'Criando...' : 'Criar canal'}
+                  {submitting
+                    ? editingChannelId
+                      ? 'Salvando...'
+                      : 'Criando...'
+                    : editingChannelId
+                    ? 'Salvar alterações'
+                    : 'Criar canal'}
                 </button>
               </div>
             </form>
@@ -883,8 +954,7 @@ export default function Channels() {
                 <span className="font-semibold text-on-surface">&quot;{deleteTarget.name}&quot;</span>?
               </p>
               <p className="mt-2 rounded-lg border border-primary/25 bg-primary-container/20 px-3 py-2 text-xs text-on-secondary-container">
-                Esta ação não pode ser desfeita e também excluirá a instância na Evolution API, se
-                existir.
+                O canal só pode ser excluído se não houver contatos ou conversas vinculadas.
               </p>
             </div>
             <div className="flex justify-end gap-2">
