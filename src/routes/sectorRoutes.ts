@@ -10,6 +10,7 @@ router.use(authenticateToken);
 
 router.post('/', sectorController.create.bind(sectorController));
 router.get('/', sectorController.list.bind(sectorController));
+router.get('/:id/users', sectorController.listSectorUsers.bind(sectorController));
 router.get('/:id', sectorController.getById.bind(sectorController));
 router.put('/:id', sectorController.update.bind(sectorController));
 router.delete('/:id', sectorController.delete.bind(sectorController));

@@ -115,5 +115,18 @@ export class SectorController {
       res.status(500).json({ error: error.message });
     }
   }
+
+  /** GET /:id/users — usuários do setor (transferência) */
+  async listSectorUsers(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const users = await sectorService.listUsersInSector(id);
+      res.json(users);
+    } catch (error: any) {
+      console.error('[SectorController] Erro ao listar usuários do setor:', error);
+      const status = error.message === 'Setor não encontrado' ? 404 : 400;
+      res.status(status).json({ error: error.message });
+    }
+  }
 }
 

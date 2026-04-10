@@ -395,14 +395,20 @@ export class ConversationService {
   }
 
   /**
-   * Transfere a conversa para um setor (fila), opcionalmente redistribuindo
-   * para um atendente elegível desse setor.
+   * Transfere a conversa para um setor (fila), opcionalmente para um usuário
+   * específico desse setor, ou redistribuindo (autoAssign).
    */
   async transferToSector(
     id: string,
     sectorId: string,
-    options: { autoAssign?: boolean } = {},
+    options: { autoAssign?: boolean; userId?: string } = {},
   ) {
+    const { autoAssign, userId } = options;
+
+    if (userId && autoAssign) {
+      throw new Error('Não é possível usar userId e autoAssign ao mesmo tempo.');
+    }
+
     const conversation = await prisma.conversation.findUnique({
       where: { id },
       include: {
@@ -418,7 +424,54 @@ export class ConversationService {
       throw new Error('Conversa não possui canal associado');
     }
 
-    // Limpar atendente atual (volta para a fila)
+    if (userId) {
+      const userSector = await prisma.userSector.findFirst({
+        where: { userId, sectorId },
+        include: {
+          user: { select: { id: true, isActive: true, name: true } },
+        },
+      });
+
+      if (!userSector) {
+        throw new Error('O usuário selecionado não pertence ao setor escolhido.');
+      }
+
+      if (!userSector.user.isActive) {
+        throw new Error('Não é possível transferir para um usuário inativo.');
+      }
+
+      const updated = await prisma.conversation.update({
+        where: { id },
+        data: {
+          sectorId,
+          assignedToId: userId,
+        },
+        include: {
+          channel: true,
+          contact: true,
+          assignedTo: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      await prisma.botSession.updateMany({
+        where: { conversationId: id, isActive: true },
+        data: {
+          isActive: false,
+          handoffToUserId: userId,
+          handoffAt: new Date(),
+        },
+      });
+
+      return updated;
+    }
+
+    // Limpar atendente atual (volta para a fila do setor)
     let updated = await prisma.conversation.update({
       where: { id },
       data: {
@@ -439,7 +492,7 @@ export class ConversationService {
     });
 
     // Se autoAssign, redistribuir imediatamente para um usuário do setor informado
-    if (options.autoAssign) {
+    if (autoAssign) {
       const distributionService = new ConversationDistributionService();
       const newUserId = await distributionService.distributeConversation(id, {
         channelId: conversation.channelId,

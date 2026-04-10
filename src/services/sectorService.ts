@@ -124,6 +124,37 @@ export class SectorService {
     });
   }
 
+  /**
+   * Usuários vinculados ao setor (para transferência / atribuição).
+   */
+  async listUsersInSector(sectorId: string) {
+    const sector = await prisma.sector.findUnique({ where: { id: sectorId } });
+    if (!sector) {
+      throw new Error('Setor não encontrado');
+    }
+
+    const rows = await prisma.userSector.findMany({
+      where: { sectorId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true,
+            isPaused: true,
+          },
+        },
+      },
+      orderBy: {
+        user: { name: 'asc' },
+      },
+    });
+
+    return rows.map((r) => r.user);
+  }
+
   async getUserSectors(userId: string) {
     const userSectors = await prisma.userSector.findMany({
       where: { userId },

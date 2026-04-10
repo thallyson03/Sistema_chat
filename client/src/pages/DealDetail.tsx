@@ -113,8 +113,14 @@ export default function DealDetail() {
   
   // Estados para usuários
   const [users, setUsers] = useState<Array<{ id: string; name: string; email: string; isActive?: boolean }>>([]);
+  const [sectors, setSectors] = useState<any[]>([]);
   const [updatingAssignedUser, setUpdatingAssignedUser] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferSectorStep, setTransferSectorStep] = useState<
+    null | { id: string; name: string; color?: string }
+  >(null);
+  const [transferSectorUsers, setTransferSectorUsers] = useState<any[]>([]);
+  const [loadingTransferUsers, setLoadingTransferUsers] = useState(false);
   
   // Campos comerciais fixos
   const fixedCommercialFields = [
@@ -128,8 +134,17 @@ export default function DealDetail() {
     if (id) {
       fetchDeal();
       fetchUsers();
+      fetchSectors();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (!showTransferModal) {
+      setTransferSectorStep(null);
+      setTransferSectorUsers([]);
+      setLoadingTransferUsers(false);
+    }
+  }, [showTransferModal]);
 
   // Buscar usuário atual (para controle de permissões, como exclusão de conversa)
   useEffect(() => {
@@ -150,6 +165,15 @@ export default function DealDetail() {
       setUsers(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar usuários:', error);
+    }
+  };
+
+  const fetchSectors = async () => {
+    try {
+      const response = await api.get('/api/sectors');
+      setSectors(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar setores:', error);
     }
   };
 
@@ -2419,7 +2443,7 @@ export default function DealDetail() {
         </div>
       )}
 
-      {/* Modal de Transferência de Conversa (igual ao Conversations) */}
+      {/* Modal de transferência: setor (fila) ou usuário do setor */}
       {showTransferModal && conversation && (
         <div
           style={{
@@ -2448,13 +2472,36 @@ export default function DealDetail() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#e5e7eb' }}>Transferir Conversa</h2>
-            <p style={{ color: '#9ca3af', marginBottom: '20px' }}>
-              Selecione o usuário para transferir a conversa:
+            <h2 style={{ marginTop: 0, marginBottom: '12px', color: '#e5e7eb' }}>Transferir conversa</h2>
+            <p style={{ color: '#9ca3af', marginBottom: '16px', fontSize: '14px' }}>
+              {transferSectorStep
+                ? `Setor: ${transferSectorStep.name}. Fila do setor ou atendente específico.`
+                : 'Escolha o setor. Depois: fila do setor ou um usuário vinculado a ele.'}
             </p>
+            {transferSectorStep && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTransferSectorStep(null);
+                  setTransferSectorUsers([]);
+                }}
+                style={{
+                  marginBottom: '12px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(63, 73, 69, 0.35)',
+                  background: '#2e312e',
+                  color: '#e5e7eb',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                }}
+              >
+                ← Outro setor
+              </button>
+            )}
             <div
               style={{
-                maxHeight: '300px',
+                maxHeight: 'min(52vh, 360px)',
                 overflowY: 'auto',
                 border: '1px solid rgba(63, 73, 69, 0.35)',
                 borderRadius: '6px',
@@ -2462,56 +2509,150 @@ export default function DealDetail() {
                 backgroundColor: '#121412',
               }}
             >
-              {users.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#9ca3af', padding: '20px' }}>
-                  Carregando usuários...
-                </p>
+              {!transferSectorStep ? (
+                sectors.length === 0 ? (
+                  <p style={{ textAlign: 'center', color: '#9ca3af', padding: '20px' }}>Carregando setores...</p>
+                ) : (
+                  sectors.map((sector: any) => (
+                    <button
+                      key={sector.id}
+                      type="button"
+                      onClick={async () => {
+                        setTransferSectorStep({
+                          id: sector.id,
+                          name: sector.name,
+                          color: sector.color,
+                        });
+                        setLoadingTransferUsers(true);
+                        setTransferSectorUsers([]);
+                        try {
+                          const res = await api.get(`/api/sectors/${sector.id}/users`);
+                          setTransferSectorUsers(res.data || []);
+                        } catch (error: any) {
+                          alert(error.response?.data?.error || 'Erro ao carregar usuários do setor');
+                          setTransferSectorStep(null);
+                        } finally {
+                          setLoadingTransferUsers(false);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '12px',
+                        marginBottom: '8px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        border: '1px solid rgba(63, 73, 69, 0.35)',
+                        backgroundColor: `${sector.color || '#10b981'}22`,
+                        color: '#e5e7eb',
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: '14px' }}>{sector.name}</div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>Setor</div>
+                    </button>
+                  ))
+                )
+              ) : loadingTransferUsers ? (
+                <p style={{ textAlign: 'center', color: '#9ca3af', padding: '20px' }}>Carregando atendentes...</p>
               ) : (
-                users.map((user) => (
-                  <div
-                    key={user.id}
+                <>
+                  <button
+                    type="button"
                     onClick={async () => {
                       try {
-                        await api.post(`/api/conversations/${conversation.id}/assign`, {
-                          userId: user.id,
+                        await api.post(`/api/conversations/${conversation.id}/transfer-sector`, {
+                          sectorId: transferSectorStep.id,
+                          autoAssign: false,
                         });
-                        alert(`Conversa transferida para ${user.name}`);
+                        alert(`Conversa na fila do setor ${transferSectorStep.name}.`);
                         setShowTransferModal(false);
-                        setConversation((prev: any) =>
-                          prev ? { ...prev, assignedTo: user } : prev,
-                        );
+                        await fetchConversation(conversation.id);
                       } catch (error: any) {
                         alert(error.response?.data?.error || 'Erro ao transferir conversa');
                       }
                     }}
                     style={{
+                      width: '100%',
+                      textAlign: 'left',
                       padding: '12px',
-                      marginBottom: '8px',
+                      marginBottom: '12px',
                       borderRadius: '6px',
+                      border: '2px solid rgba(16, 185, 129, 0.45)',
+                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                      color: '#e5e7eb',
                       cursor: 'pointer',
-                      transition: 'background-color 0.2s',
-                      border: '1px solid rgba(63, 73, 69, 0.35)',
-                      backgroundColor: '#1a1c1a',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#2e312e';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = '#1a1c1a';
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontWeight: '600', fontSize: '14px', color: '#e5e7eb' }}>{user.name}</div>
-                        <div style={{ color: '#9ca3af', fontSize: '12px' }}>{user.email}</div>
-                      </div>
+                    <div style={{ fontWeight: 700, fontSize: '14px' }}>Fila do setor</div>
+                    <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
+                      Sem atendente fixo; distribuição pode atribuir depois.
                     </div>
+                  </button>
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#9ca3af',
+                      marginBottom: '8px',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Atendente específico
                   </div>
-                ))
+                  {transferSectorUsers.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: '#9ca3af', padding: '16px' }}>
+                      Nenhum usuário neste setor.
+                    </p>
+                  ) : (
+                    transferSectorUsers.map((user: any) => (
+                      <button
+                        key={user.id}
+                        type="button"
+                        disabled={!user.isActive}
+                        onClick={async () => {
+                          if (!user.isActive) return;
+                          try {
+                            await api.post(`/api/conversations/${conversation.id}/transfer-sector`, {
+                              sectorId: transferSectorStep.id,
+                              userId: user.id,
+                            });
+                            alert(`Conversa transferida para ${user.name}.`);
+                            setShowTransferModal(false);
+                            await fetchConversation(conversation.id);
+                          } catch (error: any) {
+                            alert(error.response?.data?.error || 'Erro ao transferir conversa');
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '12px',
+                          marginBottom: '8px',
+                          borderRadius: '6px',
+                          cursor: user.isActive ? 'pointer' : 'not-allowed',
+                          opacity: user.isActive ? 1 : 0.5,
+                          border: '1px solid rgba(63, 73, 69, 0.35)',
+                          backgroundColor: '#1a1c1a',
+                          color: '#e5e7eb',
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: '14px' }}>{user.name}</div>
+                        <div style={{ color: '#9ca3af', fontSize: '12px' }}>{user.email}</div>
+                        {user.isPaused ? (
+                          <span style={{ fontSize: '10px', color: '#fbbf24' }}>Em pausa</span>
+                        ) : null}
+                        {!user.isActive ? (
+                          <span style={{ fontSize: '10px', color: '#9ca3af' }}>Inativo</span>
+                        ) : null}
+                      </button>
+                    ))
+                  )}
+                </>
               )}
             </div>
             <div style={{ marginTop: '20px', textAlign: 'right' }}>
               <button
+                type="button"
                 onClick={() => setShowTransferModal(false)}
                 style={{
                   padding: '8px 16px',
@@ -2523,7 +2664,7 @@ export default function DealDetail() {
                   fontSize: '13px',
                 }}
               >
-                Cancelar
+                Fechar
               </button>
             </div>
           </div>

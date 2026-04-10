@@ -108,7 +108,7 @@ export class ConversationController {
   async transferToSector(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const { sectorId, autoAssign } = req.body || {};
+      const { sectorId, autoAssign, userId } = req.body || {};
 
       if (!sectorId) {
         return res.status(400).json({ error: 'ID do setor (sectorId) é obrigatório' });
@@ -116,6 +116,7 @@ export class ConversationController {
 
       const conversation = await conversationService.transferToSector(id, sectorId, {
         autoAssign: !!autoAssign,
+        userId: typeof userId === 'string' && userId.trim() ? userId.trim() : undefined,
       });
 
       res.json(conversation);
