@@ -62,16 +62,27 @@ export class AuthController {
     }
   }
 
+  /** Mantém lastActiveAt enquanto a aba está aberta (telas com poucos requests). */
+  async heartbeat(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user?.id) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+      await authService.touchHeartbeat(req.user.id);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
   async logout(req: AuthRequest, res: Response) {
     try {
       if (!req.user) {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
 
-      // Marcar usuário como offline (lastActiveAt = null ou data antiga)
-      // Não vamos deletar lastActiveAt, apenas não atualizar mais
-      // O middleware de atividade para de atualizar quando o usuário não faz requisições
-      
+      await authService.clearPresenceOnLogout(req.user.id);
+
       res.json({ message: 'Logout realizado com sucesso' });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

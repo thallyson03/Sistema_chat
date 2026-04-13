@@ -135,6 +135,21 @@ export class AuthService {
     };
   }
 
+  async touchHeartbeat(userId: string): Promise<void> {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { lastActiveAt: new Date() },
+    });
+  }
+
+  /** Ao sair, limpa última atividade para refletir offline no monitoramento. */
+  async clearPresenceOnLogout(userId: string): Promise<void> {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { lastActiveAt: null },
+    });
+  }
+
   async getCurrentUser(userId: string): Promise<any> {
     const user = await prisma.user.findUnique({
       where: { id: userId },

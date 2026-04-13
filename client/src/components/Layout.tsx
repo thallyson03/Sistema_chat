@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
+
+const HEARTBEAT_MS = 90_000;
 import { getPublicApiOrigin } from '../config/publicUrl';
 import { SidebarLink } from './ui/SidebarLink';
 import { SidebarDropdownLink } from './ui/SidebarDropdownLink';
@@ -78,6 +80,16 @@ export default function Layout() {
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  /** Mantém presença “online” mesmo em telas com poucos requests HTTP. */
+  useEffect(() => {
+    if (!localStorage.getItem('token')) return;
+    const ping = () => {
+      void api.post('/api/auth/heartbeat').catch(() => {});
+    };
+    const id = setInterval(ping, HEARTBEAT_MS);
+    return () => clearInterval(id);
   }, []);
 
   const fetchUser = async () => {

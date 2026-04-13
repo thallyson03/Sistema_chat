@@ -1,5 +1,6 @@
 import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
+import { userPresenceFromLastActiveAt } from '../utils/userPresence';
 
 export interface CreateUserData {
   email: string;
@@ -205,7 +206,8 @@ export class UserService {
     if (!user) return null;
 
     const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword as any;
+    const presence = userPresenceFromLastActiveAt(userWithoutPassword.lastActiveAt);
+    return { ...userWithoutPassword, isOnline: presence.isOnline, presenceSummary: presence.presenceSummary } as any;
   }
 
   async listUsers(includeInactive: boolean = false) {
@@ -246,7 +248,12 @@ export class UserService {
 
     return users.map((user) => {
       const { password: _, ...userWithoutPassword } = user;
-      return userWithoutPassword;
+      const presence = userPresenceFromLastActiveAt(userWithoutPassword.lastActiveAt);
+      return {
+        ...userWithoutPassword,
+        isOnline: presence.isOnline,
+        presenceSummary: presence.presenceSummary,
+      };
     });
   }
 

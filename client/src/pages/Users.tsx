@@ -8,6 +8,10 @@ interface User {
   role: string;
   isActive: boolean;
   createdAt: string;
+  lastActiveAt?: string | null;
+  /** Presença no sistema: atividade nos últimos 5 min (mesma regra da distribuição de filas). */
+  isOnline?: boolean;
+  presenceSummary?: string;
   sectors?: Array<{
     sector: {
       id: string;
@@ -73,23 +77,30 @@ export default function Users() {
   });
 
   useEffect(() => {
-    fetchUsers();
+    void fetchUsers();
     fetchSectors();
     fetchPipelines();
     fetchChannels();
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (opts?: { quiet?: boolean }) => {
     try {
-      setLoading(true);
+      if (!opts?.quiet) setLoading(true);
       const response = await api.get('/api/users?includeInactive=true');
       setUsers(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar usuários:', error);
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      void fetchUsers({ quiet: true });
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const fetchSectors = async () => {
     try {
@@ -294,9 +305,21 @@ export default function Users() {
               <div className="p-5 flex flex-col h-full">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex-1">
-                    <h3 className="text-sm font-semibold text-on-surface">
-                      {user.name}
-                    </h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex h-2.5 w-2.5 shrink-0 rounded-full ${
+                          user.isOnline
+                            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.65)]'
+                            : 'bg-on-surface-variant/35'
+                        }`}
+                        title={user.presenceSummary || (user.isOnline ? 'Online' : 'Fora do sistema')}
+                        aria-hidden
+                      />
+                      <h3 className="text-sm font-semibold text-on-surface">{user.name}</h3>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-on-surface-variant">
+                      {user.presenceSummary || '—'}
+                    </p>
                     <p className="mt-1 break-all text-xs text-on-surface-variant">
                       {user.email}
                     </p>
