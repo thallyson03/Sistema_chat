@@ -12,6 +12,9 @@ interface User {
   /** Presença no sistema: atividade nos últimos 5 min (mesma regra da distribuição de filas). */
   isOnline?: boolean;
   presenceSummary?: string;
+  isPaused?: boolean;
+  pauseReason?: string | null;
+  pausedUntil?: string | null;
   sectors?: Array<{
     sector: {
       id: string;
@@ -53,6 +56,46 @@ interface Channel {
   id: string;
   name: string;
   type: string;
+}
+
+/** Indicador visual + textos: pausa tem prioridade sobre “online” na fila. */
+function getPresenceDisplay(user: User) {
+  if (user.isPaused) {
+    const reason = user.pauseReason?.trim();
+    const until = user.pausedUntil
+      ? new Date(user.pausedUntil).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+      : null;
+    return {
+      dotClass: 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.55)]',
+      title: reason
+        ? `Em pausa: ${reason}${until ? ` · até ${until}` : ''}`
+        : `Em pausa — não entra na distribuição de conversas${until ? ` · até ${until}` : ''}`,
+      primary: user.isOnline ? 'Conectado · em pausa' : 'Em pausa',
+      secondary:
+        reason ||
+        (user.isOnline
+          ? 'Indisponível na fila (botão Pausar no menu)'
+          : user.presenceSummary && user.presenceSummary !== 'Sem registro no sistema'
+            ? user.presenceSummary
+            : 'Sem atividade nos últimos 5 min ou deslogado'),
+    };
+  }
+  if (user.isOnline) {
+    return {
+      dotClass: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.65)]',
+      title: 'No sistema agora — atividade nos últimos 5 minutos',
+      primary: user.presenceSummary || 'No sistema agora',
+      secondary: null as string | null,
+    };
+  }
+  return {
+    dotClass: 'bg-on-surface-variant/35',
+    title:
+      user.presenceSummary ||
+      'Fora do sistema (sem atividade recente, deslogado ou nunca acessou)',
+    primary: user.presenceSummary || 'Sem registro no sistema',
+    secondary: null as string | null,
+  };
 }
 
 export default function Users() {
@@ -247,6 +290,27 @@ export default function Users() {
           <p className="text-sm text-on-surface-variant">
             Gerencie os usuários da equipe, suas funções e setores de atendimento.
           </p>
+          <p className="mt-2 text-xs text-on-surface-variant/90 leading-relaxed">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
+              Online
+            </span>
+            <span className="mx-1.5 text-on-surface-variant/40">·</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.55)]" />
+              Pausa
+            </span>
+            <span className="mx-1.5 text-on-surface-variant/40">·</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-on-surface-variant/40" />
+              Ausente
+            </span>
+            <br />
+            <span className="text-[11px] opacity-90">
+              Online = atividade nos últimos 5 min. Pausa = não entra na fila (pode estar logado). Ausente = sem
+              sinal recente ou deslogado.
+            </span>
+          </p>
         </div>
         <button
           onClick={handleCreate}
@@ -297,7 +361,9 @@ export default function Users() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-          {filteredUsers.map((user) => (
+          {filteredUsers.map((user) => {
+            const presence = getPresenceDisplay(user);
+            return (
             <div
               key={user.id}
               className="group relative overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low shadow-forest-glow transition hover:border-primary/35"
@@ -307,19 +373,18 @@ export default function Users() {
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
-                        className={`inline-flex h-2.5 w-2.5 shrink-0 rounded-full ${
-                          user.isOnline
-                            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.65)]'
-                            : 'bg-on-surface-variant/35'
-                        }`}
-                        title={user.presenceSummary || (user.isOnline ? 'Online' : 'Fora do sistema')}
+                        className={`inline-flex h-2.5 w-2.5 shrink-0 rounded-full ${presence.dotClass}`}
+                        title={presence.title}
                         aria-hidden
                       />
                       <h3 className="text-sm font-semibold text-on-surface">{user.name}</h3>
                     </div>
-                    <p className="mt-0.5 text-[11px] text-on-surface-variant">
-                      {user.presenceSummary || '—'}
+                    <p className="mt-0.5 text-[11px] font-medium text-on-surface-variant">
+                      {presence.primary}
                     </p>
+                    {presence.secondary ? (
+                      <p className="mt-0.5 text-[10px] text-on-surface-variant/85">{presence.secondary}</p>
+                    ) : null}
                     <p className="mt-1 break-all text-xs text-on-surface-variant">
                       {user.email}
                     </p>
@@ -343,6 +408,11 @@ export default function Users() {
                       {user.isActive && (
                         <span className="inline-flex items-center rounded-full border border-primary/25 bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary-fixed-dim">
                           Ativo
+                        </span>
+                      )}
+                      {user.isActive && user.isPaused && (
+                        <span className="inline-flex items-center rounded-full border border-amber-500/35 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
+                          Em pausa
                         </span>
                       )}
                     </div>
@@ -405,7 +475,8 @@ export default function Users() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
