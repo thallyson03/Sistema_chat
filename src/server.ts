@@ -34,6 +34,7 @@ import whatsappOfficial from './config/whatsappOfficial';
 import { BotService } from './services/botService';
 import { WebhookService } from './services/webhookService';
 import { pipelineAutomationService } from './services/pipelineAutomationService';
+import { runMediaPersistJobTick } from './services/mediaPersistJob';
 whatsappOfficial.init();
 
 const app = express();
@@ -217,4 +218,25 @@ httpServer.listen(PORT, () => {
       console.error('[PipelineTasks] Erro ao processar tarefas vencidas:', err);
     });
   }, intervalMs);
+
+  // Job em background: baixa mídia recebida (URLs da Meta/Evolution expiram) e grava em uploads/
+  const mediaJobMs = Math.max(
+    30_000,
+    Number(process.env.MEDIA_PERSIST_JOB_INTERVAL_MS) || 120_000,
+  );
+  console.log(
+    `[MediaPersistJob] Agendado a cada ${mediaJobMs / 1000}s (desative com MEDIA_PERSIST_JOB_ENABLED=false)`,
+  );
+  setInterval(() => {
+    runMediaPersistJobTick().catch((err) => {
+      console.error('[MediaPersistJob] Erro no tick:', err);
+    });
+  }, mediaJobMs);
+
+  // Primeira execução após subir o servidor (não bloquear o listen)
+  setTimeout(() => {
+    runMediaPersistJobTick().catch((err) => {
+      console.error('[MediaPersistJob] Erro na primeira execução:', err);
+    });
+  }, 15_000);
 });

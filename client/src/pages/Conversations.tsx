@@ -166,6 +166,8 @@ export default function Conversations() {
   const socketRef = useRef<Socket | null>(null);
   // Mantém sempre o ID da conversa selecionada mais recente para usar dentro dos handlers do socket
   const currentConversationIdRef = useRef<string | null>(null);
+  /** Evita offset errado na paginação (closure desatualizado) e descarta respostas após trocar de conversa */
+  const messagesRef = useRef<Message[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const statusFilterRef = useRef<string>('ALL');
@@ -179,6 +181,10 @@ export default function Conversations() {
   useEffect(() => {
     currentConversationIdRef.current = selectedConversation?.id || null;
   }, [selectedConversation]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Manter filtro atual em um ref para uso em handlers de socket
   useEffect(() => {
@@ -483,7 +489,7 @@ export default function Conversations() {
     }
 
     try {
-      const currentCount = reset ? 0 : messages.length;
+      const currentCount = reset ? 0 : messagesRef.current.length;
 
       const response = await api.get(`/api/messages/conversation/${conversationId}`, {
         params: {
@@ -492,16 +498,24 @@ export default function Conversations() {
         },
       });
 
+      if (currentConversationIdRef.current !== conversationId) {
+        return;
+      }
+
       const messagesData = response.data || [];
-      // Backend retorna em ordem decrescente; inverter para mostrar antigas primeiro
-      const newMessages = messagesData.reverse();
+      // Backend retorna em ordem decrescente; inverter para mostrar antigas primeiro (cópia para não mutar a resposta)
+      const newMessages = [...messagesData].reverse();
 
       if (reset) {
         setMessages(newMessages);
         setShouldScrollToBottom(true);
       } else {
         if (newMessages.length > 0) {
-          setMessages((prev) => [...newMessages, ...prev]);
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id));
+            const mergedOlder = newMessages.filter((m) => !existingIds.has(m.id));
+            return mergedOlder.length > 0 ? [...mergedOlder, ...prev] : prev;
+          });
         }
         setShouldScrollToBottom(false);
       }

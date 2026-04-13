@@ -98,6 +98,8 @@ export default function DealDetail() {
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
   const MESSAGES_PAGE_SIZE = 50;
+  const messagesRef = useRef<Message[]>([]);
+  const activeConversationIdRef = useRef<string | null>(null);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const [audioState, setAudioState] = useState<
     Record<string, { playing: boolean; currentTime: number; duration: number }>
@@ -182,6 +184,14 @@ export default function DealDetail() {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, shouldScrollToBottom]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    activeConversationIdRef.current = conversation?.id || null;
+  }, [conversation?.id]);
 
   // Detectar chegada de notificação de tarefa e exibir alerta visual
   useEffect(() => {
@@ -665,7 +675,7 @@ export default function DealDetail() {
     }
 
     try {
-      const currentCount = reset ? 0 : messages.length;
+      const currentCount = reset ? 0 : messagesRef.current.length;
 
       const response = await api.get(`/api/messages/conversation/${conversationId}`, {
         params: {
@@ -674,15 +684,23 @@ export default function DealDetail() {
         },
       });
 
+      if (activeConversationIdRef.current !== conversationId) {
+        return;
+      }
+
       const messagesData = response.data || [];
-      const newMessages = messagesData.reverse();
+      const newMessages = [...messagesData].reverse();
 
       if (reset) {
         setMessages(newMessages);
         setShouldScrollToBottom(true);
       } else {
         if (newMessages.length > 0) {
-          setMessages((prev) => [...newMessages, ...prev]);
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id));
+            const mergedOlder = newMessages.filter((m) => !existingIds.has(m.id));
+            return mergedOlder.length > 0 ? [...mergedOlder, ...prev] : prev;
+          });
         }
         setShouldScrollToBottom(false);
       }

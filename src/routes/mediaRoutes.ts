@@ -60,6 +60,21 @@ function isSafeFilename(filename: string): boolean {
   );
 }
 
+/** ID de mídia da Graph API (não é URL assinada, que expira). */
+function resolveGraphMediaId(metadata: any): string | undefined {
+  const candidates = [
+    metadata?.mediaId,
+    metadata?.mediaMetadata?.mediaId,
+  ];
+  for (const c of candidates) {
+    if (typeof c !== 'string' || !c.trim()) continue;
+    const s = c.trim();
+    if (s.startsWith('http://') || s.startsWith('https://')) continue;
+    return s;
+  }
+  return undefined;
+}
+
 // Rota para upload de arquivos
 router.post('/upload', authenticateToken, upload.single('file'), async (req: AuthRequest, res: Response) => {
   try {
@@ -626,6 +641,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           else if (contentType.startsWith('audio/ogg')) ext = '.ogg';
           else if (contentType.startsWith('audio/mpeg')) ext = '.mp3';
           else if (contentType.startsWith('audio/')) ext = '.ogg';
+          else if (contentType.includes('pdf')) ext = '.pdf';
 
           const safeExt = ext.startsWith('.') ? ext : `.${ext}`;
           const filename = `${messageId}-${Date.now()}${safeExt}`;
@@ -977,6 +993,47 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         isValidMedia,
         firstBytes: buffer.slice(0, 8).toString('hex'),
       });
+
+      // URLs da Evolution/WhatsApp costumam expirar; após o primeiro download bem-sucedido, gravar em disco
+      // e apontar metadata para /api/media/file/... (mesma ideia do fluxo Official).
+      try {
+        let ext = '.bin';
+        if (contentType.startsWith('image/jpeg')) ext = '.jpg';
+        else if (contentType.startsWith('image/png')) ext = '.png';
+        else if (contentType.startsWith('image/gif')) ext = '.gif';
+        else if (contentType.startsWith('image/webp')) ext = '.webp';
+        else if (contentType.startsWith('video/mp4')) ext = '.mp4';
+        else if (contentType.startsWith('video/')) ext = '.mp4';
+        else if (contentType.startsWith('audio/ogg')) ext = '.ogg';
+        else if (contentType.startsWith('audio/mpeg')) ext = '.mp3';
+        else if (contentType.startsWith('audio/')) ext = '.ogg';
+        else if (contentType.includes('pdf')) ext = '.pdf';
+
+        const safeExt = ext.startsWith('.') ? ext : `.${ext}`;
+        const filename = `${messageId}-${Date.now()}${safeExt}`;
+        const filePath = path.join(uploadDir, filename);
+
+        fs.writeFileSync(filePath, buffer);
+
+        const newMetadata: any = {
+          ...(metadata || {}),
+          mediaUrl: `/api/media/file/${filename}`,
+          mediaMetadata: {
+            ...(mediaMetadata || {}),
+            evolutionSourceUrl: mediaUrl,
+            contentType,
+          },
+        };
+
+        await prisma.message.update({
+          where: { id: messageId },
+          data: { metadata: newMetadata },
+        });
+
+        console.log('[Media] 💾 Mídia Evolution salva em cache local:', { messageId, filename });
+      } catch (evoCacheErr: any) {
+        console.error('[Media] ❌ Erro ao salvar cache local (Evolution):', evoCacheErr.message);
+      }
 
       // Enviar resposta
       res.status(200);

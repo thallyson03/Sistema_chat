@@ -366,13 +366,19 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       timestamp: message.timestamp,
     });
 
-    const phoneNumber = message.from;
+    const phoneFromRaw = message.from;
+    const phoneNumber = digitsOnlyPhone(phoneFromRaw);
     const messageId = message.id;
     const messageType = message.type;
     const timestamp = new Date(parseInt(message.timestamp) * 1000);
 
     if (!messageId || typeof messageId !== 'string') {
       console.warn('[WhatsAppOfficial] ⚠️ Evento sem id de mensagem, ignorando');
+      return;
+    }
+
+    if (!phoneNumber || phoneNumber.length < 8) {
+      console.warn('[WhatsAppOfficial] ⚠️ Campo from inválido ou curto demais, ignorando:', phoneFromRaw);
       return;
     }
 
@@ -394,10 +400,9 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
 
     // Eco / linha do negócio: se "from" for o mesmo número exibido do WhatsApp Business, não tratar como cliente.
     const businessDigits = digitsOnlyPhone(value?.metadata?.display_phone_number);
-    const fromDigits = digitsOnlyPhone(phoneNumber);
-    if (businessDigits.length >= 8 && fromDigits.length >= 8 && businessDigits === fromDigits) {
+    if (businessDigits.length >= 8 && phoneNumber.length >= 8 && businessDigits === phoneNumber) {
       console.log('[WhatsAppOfficial] ℹ️ Ignorando mensagem com remetente = número do negócio (eco/metadata):', {
-        from: phoneNumber,
+        from: phoneFromRaw,
         display: value?.metadata?.display_phone_number,
       });
       return;
@@ -447,11 +452,11 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       }
     }
 
-    // Buscar ou criar contato (sempre no canal oficial resolvido)
+    // Buscar ou criar contato (sempre no canal oficial resolvido). Telefone sempre normalizado (só dígitos).
     let contact = await prisma.contact.findFirst({
       where: {
-        phone: phoneNumber,
         channelId: whatsappChannel.id,
+        OR: [{ phone: phoneNumber }, { channelIdentifier: phoneNumber }],
       },
       include: {
         channel: true,
@@ -462,8 +467,8 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
     if (!contact) {
       const orphanContact = await prisma.contact.findFirst({
         where: {
-          phone: phoneNumber,
           channelId: null,
+          OR: [{ phone: phoneNumber }, { channelIdentifier: phoneNumber }],
         },
         include: { channel: true },
       });
@@ -630,6 +635,14 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       return;
     }
 
+    // Metadata de mídia: nunca gravar a URL assinada da Meta como "mediaId" — ela expira em pouco tempo
+    // e quebra o GET no Graph (`/{media-id}`). Só persiste mediaId quando for o ID real do Graph.
+    const mediaMeta: Record<string, string> = {};
+    if (mediaUrl) mediaMeta.mediaUrl = mediaUrl;
+    if (mediaId && !/^https?:\/\//i.test(String(mediaId))) {
+      mediaMeta.mediaId = mediaId;
+    }
+
     // Criar mensagem no banco
     const createdMessage = await prisma.message.create({
       data: {
@@ -639,13 +652,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         type: messageTypeDb as any,
         status: 'PENDING', // Mensagem recebida, será processada
         externalId: messageId,
-        // mediaUrl não existe no schema, usar metadata para armazenar URL de mídia/ID
-        metadata: mediaUrl
-          ? {
-              mediaUrl,
-              mediaId: mediaId || mediaUrl,
-            }
-          : undefined,
+        metadata: Object.keys(mediaMeta).length > 0 ? mediaMeta : undefined,
       },
     });
 
