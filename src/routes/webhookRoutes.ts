@@ -1359,6 +1359,7 @@ async function handleNewMessage(data: any) {
           io.emit('new_message', {
             conversationId: conversation.id,
             channelId: channel.id,
+            messageId: createdMessage.id,
           });
           io.emit('conversation_updated', {
             conversationId: conversation.id,

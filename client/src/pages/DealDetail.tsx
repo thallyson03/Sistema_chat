@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import api from '../utils/api';
@@ -60,12 +60,14 @@ interface Message {
   content: string;
   type: string;
   status: string;
+  userId?: string | null;
   createdAt: string;
   metadata?: {
     mediaUrl?: string;
     fileName?: string;
     mimetype?: string;
     mediaMetadata?: any;
+    fromBot?: boolean;
   };
   user?: {
     id: string;
@@ -85,6 +87,10 @@ export default function DealDetail() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('principal');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollAfterMessagesRef = useRef<
+    null | { type: 'stickBottom' } | { type: 'preserveBottomGap'; gapPx: number }
+  >(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -179,6 +185,19 @@ export default function DealDetail() {
     }
   };
 
+  useLayoutEffect(() => {
+    const pending = pendingScrollAfterMessagesRef.current;
+    if (pending === null) return;
+    pendingScrollAfterMessagesRef.current = null;
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    if (pending.type === 'stickBottom') {
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+    } else {
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - pending.gapPx);
+    }
+  }, [messages]);
+
   useEffect(() => {
     if (shouldScrollToBottom && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -225,9 +244,35 @@ export default function DealDetail() {
         transports: ['websocket', 'polling'],
       });
 
-      socket.on('new_message', async (data: { conversationId: string }) => {
-        if (data.conversationId === conversation.id) {
-          await fetchMessages(conversation.id, { reset: true });
+      socket.on('new_message', async (data: { conversationId: string; messageId?: string }) => {
+        if (data.conversationId !== conversation.id) return;
+        try {
+          if (data.messageId) {
+            const msgRes = await api.get<Message>(`/api/messages/${data.messageId}`, {
+              params: { conversationId: conversation.id },
+            });
+            const newMsg = msgRes.data;
+            const el = messagesScrollRef.current;
+            if (el) {
+              const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+              pendingScrollAfterMessagesRef.current =
+                gap < 120 ? { type: 'stickBottom' } : { type: 'preserveBottomGap', gapPx: gap };
+            } else {
+              pendingScrollAfterMessagesRef.current = { type: 'stickBottom' };
+            }
+            setShouldScrollToBottom(false);
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg].sort(
+                (a, b) =>
+                  new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+              );
+            });
+          } else {
+            await fetchMessages(conversation.id, { reset: true, silent: true });
+          }
+        } catch {
+          await fetchMessages(conversation.id, { reset: true, silent: true });
         }
       });
 
@@ -664,13 +709,14 @@ export default function DealDetail() {
 
   const fetchMessages = async (
     conversationId: string,
-    options?: { reset?: boolean },
+    options?: { reset?: boolean; silent?: boolean },
   ) => {
     const reset = options?.reset ?? false;
+    const silent = options?.silent ?? false;
 
-    if (reset) {
+    if (reset && !silent) {
       setLoadingMessages(true);
-    } else {
+    } else if (!reset) {
       setLoadingMoreMessages(true);
     }
 
@@ -692,8 +738,21 @@ export default function DealDetail() {
       const newMessages = [...messagesData].reverse();
 
       if (reset) {
+        if (silent) {
+          const el = messagesScrollRef.current;
+          if (el) {
+            const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+            pendingScrollAfterMessagesRef.current =
+              gap < 120 ? { type: 'stickBottom' } : { type: 'preserveBottomGap', gapPx: gap };
+          } else {
+            pendingScrollAfterMessagesRef.current = { type: 'stickBottom' };
+          }
+          setShouldScrollToBottom(false);
+        } else {
+          pendingScrollAfterMessagesRef.current = null;
+          setShouldScrollToBottom(true);
+        }
         setMessages(newMessages);
-        setShouldScrollToBottom(true);
       } else {
         if (newMessages.length > 0) {
           setMessages((prev) => {
@@ -711,9 +770,9 @@ export default function DealDetail() {
     } catch (error: any) {
       console.error('Erro ao carregar mensagens:', error);
     } finally {
-      if (reset) {
+      if (reset && !silent) {
         setLoadingMessages(false);
-      } else {
+      } else if (!reset) {
         setLoadingMoreMessages(false);
       }
     }
@@ -1739,6 +1798,7 @@ export default function DealDetail() {
 
         {/* Mensagens */}
         <div
+          ref={messagesScrollRef}
           style={{
             flex: 1,
             overflowY: 'auto',

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
@@ -163,11 +163,17 @@ export default function Conversations() {
   } | null>(null);
   const [openMediaMenuId, setOpenMediaMenuId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  /** Lista rolável do painel de mensagens (preserva scroll em atualizações silenciosas). */
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
   // Mantém sempre o ID da conversa selecionada mais recente para usar dentro dos handlers do socket
   const currentConversationIdRef = useRef<string | null>(null);
   /** Evita offset errado na paginação (closure desatualizado) e descarta respostas após trocar de conversa */
   const messagesRef = useRef<Message[]>([]);
+  /** Após mudar `messages`, ajusta scroll sem “pulo” (estilo WhatsApp: cola no fim só se já estava no fim). */
+  const pendingScrollAfterMessagesRef = useRef<
+    null | { type: 'stickBottom' } | { type: 'preserveBottomGap'; gapPx: number }
+  >(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const statusFilterRef = useRef<string>('ALL');
@@ -238,13 +244,41 @@ export default function Conversations() {
       console.log('✅ Conectado ao Socket.IO');
     });
 
-    socket.on('new_message', async (data: { conversationId: string; messageId: string }) => {
+    socket.on('new_message', async (data: { conversationId: string; messageId?: string }) => {
       console.log('📨 Nova mensagem recebida via Socket.IO:', data);
       const currentId = currentConversationIdRef.current;
 
-      // Se a mensagem é da conversa atualmente selecionada, buscar novamente as mensagens
+      // Se a mensagem é da conversa atualmente selecionada, anexar só a nova linha (evita recarregar lista e “pulo” de scroll)
       if (currentId && data.conversationId === currentId) {
-        await fetchMessages(currentId, { reset: true });
+        try {
+          if (data.messageId) {
+            const msgRes = await api.get<Message>(`/api/messages/${data.messageId}`, {
+              params: { conversationId: currentId },
+            });
+            const newMsg = msgRes.data;
+            const el = messagesScrollRef.current;
+            if (el) {
+              const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+              pendingScrollAfterMessagesRef.current =
+                gap < 120 ? { type: 'stickBottom' } : { type: 'preserveBottomGap', gapPx: gap };
+            } else {
+              pendingScrollAfterMessagesRef.current = { type: 'stickBottom' };
+            }
+            setShouldScrollToBottom(false);
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg].sort(
+                (a, b) =>
+                  new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+              );
+            });
+          } else {
+            await fetchMessages(currentId, { reset: true, silent: true });
+          }
+        } catch (e) {
+          console.warn('📨 Falha ao anexar mensagem via API, refazendo lista:', e);
+          await fetchMessages(currentId, { reset: true, silent: true });
+        }
         // Se a conversa está aberta, marcar como lida automaticamente
         try {
           await api.put(`/api/messages/conversation/${currentId}/read`);
@@ -261,8 +295,8 @@ export default function Conversations() {
         }
       }
       
-      // Atualizar lista de conversas (isso vai atualizar o contador se a conversa não estiver aberta)
-      await fetchConversations();
+      // Atualizar lista de conversas sem bloquear o painel de mensagens
+      void fetchConversations();
     });
 
     socket.on('conversation_updated', async () => {
@@ -294,8 +328,21 @@ export default function Conversations() {
     fetchCurrentUser();
   }, []);
 
+  useLayoutEffect(() => {
+    const pending = pendingScrollAfterMessagesRef.current;
+    if (pending === null) return;
+    pendingScrollAfterMessagesRef.current = null;
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    if (pending.type === 'stickBottom') {
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+    } else {
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - pending.gapPx);
+    }
+  }, [messages]);
+
   useEffect(() => {
-    // Scroll para última mensagem quando mensagens mudarem
+    // Scroll suave só quando abrimos conversa / enviamos (não em atualização silenciosa por socket)
     if (shouldScrollToBottom && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
@@ -478,13 +525,14 @@ export default function Conversations() {
 
   const fetchMessages = async (
     conversationId: string,
-    options?: { reset?: boolean },
+    options?: { reset?: boolean; silent?: boolean },
   ) => {
     const reset = options?.reset ?? false;
+    const silent = options?.silent ?? false;
 
-    if (reset) {
+    if (reset && !silent) {
       setLoadingMessages(true);
-    } else {
+    } else if (!reset) {
       setLoadingMoreMessages(true);
     }
 
@@ -507,8 +555,21 @@ export default function Conversations() {
       const newMessages = [...messagesData].reverse();
 
       if (reset) {
+        if (silent) {
+          const el = messagesScrollRef.current;
+          if (el) {
+            const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+            pendingScrollAfterMessagesRef.current =
+              gap < 120 ? { type: 'stickBottom' } : { type: 'preserveBottomGap', gapPx: gap };
+          } else {
+            pendingScrollAfterMessagesRef.current = { type: 'stickBottom' };
+          }
+          setShouldScrollToBottom(false);
+        } else {
+          pendingScrollAfterMessagesRef.current = null;
+          setShouldScrollToBottom(true);
+        }
         setMessages(newMessages);
-        setShouldScrollToBottom(true);
       } else {
         if (newMessages.length > 0) {
           setMessages((prev) => {
@@ -526,9 +587,9 @@ export default function Conversations() {
     } catch (error) {
       console.error('Erro ao carregar mensagens:', error);
     } finally {
-      if (reset) {
+      if (reset && !silent) {
         setLoadingMessages(false);
-      } else {
+      } else if (!reset) {
         setLoadingMoreMessages(false);
       }
     }
@@ -1361,7 +1422,10 @@ export default function Conversations() {
             </div>
 
             {/* Área de Mensagens */}
-            <div className="conv-no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface-container-lowest/70 p-5">
+            <div
+              ref={messagesScrollRef}
+              className="conv-no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface-container-lowest/70 p-5"
+            >
               {loadingMessages ? (
                 <div className="py-10 text-center text-sm text-on-surface-variant">
                   Carregando mensagens...

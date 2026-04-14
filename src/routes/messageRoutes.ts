@@ -11,6 +11,7 @@ router.use(authenticateToken);
 router.post('/', messageController.sendMessage.bind(messageController));
 router.get('/conversation/:conversationId', messageController.getMessages.bind(messageController));
 router.put('/conversation/:conversationId/read', messageController.markAsRead.bind(messageController));
+router.get('/:messageId', messageController.getMessageById.bind(messageController));
 
 export default router;
 

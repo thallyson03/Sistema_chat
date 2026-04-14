@@ -744,6 +744,21 @@ export class MessageService {
     });
   }
 
+  async getMessageById(messageId: string) {
+    return prisma.message.findUnique({
+      where: { id: messageId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+  }
+
   async markConversationAsRead(conversationId: string, userId: string) {
     // Atualizar contador de não lidas
     await prisma.conversation.update({

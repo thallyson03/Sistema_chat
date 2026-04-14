@@ -95,6 +95,27 @@ export class MessageController {
     }
   }
 
+  /** Uma mensagem por id (ex.: atualização em tempo real sem recarregar a lista inteira). */
+  async getMessageById(req: AuthRequest, res: Response) {
+    try {
+      const { messageId } = req.params;
+      const conversationId =
+        typeof req.query.conversationId === 'string' ? req.query.conversationId : undefined;
+
+      const message = await messageService.getMessageById(messageId);
+      if (!message) {
+        return res.status(404).json({ error: 'Mensagem não encontrada' });
+      }
+      if (conversationId && message.conversationId !== conversationId) {
+        return res.status(403).json({ error: 'Mensagem não pertence à conversa indicada' });
+      }
+
+      res.json(message);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
   async markAsRead(req: AuthRequest, res: Response) {
     try {
       if (!req.user) {
