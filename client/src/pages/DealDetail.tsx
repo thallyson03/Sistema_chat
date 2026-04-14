@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import api from '../utils/api';
@@ -103,6 +103,7 @@ export default function DealDetail() {
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  const [newMessagesBelowCount, setNewMessagesBelowCount] = useState(0);
   const MESSAGES_PAGE_SIZE = 50;
   const messagesRef = useRef<Message[]>([]);
   const activeConversationIdRef = useRef<string | null>(null);
@@ -212,6 +213,28 @@ export default function DealDetail() {
     activeConversationIdRef.current = conversation?.id || null;
   }, [conversation?.id]);
 
+  const handleMessagesPaneScroll = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (gap < 120) {
+      setNewMessagesBelowCount(0);
+    }
+  }, []);
+
+  const scrollChatToLatest = useCallback(() => {
+    setNewMessagesBelowCount(0);
+    pendingScrollAfterMessagesRef.current = null;
+    setShouldScrollToBottom(false);
+    const el = messagesScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+    }
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, []);
+
   // Detectar chegada de notificação de tarefa e exibir alerta visual
   useEffect(() => {
     if (!messages.length) return;
@@ -237,6 +260,7 @@ export default function DealDetail() {
 
   useEffect(() => {
     if (conversation?.id) {
+      setNewMessagesBelowCount(0);
       fetchMessages(conversation.id, { reset: true });
 
       // Conectar ao Socket.IO
@@ -257,6 +281,9 @@ export default function DealDetail() {
               const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
               pendingScrollAfterMessagesRef.current =
                 gap < 120 ? { type: 'stickBottom' } : { type: 'preserveBottomGap', gapPx: gap };
+              if (gap >= 120) {
+                setNewMessagesBelowCount((n) => n + 1);
+              }
             } else {
               pendingScrollAfterMessagesRef.current = { type: 'stickBottom' };
             }
@@ -269,10 +296,18 @@ export default function DealDetail() {
               );
             });
           } else {
+            const elAway = messagesScrollRef.current;
+            const away =
+              elAway && elAway.scrollHeight - elAway.scrollTop - elAway.clientHeight >= 120;
             await fetchMessages(conversation.id, { reset: true, silent: true });
+            if (away) setNewMessagesBelowCount((n) => n + 1);
           }
         } catch {
+          const elAway = messagesScrollRef.current;
+          const away =
+            elAway && elAway.scrollHeight - elAway.scrollTop - elAway.clientHeight >= 120;
           await fetchMessages(conversation.id, { reset: true, silent: true });
+          if (away) setNewMessagesBelowCount((n) => n + 1);
         }
       });
 
@@ -1798,9 +1833,20 @@ export default function DealDetail() {
 
         {/* Mensagens */}
         <div
+          style={{
+            position: 'relative',
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+        <div
           ref={messagesScrollRef}
+          onScroll={handleMessagesPaneScroll}
           style={{
             flex: 1,
+            minHeight: 0,
             overflowY: 'auto',
             padding: '20px',
             backgroundColor: '#121412',
@@ -2320,6 +2366,57 @@ export default function DealDetail() {
             </>
           )}
           <div ref={messagesEndRef} />
+        </div>
+
+        {newMessagesBelowCount > 0 && (
+          <button
+            type="button"
+            onClick={scrollChatToLatest}
+            title={`${newMessagesBelowCount} nova(s) mensagem(ns) — ir ao fim`}
+            aria-label={`Ir às mensagens novas (${newMessagesBelowCount})`}
+            style={{
+              position: 'absolute',
+              bottom: 16,
+              right: 20,
+              zIndex: 20,
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              border: '1px solid rgba(16, 185, 129, 0.45)',
+              backgroundColor: 'rgba(30, 40, 35, 0.95)',
+              color: '#6ee7b7',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '22px',
+              fontWeight: 700,
+              boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+            }}
+          >
+            ↓
+            <span
+              style={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                minWidth: 20,
+                height: 20,
+                padding: '0 5px',
+                borderRadius: 999,
+                backgroundColor: '#10b981',
+                color: '#022c22',
+                fontSize: 11,
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {newMessagesBelowCount > 99 ? '99+' : newMessagesBelowCount}
+            </span>
+          </button>
+        )}
         </div>
 
         {/* Input de mensagem e ações (igual ao chat principal) */}

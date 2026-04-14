@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
@@ -181,6 +181,8 @@ export default function Conversations() {
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  /** Mensagens novas enquanto o usuário não está no fim do scroll (seta + contador). */
+  const [newMessagesBelowCount, setNewMessagesBelowCount] = useState(0);
   const MESSAGES_PAGE_SIZE = 50;
 
   // Atualizar o ref sempre que a conversa selecionada mudar
@@ -261,6 +263,9 @@ export default function Conversations() {
               const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
               pendingScrollAfterMessagesRef.current =
                 gap < 120 ? { type: 'stickBottom' } : { type: 'preserveBottomGap', gapPx: gap };
+              if (gap >= 120) {
+                setNewMessagesBelowCount((n) => n + 1);
+              }
             } else {
               pendingScrollAfterMessagesRef.current = { type: 'stickBottom' };
             }
@@ -273,11 +278,19 @@ export default function Conversations() {
               );
             });
           } else {
+            const elAway = messagesScrollRef.current;
+            const away =
+              elAway && elAway.scrollHeight - elAway.scrollTop - elAway.clientHeight >= 120;
             await fetchMessages(currentId, { reset: true, silent: true });
+            if (away) setNewMessagesBelowCount((n) => n + 1);
           }
         } catch (e) {
           console.warn('📨 Falha ao anexar mensagem via API, refazendo lista:', e);
+          const elAway = messagesScrollRef.current;
+          const away =
+            elAway && elAway.scrollHeight - elAway.scrollTop - elAway.clientHeight >= 120;
           await fetchMessages(currentId, { reset: true, silent: true });
+          if (away) setNewMessagesBelowCount((n) => n + 1);
         }
         // Se a conversa está aberta, marcar como lida automaticamente
         try {
@@ -351,11 +364,34 @@ export default function Conversations() {
   useEffect(() => {
     // Carregar mensagens quando uma conversa for selecionada
     if (selectedConversation) {
+      setNewMessagesBelowCount(0);
       setHasMoreMessages(true);
       setShouldScrollToBottom(true);
       fetchMessages(selectedConversation.id, { reset: true });
     }
   }, [selectedConversation]);
+
+  const handleMessagesPaneScroll = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (gap < 120) {
+      setNewMessagesBelowCount(0);
+    }
+  }, []);
+
+  const scrollChatToLatest = useCallback(() => {
+    setNewMessagesBelowCount(0);
+    pendingScrollAfterMessagesRef.current = null;
+    setShouldScrollToBottom(false);
+    const el = messagesScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+    }
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, []);
 
   useEffect(() => {
     // Recarregar conversas quando o filtro mudar
@@ -597,6 +633,7 @@ export default function Conversations() {
 
   const handleConversationClick = async (conversation: Conversation) => {
     setSelectedConversation(conversation);
+    setNewMessagesBelowCount(0);
     setMessages([]);
     
     // Marcar conversa como lida quando for selecionada
@@ -1422,8 +1459,10 @@ export default function Conversations() {
             </div>
 
             {/* Área de Mensagens */}
+            <div className="relative min-h-0 flex-1">
             <div
               ref={messagesScrollRef}
+              onScroll={handleMessagesPaneScroll}
               className="conv-no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface-container-lowest/70 p-5"
             >
               {loadingMessages ? (
@@ -2201,6 +2240,22 @@ export default function Conversations() {
                 </motion.div>
               )}
               <div ref={messagesEndRef} />
+            </div>
+
+            {newMessagesBelowCount > 0 && (
+              <button
+                type="button"
+                onClick={scrollChatToLatest}
+                className="absolute bottom-4 right-5 z-20 flex h-12 w-12 items-center justify-center rounded-full border border-primary/30 bg-surface-container-highest/95 text-primary shadow-lg backdrop-blur-md transition hover:bg-emerald-950/50 hover:shadow-emerald-glow"
+                title={`${newMessagesBelowCount} nova(s) mensagem(ns) — ir ao fim`}
+                aria-label={`Ir às mensagens novas (${newMessagesBelowCount})`}
+              >
+                <span className="material-symbols-outlined text-2xl">keyboard_arrow_down</span>
+                <span className="absolute -right-1 -top-1 flex min-h-[1.25rem] min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-on-primary">
+                  {newMessagesBelowCount > 99 ? '99+' : newMessagesBelowCount}
+                </span>
+              </button>
+            )}
             </div>
 
             {/* Input de Mensagem */}
