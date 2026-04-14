@@ -556,10 +556,11 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         },
       });
     } else {
-      // Atualizar timestamps
+      // Atualizar timestamps e reabrir conversa automaticamente com nova mensagem do cliente
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
+          status: 'OPEN',
           lastMessageAt: timestamp,
           lastCustomerMessageAt: timestamp,
           unreadCount: { increment: 1 },
@@ -1192,10 +1193,11 @@ async function handleNewMessage(data: any) {
         // Não bloquear o processamento da mensagem se a distribuição falhar
       }
     } else {
-      // Incrementar contador de não lidas e atualizar timestamp da última mensagem do cliente
+      // Incrementar não lidas, atualizar timestamp e reabrir conversa automaticamente
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
+          status: 'OPEN',
           unreadCount: { increment: 1 },
           lastMessageAt: new Date(),
           lastCustomerMessageAt: new Date(),
