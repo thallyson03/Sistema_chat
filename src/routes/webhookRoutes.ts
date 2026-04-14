@@ -567,6 +567,34 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       });
     }
 
+    // Tentar atribuição automática sempre que a conversa estiver sem responsável.
+    // Se não houver usuário disponível no setor, distributeConversation marca como WAITING (fila).
+    if (!conversation.assignedToId) {
+      try {
+        const distributionService = new ConversationDistributionService();
+        const assignedUserId = await distributionService.distributeConversation(conversation.id, {
+          channelId: whatsappChannel.id,
+        });
+
+        if (assignedUserId) {
+          conversation = await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { assignedToId: assignedUserId },
+          });
+        } else {
+          console.log(
+            '[WhatsAppOfficial] ℹ️ Nenhum usuário disponível; conversa ficou em WAITING (fila):',
+            conversation.id,
+          );
+        }
+      } catch (distributionError: any) {
+        console.error(
+          '[WhatsAppOfficial] ❌ Erro ao distribuir conversa automaticamente:',
+          distributionError?.message || distributionError,
+        );
+      }
+    }
+
     // Extrair conteúdo da mensagem baseado no tipo
     let messageContent = '';
     let messageTypeDb = 'TEXT';

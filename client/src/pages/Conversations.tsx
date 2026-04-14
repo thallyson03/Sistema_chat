@@ -67,6 +67,11 @@ interface Conversation {
   id: string;
   channelId: string;
   assignedToId?: string | null;
+  assignedTo?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
   contact: {
     id: string;
     name: string;
@@ -1269,6 +1274,9 @@ export default function Conversations() {
                       </div>
                       <p className="mb-1 truncate text-xs text-primary/80">
                         {(conv.channel?.name || 'Sem canal')} • {conv.contact.phone || 'Sem telefone'}
+                      </p>
+                      <p className="mb-1 truncate text-[11px] text-primary-fixed-dim">
+                        Responsável: {conv.assignedTo?.name || 'Fila'}
                       </p>
                       {conv.lastMessage && (
                         <p className="mb-2 truncate text-xs text-outline">
