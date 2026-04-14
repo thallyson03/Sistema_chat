@@ -160,6 +160,7 @@ export default function Conversations() {
   const [previewMedia, setPreviewMedia] = useState<{
     type: 'IMAGE' | 'VIDEO';
     src: string;
+    messageId?: string;
   } | null>(null);
   const [openMediaMenuId, setOpenMediaMenuId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -632,9 +633,16 @@ export default function Conversations() {
   };
 
   const handleConversationClick = async (conversation: Conversation) => {
+    const isSameConversation = selectedConversation?.id === conversation.id;
     setSelectedConversation(conversation);
     setNewMessagesBelowCount(0);
-    setMessages([]);
+
+    // Se clicou na conversa já aberta, o useEffect de selectedConversation pode não disparar.
+    // Nesse caso, recarrega silenciosamente sem limpar a lista para evitar falso "Nenhuma mensagem".
+    if (isSameConversation) {
+      setHasMoreMessages(true);
+      await fetchMessages(conversation.id, { reset: true, silent: true });
+    }
     
     // Marcar conversa como lida quando for selecionada
     if (conversation.unreadCount > 0) {
@@ -1106,16 +1114,14 @@ export default function Conversations() {
   };
 
   const getPreviewSrc = (message: Message) => {
-    // Usar sempre a rota de mídia do backend como fonte principal
-    let src = `${apiBase}/api/media/${message.id}`;
-
     const metaUrl = message.metadata?.mediaUrl;
-    if (metaUrl && !metaUrl.startsWith('http')) {
-      const path = metaUrl.startsWith('/') ? metaUrl : `/${metaUrl}`;
-      src = `${apiBase}${path}`;
+    // Se houver URL HTTP(s) explícita no metadata, pode ser usada diretamente.
+    if (typeof metaUrl === 'string' && (metaUrl.startsWith('http://') || metaUrl.startsWith('https://'))) {
+      return metaUrl;
     }
-
-    return src;
+    // Para URLs locais (/api/media/file/...) priorizar /api/media/:id,
+    // pois essa rota tenta recuperar a mídia quando o arquivo sumiu do pod.
+    return `${apiBase}/api/media/${message.id}`;
   };
 
   if (loading) {
@@ -1151,6 +1157,27 @@ export default function Conversations() {
                 src={previewMedia.src}
                 alt="Pré-visualização"
                 className="max-h-[85vh] max-w-full rounded-lg object-contain"
+                onError={(e) => {
+                  const imgEl = e.currentTarget;
+                  const resilientUrl = previewMedia.messageId
+                    ? `${apiBase}/api/media/${previewMedia.messageId}`
+                    : null;
+
+                  // 1ª falha: tenta rota resiliente por messageId.
+                  if (
+                    resilientUrl &&
+                    imgEl.dataset.previewFallbackTried !== '1' &&
+                    imgEl.src !== resilientUrl
+                  ) {
+                    imgEl.dataset.previewFallbackTried = '1';
+                    imgEl.src = resilientUrl;
+                    return;
+                  }
+
+                  // Falha final: placeholder visual.
+                  imgEl.src =
+                    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="420" height="280"%3E%3Crect fill="%23131716" width="420" height="280"/%3E%3Ctext fill="%23B8C7C0" font-family="sans-serif" font-size="15" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem n%C3%A3o dispon%C3%ADvel%3C/text%3E%3C/svg%3E';
+                }}
               />
             ) : (
               <video
@@ -1620,6 +1647,7 @@ export default function Conversations() {
                                     setPreviewMedia({
                                       type: 'IMAGE',
                                       src: getPreviewSrc(message),
+                                      messageId: message.id,
                                     });
                                   }}
                                   onLoad={() => {
