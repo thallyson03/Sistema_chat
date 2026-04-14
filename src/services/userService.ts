@@ -329,6 +329,12 @@ export class UserService {
       pauseReason: reason || null,
     };
 
+    // Ao voltar da pausa, considerar o usuário "presente agora" para entrar
+    // imediatamente na elegibilidade da distribuição automática.
+    if (!pause) {
+      updateData.lastActiveAt = new Date();
+    }
+
     const user = await prisma.user.update({
       where: { id: userId },
       data: updateData,

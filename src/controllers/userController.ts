@@ -223,6 +223,11 @@ export class UserController {
         const { ConversationDistributionService } = await import('../services/conversationDistributionService');
         const distributionService = new ConversationDistributionService();
         await distributionService.redistributePausedUserConversations(id);
+      } else {
+        // Ao despausar, tentar drenar imediatamente a fila de WAITING.
+        const { ConversationDistributionService } = await import('../services/conversationDistributionService');
+        const distributionService = new ConversationDistributionService();
+        await distributionService.redistributeWaitingConversations();
       }
 
       res.json(user);
