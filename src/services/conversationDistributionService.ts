@@ -220,6 +220,62 @@ export class ConversationDistributionService {
   }
 
   /**
+   * Redistribui apenas conversas em fila (WAITING) sem responsável.
+   * Útil para job periódico: quando um agente voltar a ficar disponível,
+   * a conversa sai automaticamente da fila.
+   */
+  async redistributeWaitingConversations(): Promise<number> {
+    const waitingConversations = await prisma.conversation.findMany({
+      where: {
+        assignedToId: null,
+        status: ConversationStatus.WAITING,
+      },
+      include: {
+        channel: {
+          include: {
+            sector: true,
+          },
+        },
+      },
+    });
+
+    let distributed = 0;
+
+    for (const conversation of waitingConversations) {
+      try {
+        if (!conversation.channelId || !conversation.channel) {
+          console.warn(
+            `[ConversationDistribution] Conversa ${conversation.id} em WAITING sem canal associado, pulando distribuição`,
+          );
+          continue;
+        }
+
+        const userId = await this.distributeConversation(conversation.id, {
+          channelId: conversation.channelId,
+          sectorId: conversation.sectorId || conversation.channel.sectorId || undefined,
+        });
+
+        if (userId) {
+          distributed++;
+        }
+      } catch (error) {
+        console.error(
+          `[ConversationDistribution] Erro ao redistribuir conversa WAITING ${conversation.id}:`,
+          error,
+        );
+      }
+    }
+
+    if (waitingConversations.length > 0) {
+      console.log(
+        `[ConversationDistribution] Fila WAITING processada: ${distributed}/${waitingConversations.length} distribuída(s)`,
+      );
+    }
+
+    return distributed;
+  }
+
+  /**
    * Redistribui conversas de um usuário em pausa
    */
   async redistributePausedUserConversations(userId: string): Promise<number> {

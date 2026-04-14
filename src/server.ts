@@ -35,6 +35,7 @@ import { BotService } from './services/botService';
 import { WebhookService } from './services/webhookService';
 import { pipelineAutomationService } from './services/pipelineAutomationService';
 import { runMediaPersistJobTick } from './services/mediaPersistJob';
+import { ConversationDistributionService } from './services/conversationDistributionService';
 whatsappOfficial.init();
 
 const app = express();
@@ -199,6 +200,7 @@ httpServer.listen(PORT, () => {
   // Agendador simples para encerramento automático de conversas inativas
   const botService = new BotService();
   const webhookService = new WebhookService();
+  const distributionService = new ConversationDistributionService();
   const intervalMs = 60 * 1000; // a cada 60 segundos
   console.log(`⏱️ Auto-close de conversas inativas agendado a cada ${intervalMs / 1000}s`);
 
@@ -239,4 +241,27 @@ httpServer.listen(PORT, () => {
       console.error('[MediaPersistJob] Erro na primeira execução:', err);
     });
   }, 15_000);
+
+  // Job em background: conversa em WAITING deve ser atribuída quando surgir agente disponível
+  if (process.env.WAITING_QUEUE_JOB_ENABLED !== 'false') {
+    const waitingQueueJobMs = Math.max(
+      15_000,
+      Number(process.env.WAITING_QUEUE_JOB_INTERVAL_MS) || 30_000,
+    );
+    console.log(
+      `[WaitingQueueJob] Agendado a cada ${waitingQueueJobMs / 1000}s (desative com WAITING_QUEUE_JOB_ENABLED=false)`,
+    );
+
+    setInterval(() => {
+      distributionService.redistributeWaitingConversations().catch((err) => {
+        console.error('[WaitingQueueJob] Erro no tick:', err);
+      });
+    }, waitingQueueJobMs);
+
+    setTimeout(() => {
+      distributionService.redistributeWaitingConversations().catch((err) => {
+        console.error('[WaitingQueueJob] Erro na primeira execução:', err);
+      });
+    }, 10_000);
+  }
 });
