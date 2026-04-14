@@ -1070,6 +1070,14 @@ export default function Conversations() {
     });
   };
 
+  const getDeliveryCheckClass = (status?: string) => {
+    const normalized = (status || '').toUpperCase();
+    if (normalized === 'DELIVERED' || normalized === 'READ') {
+      return 'text-sky-400';
+    }
+    return 'text-on-surface-variant/70';
+  };
+
   const formatAudioTime = (seconds: number) => {
     if (!seconds || Number.isNaN(seconds)) return '0:00';
     const total = Math.floor(seconds);
@@ -2247,11 +2255,24 @@ export default function Conversations() {
                         )}
 
                         <div
-                          className={`mt-1.5 text-[10px] text-on-surface-variant ${
-                            isOwnMessage ? 'text-right' : 'text-left'
+                          className={`mt-1.5 flex items-center gap-1 text-[10px] text-on-surface-variant ${
+                            isOwnMessage ? 'justify-end text-right' : 'text-left'
                           }`}
                         >
-                          {formatTime(message.createdAt)}
+                          <span>{formatTime(message.createdAt)}</span>
+                          {message.userId && (
+                            <span
+                              title={
+                                (message.status || '').toUpperCase() === 'DELIVERED' ||
+                                (message.status || '').toUpperCase() === 'READ'
+                                  ? 'Entregue'
+                                  : 'Enviado'
+                              }
+                              className={`text-xs leading-none ${getDeliveryCheckClass(message.status)}`}
+                            >
+                              ✓
+                            </span>
+                          )}
                         </div>
                       </motion.div>
                       
