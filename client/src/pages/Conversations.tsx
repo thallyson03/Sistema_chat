@@ -1120,14 +1120,14 @@ export default function Conversations() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[calc(100vh-60px)] items-center justify-center bg-background font-body text-on-surface">
+      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background font-body text-on-surface">
         <p className="text-sm text-on-surface-variant">Carregando conversas...</p>
       </div>
     );
   }
 
   return (
-    <div className="relative flex h-[calc(100vh-60px)] min-h-0 w-full overflow-hidden bg-background font-body text-on-surface">
+    <div className="relative flex h-full min-h-0 w-full min-w-0 max-w-full flex-1 overflow-hidden bg-background font-body text-on-surface">
       {/* Modal de preview de mídia (imagem/vídeo em tela cheia) */}
       {previewMedia && (
         <div
@@ -1458,12 +1458,12 @@ export default function Conversations() {
               )}
             </div>
 
-            {/* Área de Mensagens */}
-            <div className="relative min-h-0 flex-1">
+            {/* Área de Mensagens — flex-col + min-h-0 para o scroll interno funcionar (filho flex-1 encolhe) */}
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <div
               ref={messagesScrollRef}
               onScroll={handleMessagesPaneScroll}
-              className="conv-no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface-container-lowest/70 p-5"
+              className="conv-no-scrollbar flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden bg-surface-container-lowest/70 p-5"
             >
               {loadingMessages ? (
                 <div className="py-10 text-center text-sm text-on-surface-variant">
@@ -1565,7 +1565,7 @@ export default function Conversations() {
                           type: "spring",
                           stiffness: 200
                         }}
-                        className={`mb-1 flex items-end gap-2 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                        className={`mb-1 flex w-full min-w-0 max-w-full items-end gap-2 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                       >
@@ -1586,7 +1586,7 @@ export default function Conversations() {
                       )}
                       
                       <motion.div
-                        className={`relative max-w-[70%] rounded-xl px-0 py-0 ${
+                        className={`relative min-w-0 max-w-[min(70%,36rem)] rounded-xl px-0 py-0 ${
                           isTaskNotification
                             ? 'rounded-lg bg-surface-container-highest p-3 text-on-surface'
                             : 'bg-transparent text-on-surface'

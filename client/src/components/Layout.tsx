@@ -419,14 +419,14 @@ export default function Layout() {
         </div>
       </motion.aside>
       
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto bg-surface">
-        <div className="min-h-full">
+      {/* Main Content — min-w-0/min-h-0 evitam que filhos flex estourem a largura/altura do viewport */}
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-surface">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
-            className="h-full"
+            className="flex min-h-0 min-w-0 flex-1 flex-col"
           >
             <Outlet />
           </motion.div>

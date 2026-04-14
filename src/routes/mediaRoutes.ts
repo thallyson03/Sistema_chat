@@ -340,6 +340,8 @@ router.get('/:messageId', async (req: Request, res: Response) => {
     const metadata = message.metadata as any;
     const mediaUrl = metadata?.mediaUrl;
     const mediaMetadata = metadata?.mediaMetadata || {};
+    /** Quando o arquivo em /uploads sumiu (ex.: pod novo sem volume), URL HTTPS guardada para rebaixar. */
+    let remoteMediaFetchUrl: string | null = null;
 
     console.log('[Media] ============================================');
     console.log('[Media] Requisição de mídia recebida');
@@ -406,54 +408,66 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Caminho de arquivo inválido' });
       }
       
-      // Verificar se arquivo existe
+      // Verificar se arquivo existe (em K8s sem volume persistente o disco pode estar vazio)
       if (!fs.existsSync(filePath)) {
-        console.error('[Media] ❌ Arquivo local não encontrado:', filePath);
-        return res.status(404).json({ error: 'Arquivo não encontrado' });
+        const httpFallback =
+          (typeof mediaMetadata?.originalUrl === 'string' &&
+            mediaMetadata.originalUrl.startsWith('http') &&
+            mediaMetadata.originalUrl) ||
+          (typeof mediaMetadata?.evolutionSourceUrl === 'string' &&
+            mediaMetadata.evolutionSourceUrl.startsWith('http') &&
+            mediaMetadata.evolutionSourceUrl) ||
+          null;
+        remoteMediaFetchUrl = httpFallback;
+        console.warn('[Media] ⚠️ Arquivo local ausente; tentando recuperação remota.', {
+          filePath,
+          hasHttpFallback: !!httpFallback,
+        });
+        // Não retorna 404 aqui: segue para WhatsApp Official / Evolution com mediaId ou fallback HTTP.
+      } else {
+        // Determinar Content-Type baseado na extensão
+        const ext = path.extname(filename).toLowerCase();
+        const mimeTypes: { [key: string]: string } = {
+          '.ogg': 'audio/ogg',
+          '.webm': 'audio/webm',
+          '.mp3': 'audio/mpeg',
+          '.wav': 'audio/wav',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.png': 'image/png',
+          '.gif': 'image/gif',
+          '.mp4': 'video/mp4',
+          '.pdf': 'application/pdf',
+        };
+
+        // Para arquivos OGG, usar o mimetype correto com codecs
+        let contentType = mimeTypes[ext] || mediaMetadata?.mimetype || 'application/octet-stream';
+
+        // Se for OGG e o metadata tiver mimetype com codecs, usar ele
+        if (ext === '.ogg' && metadata?.mimetype && metadata.mimetype.includes('codecs')) {
+          contentType = metadata.mimetype;
+        } else if (ext === '.ogg' && !contentType.includes('codecs')) {
+          // Se não tiver codecs no mimetype, adicionar
+          contentType = 'audio/ogg; codecs=opus';
+        }
+
+        console.log('[Media] ✅ Servindo arquivo local:', {
+          filename,
+          path: filePath,
+          contentType,
+          size: fs.statSync(filePath).size,
+          ext,
+          metadataMimetype: metadata?.mimetype,
+        });
+
+        res.status(200);
+        res.contentType(contentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.sendFile(filePath);
+        return;
       }
-      
-      // Determinar Content-Type baseado na extensão
-      const ext = path.extname(filename).toLowerCase();
-      const mimeTypes: { [key: string]: string } = {
-        '.ogg': 'audio/ogg',
-        '.webm': 'audio/webm',
-        '.mp3': 'audio/mpeg',
-        '.wav': 'audio/wav',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.gif': 'image/gif',
-        '.mp4': 'video/mp4',
-        '.pdf': 'application/pdf',
-      };
-      
-      // Para arquivos OGG, usar o mimetype correto com codecs
-      let contentType = mimeTypes[ext] || mediaMetadata?.mimetype || 'application/octet-stream';
-      
-      // Se for OGG e o metadata tiver mimetype com codecs, usar ele
-      if (ext === '.ogg' && metadata?.mimetype && metadata.mimetype.includes('codecs')) {
-        contentType = metadata.mimetype;
-      } else if (ext === '.ogg' && !contentType.includes('codecs')) {
-        // Se não tiver codecs no mimetype, adicionar
-        contentType = 'audio/ogg; codecs=opus';
-      }
-      
-      console.log('[Media] ✅ Servindo arquivo local:', {
-        filename,
-        path: filePath,
-        contentType,
-        size: fs.statSync(filePath).size,
-        ext,
-        metadataMimetype: metadata?.mimetype,
-      });
-      
-      res.status(200);
-      res.contentType(contentType);
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.sendFile(filePath);
-      return;
     }
 
     // Verificar se a conversa tem canal associado
@@ -492,7 +506,10 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         console.log('[Media] 📥 Baixando mídia do WhatsApp Official (Cloud API)...');
         console.log('[Media] URL atual em metadata:', mediaUrl.substring(0, 120));
 
-        let downloadUrl = mediaUrl;
+        let downloadUrl =
+          remoteMediaFetchUrl && remoteMediaFetchUrl.startsWith('http')
+            ? remoteMediaFetchUrl
+            : mediaUrl;
 
         // Sempre que possível, usar o mediaId salvo no metadata para buscar
         // uma URL fresca via Graph API (mais confiável do que reutilizar o link antigo).
@@ -548,8 +565,13 @@ router.get('/:messageId', async (req: Request, res: Response) => {
             }
             // Continua tentando usar o mediaUrl original; pode funcionar em alguns casos
           }
-        } else if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
-          // Caso legado: mediaUrl antigo contendo apenas o mediaId
+        } else if (
+          downloadUrl &&
+          !downloadUrl.startsWith('http://') &&
+          !downloadUrl.startsWith('https://') &&
+          !downloadUrl.startsWith('/')
+        ) {
+          // Caso legado: mediaUrl antigo contendo apenas o mediaId (não caminho /api/...)
           const mediaId = downloadUrl;
 
           console.log('[Media] 🔍 mediaUrl não é uma URL, tratando como mediaId (legado):', mediaId);
@@ -594,6 +616,17 @@ router.get('/:messageId', async (req: Request, res: Response) => {
             }
             // Continua tentando usar o valor original; pode funcionar em alguns casos
           }
+        }
+
+        if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
+          console.error(
+            '[Media] ❌ Sem URL HTTPS para download e sem mediaId recuperável no Graph.',
+            { downloadUrlPrefix: String(downloadUrl).substring(0, 80) },
+          );
+          return res.status(404).json({
+            error:
+              'Arquivo de mídia não está no servidor. Monte um volume persistente em uploads/ ou garanta mediaId/originalUrl no metadata para rebaixar da Meta.',
+          });
         }
 
         console.log('[Media] 📥 Fazendo download da mídia a partir de:', downloadUrl.substring(0, 160));
@@ -760,11 +793,26 @@ router.get('/:messageId', async (req: Request, res: Response) => {
 
     // Baixar mídia diretamente do WhatsApp usando o token
     try {
+      const evolutionDownloadUrl =
+        remoteMediaFetchUrl && remoteMediaFetchUrl.startsWith('http')
+          ? remoteMediaFetchUrl
+          : mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')
+            ? mediaUrl
+            : null;
+
+      if (!evolutionDownloadUrl) {
+        console.error('[Media] ❌ Evolution: sem URL HTTPS (arquivo local ausente e sem evolutionSourceUrl/originalUrl).');
+        return res.status(404).json({
+          error:
+            'Arquivo de mídia não está no servidor e não há URL remota salva para baixar de novo.',
+        });
+      }
+
       console.log('[Media] 📥 Baixando mídia do WhatsApp...');
-      console.log('[Media] URL:', mediaUrl.substring(0, 100));
+      console.log('[Media] URL:', evolutionDownloadUrl.substring(0, 100));
       console.log('[Media] Token:', instanceToken.substring(0, 20) + '...');
 
-      const response = await axios.get(mediaUrl, {
+      const response = await axios.get(evolutionDownloadUrl, {
         headers: {
           'Authorization': `Bearer ${instanceToken}`,
           'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36',
