@@ -323,6 +323,20 @@ export default function Conversations() {
       await fetchConversations();
     });
 
+    socket.on(
+      'message_status',
+      (data: { conversationId: string; messageId: string; status: string }) => {
+        const currentId = currentConversationIdRef.current;
+        if (!currentId || data.conversationId !== currentId) return;
+
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === data.messageId ? { ...msg, status: data.status } : msg,
+          ),
+        );
+      },
+    );
+
     socket.on('disconnect', () => {
       console.log('❌ Desconectado do Socket.IO');
     });

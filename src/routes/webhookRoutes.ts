@@ -779,16 +779,49 @@ async function handleWhatsAppOfficialStatus(status: any) {
 
     // Atualizar status da mensagem no banco se houver externalId
     if (status.id) {
+      const mappedStatus =
+        status.status === 'delivered'
+          ? 'DELIVERED'
+          : status.status === 'read'
+          ? 'READ'
+          : status.status === 'failed'
+          ? 'FAILED'
+          : 'SENT';
+
+      const affectedMessages = await prisma.message.findMany({
+        where: {
+          externalId: status.id,
+        },
+        select: {
+          id: true,
+          conversationId: true,
+        },
+      });
+
       await prisma.message.updateMany({
         where: {
           externalId: status.id,
         },
         data: {
-          status: status.status === 'delivered' ? 'DELIVERED' :
-                 status.status === 'read' ? 'READ' :
-                 status.status === 'failed' ? 'FAILED' : 'SENT',
+          status: mappedStatus as any,
         },
       });
+
+      // Emitir atualização em tempo real para refletir o check no chat sem refresh.
+      if (io && affectedMessages.length > 0) {
+        for (const msg of affectedMessages) {
+          io.to(`conversation_${msg.conversationId}`).emit('message_status', {
+            conversationId: msg.conversationId,
+            messageId: msg.id,
+            status: mappedStatus,
+          });
+          io.emit('message_status', {
+            conversationId: msg.conversationId,
+            messageId: msg.id,
+            status: mappedStatus,
+          });
+        }
+      }
     }
   } catch (error: any) {
     console.error('[WhatsAppOfficial] ❌ Erro ao processar status:', error);
