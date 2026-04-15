@@ -2,10 +2,12 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
+import { DashboardPerformanceService } from '../services/dashboardPerformanceService';
 import { getSocketIO } from '../routes/webhookRoutes';
 
 const conversationService = new ConversationService();
 const satisfactionSurveyService = new SatisfactionSurveyService();
+const dashboardPerformanceService = new DashboardPerformanceService();
 
 export class ConversationController {
   async getConversations(req: AuthRequest, res: Response) {
@@ -188,6 +190,20 @@ export class ConversationController {
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar estatísticas da pesquisa' });
+    }
+  }
+
+  /**
+   * Tempo de atendimento (1ª resposta humana, duração até fechamento) e performance por usuário.
+   * Query: `days` (1–366, padrão 30).
+   */
+  async getDashboardPerformance(req: AuthRequest, res: Response) {
+    try {
+      const days = parseInt(String(req.query.days || '30'), 10);
+      const data = await dashboardPerformanceService.getInsights(days);
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Erro ao carregar performance do dashboard' });
     }
   }
 

@@ -43,6 +43,31 @@ type SatisfactionStatsResponse = {
   recent: SatisfactionRecent[];
 };
 
+type DashboardPerformancePayload = {
+  periodDays: number;
+  periodStart: string;
+  tempo: {
+    avgFirstResponseMinutes: number | null;
+    firstResponseSampleSize: number;
+    avgClosedConversationMinutes: number | null;
+    closedConversationsSampleSize: number;
+  };
+  usuarios: {
+    userId: string;
+    name: string;
+    messagesSent: number;
+    conversationsTouched: number;
+  }[];
+};
+
+function formatDurationMinutes(minutes: number | null | undefined): string {
+  if (minutes == null || Number.isNaN(minutes)) return '—';
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return `${h}h ${m > 0 ? `${m}min` : ''}`.trim();
+}
+
 function formatRespondedLabel(iso: string) {
   const d = new Date(iso);
   const now = new Date();
@@ -129,7 +154,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [surveyDays, setSurveyDays] = useState(30);
   const [surveyStats, setSurveyStats] = useState<SatisfactionStatsResponse | null>(null);
-  const [surveyLoading, setSurveyLoading] = useState(true);
+  const [perfStats, setPerfStats] = useState<DashboardPerformancePayload | null>(null);
+  const [periodLoading, setPeriodLoading] = useState(true);
   const [surveyUpdatedAt, setSurveyUpdatedAt] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -146,22 +172,36 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      setSurveyLoading(true);
+      setPeriodLoading(true);
       try {
-        const { data } = await api.get<SatisfactionStatsResponse>(
-          '/api/conversations/satisfaction-survey-stats',
-          { params: { days: surveyDays } },
-        );
-        setSurveyStats(data);
-        setSurveyUpdatedAt(new Date());
+        const [surveyRes, perfRes] = await Promise.all([
+          api.get<SatisfactionStatsResponse>('/api/conversations/satisfaction-survey-stats', {
+            params: { days: surveyDays },
+          }),
+          api.get<DashboardPerformancePayload>('/api/conversations/dashboard-performance', {
+            params: { days: surveyDays },
+          }),
+        ]);
+        if (!cancelled) {
+          setSurveyStats(surveyRes.data);
+          setPerfStats(perfRes.data);
+          setSurveyUpdatedAt(new Date());
+        }
       } catch (e) {
         console.error(e);
-        setSurveyStats(null);
+        if (!cancelled) {
+          setSurveyStats(null);
+          setPerfStats(null);
+        }
       } finally {
-        setSurveyLoading(false);
+        if (!cancelled) setPeriodLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [surveyDays]);
 
   const maxDist = useMemo(() => {
@@ -232,6 +272,127 @@ export default function Dashboard() {
           </div>
         )}
 
+        {!loading && (
+          <div className="mt-6 flex flex-col gap-2 border-b border-[#252b28] pb-4 sm:flex-row sm:items-center sm:justify-end">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-[#8b9490]">
+              Período das métricas
+            </span>
+            <select
+              value={surveyDays}
+              onChange={(e) => setSurveyDays(Number(e.target.value))}
+              className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
+            >
+              <option value={7}>7 dias</option>
+              <option value={30}>30 dias</option>
+              <option value={90}>90 dias</option>
+            </select>
+          </div>
+        )}
+
+        {/* Tempo de atendimento + performance de usuários */}
+        <section className="mt-8">
+          <div
+            className={`rounded-2xl border p-5 sm:p-6 ${neon.panel}`}
+            style={{ boxShadow: '0 0 0 1px rgba(74, 222, 128, 0.05), 0 16px 40px rgba(0,0,0,0.28)' }}
+          >
+            <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Operação</h2>
+            <p className="mt-1 text-xs text-[#8b9490]">
+              Tempo de atendimento e volume de mensagens por atendente no período.
+            </p>
+            {periodLoading ? (
+              <div className="mt-5 grid animate-pulse gap-4 lg:grid-cols-2">
+                <div className={`h-40 rounded-xl border ${neon.card}`} />
+                <div className={`h-40 rounded-xl border ${neon.card}`} />
+              </div>
+            ) : perfStats ? (
+              <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                <div className={`rounded-xl border p-4 sm:p-5 ${neon.card}`}>
+                  <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#8b9490]">
+                    Tempo de atendimento
+                  </h3>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-[#2a322c] border-l-[3px] border-l-[#22c55e] bg-[#141816] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#8b9490]">
+                        1ª resposta humana
+                      </p>
+                      <p className="mt-1 font-headline text-2xl font-bold text-white">
+                        {formatDurationMinutes(perfStats.tempo.avgFirstResponseMinutes)}
+                      </p>
+                      <p className="mt-2 text-[10px] leading-snug text-[#6b7280]">
+                        Média entre primeira mensagem do cliente e primeira resposta do time (sem bot).{' '}
+                        {perfStats.tempo.firstResponseSampleSize > 0
+                          ? `Base: ${perfStats.tempo.firstResponseSampleSize} conversa(s) criada(s) no período.`
+                          : 'Sem amostras no período.'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-[#2a322c] bg-[#141816] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#8b9490]">
+                        Conversas fechadas
+                      </p>
+                      <p className="mt-1 font-headline text-2xl font-bold text-white">
+                        {formatDurationMinutes(perfStats.tempo.avgClosedConversationMinutes)}
+                      </p>
+                      <p className="mt-2 text-[10px] leading-snug text-[#6b7280]">
+                        Tempo médio entre criação e última atualização em conversas com status fechado
+                        atualizadas no período (aproximação de duração).
+                        {perfStats.tempo.closedConversationsSampleSize > 0
+                          ? ` Base: ${perfStats.tempo.closedConversationsSampleSize}.`
+                          : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className={`rounded-xl border p-4 sm:p-5 ${neon.card}`}>
+                  <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#8b9490]">
+                    Performance de usuários
+                  </h3>
+                  <div className="mt-3 max-h-[280px] overflow-auto rounded-lg border border-[#2a322c]">
+                    <table className="w-full min-w-[280px] text-left text-xs">
+                      <thead className="sticky top-0 bg-[#1a1f1c] text-[10px] font-bold uppercase tracking-wide text-[#8b9490]">
+                        <tr>
+                          <th className="px-3 py-2">Atendente</th>
+                          <th className="px-3 py-2 text-right">Msgs</th>
+                          <th className="px-3 py-2 text-right">Conversas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#252b28] text-[#e8ece9]">
+                        {perfStats.usuarios.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="px-3 py-8 text-center text-[#6b7280]">
+                              Nenhuma mensagem humana no período.
+                            </td>
+                          </tr>
+                        ) : (
+                          perfStats.usuarios.map((u, idx) => (
+                            <tr key={u.userId} className="hover:bg-[#141816]/80">
+                              <td className="px-3 py-2.5">
+                                <span className="mr-2 inline-flex w-5 justify-center font-mono text-[#6b7280]">
+                                  {idx + 1}
+                                </span>
+                                <span className="font-medium text-white">{u.name}</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-[#86efac]">
+                                {u.messagesSent}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums">{u.conversationsTouched}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="mt-2 text-[10px] text-[#6b7280]">
+                    Mensagens enviadas pelo app (exclui bot). Conversas = distintas com ao menos uma mensagem
+                    sua no período.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-[#6b7280]">Não foi possível carregar as métricas de operação.</p>
+            )}
+          </div>
+        </section>
+
         {/* Bloco principal — fiel ao mock */}
         <section className="mt-10 sm:mt-12">
           <div
@@ -251,15 +412,6 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-                <select
-                  value={surveyDays}
-                  onChange={(e) => setSurveyDays(Number(e.target.value))}
-                  className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
-                >
-                  <option value={7}>7 dias</option>
-                  <option value={30}>30 dias</option>
-                  <option value={90}>90 dias</option>
-                </select>
                 <button
                   type="button"
                   disabled={!surveyStats || surveyStats.recent.length === 0}
@@ -283,7 +435,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {surveyLoading ? (
+            {periodLoading ? (
               <div className="grid min-h-[260px] animate-pulse grid-cols-1 gap-4 lg:grid-cols-3">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className={`rounded-xl border ${neon.card} min-h-[200px]`} />

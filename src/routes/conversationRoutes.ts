@@ -15,6 +15,10 @@ router.get(
   '/satisfaction-survey-stats',
   conversationController.getSatisfactionSurveyStats.bind(conversationController),
 );
+router.get(
+  '/dashboard-performance',
+  conversationController.getDashboardPerformance.bind(conversationController),
+);
 router.get('/unread-count', conversationController.getUnreadCount.bind(conversationController));
 router.get('/:id', conversationController.getConversationById.bind(conversationController));
 router.put('/:id', conversationController.updateConversation.bind(conversationController));
