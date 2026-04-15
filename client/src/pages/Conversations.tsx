@@ -108,6 +108,10 @@ interface Message {
     fileName?: string;
     caption?: string;
     fromBot?: boolean;
+    satisfactionSurveyPrompt?: boolean;
+    satisfactionSurveyResponse?: boolean;
+    score?: number;
+    variant?: string;
   };
 }
 
@@ -129,6 +133,7 @@ export default function Conversations() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sendingSatisfactionSurvey, setSendingSatisfactionSurvey] = useState(false);
   const [messageInput, setMessageInput] = useState('');
   const [pendingTemplate, setPendingTemplate] = useState<{ name: string; language: string } | null>(
     null,
@@ -1479,6 +1484,35 @@ export default function Conversations() {
                 >
                   Transferir
                 </button>
+                <button
+                  type="button"
+                  disabled={
+                    sendingSatisfactionSurvey ||
+                    !selectedConversation.channelId ||
+                    selectedConversation.status === 'CLOSED' ||
+                    selectedConversation.status === 'ARCHIVED'
+                  }
+                  onClick={async () => {
+                    if (!selectedConversation?.channelId) return;
+                    setSendingSatisfactionSurvey(true);
+                    try {
+                      const { data } = await api.post<{ message: Message }>(
+                        `/api/conversations/${selectedConversation.id}/satisfaction-survey`,
+                      );
+                      if (data?.message) {
+                        setMessages((prev) => [...prev, data.message]);
+                      }
+                    } catch (error: any) {
+                      alert(error.response?.data?.error || 'Erro ao enviar pesquisa de satisfação');
+                    } finally {
+                      setSendingSatisfactionSurvey(false);
+                    }
+                  }}
+                  className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Enviar pesquisa de 1 a 5 estrelas ao cliente (WhatsApp)"
+                >
+                  {sendingSatisfactionSurvey ? 'Enviando…' : 'Pesquisa'}
+                </button>
               </div>
               <span className="hidden rounded-md bg-surface-container-highest px-2 py-1 text-[11px] text-on-surface-variant sm:inline">
                 {selectedConversation.status}
@@ -2264,7 +2298,42 @@ export default function Conversations() {
                                 : 'rounded-2xl rounded-bl-none border border-primary/5 bg-surface-container-highest text-on-surface'
                             }`}
                           >
-                            {message.content}
+                            {message.metadata?.satisfactionSurveyResponse &&
+                            typeof message.metadata?.score === 'number' ? (
+                              <div className="space-y-1">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                                  Pesquisa de satisfação
+                                </div>
+                                <div className="text-2xl leading-none tracking-tight">
+                                  {'⭐'.repeat(
+                                    Math.min(5, Math.max(1, Number(message.metadata.score))),
+                                  )}
+                                </div>
+                                <div className="text-xs opacity-90">
+                                  Nota {message.metadata.score} de 5
+                                </div>
+                              </div>
+                            ) : message.metadata?.satisfactionSurveyPrompt ? (
+                              <div className="space-y-1">
+                                <div className="text-xs font-semibold uppercase tracking-wide opacity-90">
+                                  Pesquisa de satisfação
+                                </div>
+                                <p>{message.content}</p>
+                                {message.metadata?.variant === 'interactive_list' && (
+                                  <p className="text-xs opacity-80">
+                                    No WhatsApp do cliente: botão &quot;Dar nota&quot; e lista de 1 a 5
+                                    estrelas.
+                                  </p>
+                                )}
+                                {message.metadata?.variant === 'text_prompt' && (
+                                  <p className="text-xs opacity-80">
+                                    No Evolution: o cliente responde só com o número 1 a 5.
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              message.content
+                            )}
                           </div>
                         )}
 

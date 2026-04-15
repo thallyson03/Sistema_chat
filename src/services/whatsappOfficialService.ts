@@ -522,6 +522,64 @@ export class WhatsAppOfficialService {
   }
 
   /**
+   * Pesquisa de satisfação: lista interativa com opções de 1 a 5 estrelas.
+   * Cada `rows[].id` deve ser reconhecido pelo webhook (ex.: sat:{dispatchId}:3).
+   */
+  async sendSatisfactionSurveyList(params: {
+    to: string;
+    bodyText: string;
+    rows: Array<{ id: string; title: string; description: string }>;
+  }) {
+    try {
+      const to = this.formatPhoneNumber(params.to);
+      console.log('[WhatsAppOfficial] 📤 Enviando lista de satisfação:', {
+        to,
+        rows: params.rows.length,
+      });
+
+      const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          header: { type: 'text', text: 'Pesquisa de satisfação' },
+          body: { text: params.bodyText },
+          footer: { text: 'Toque em Dar nota e escolha uma opção.' },
+          action: {
+            button: 'Dar nota',
+            sections: [
+              {
+                title: 'Sua nota',
+                rows: params.rows,
+              },
+            ],
+          },
+        },
+      });
+
+      return {
+        success: true,
+        messageId: response.data.messages?.[0]?.id,
+        data: response.data,
+      };
+    } catch (error: any) {
+      console.error('[WhatsAppOfficial] ❌ Erro ao enviar lista de satisfação:', {
+        to: params.to,
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(
+        error.response?.data?.error?.message ||
+          error.message ||
+          'Erro ao enviar pesquisa de satisfação via WhatsApp Official'
+      );
+    }
+  }
+
+  /**
    * Verifica status de uma mensagem
    */
   async getMessageStatus(messageId: string) {

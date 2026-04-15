@@ -48,6 +48,12 @@ enum Priority {
   URGENT
 }
 
+enum SatisfactionSurveyDispatchStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+}
+
 enum MessageType {
   TEXT
   IMAGE
@@ -143,6 +149,7 @@ model User {
   channelAccesses      UserChannelAccess[]
   // Campanhas e automações
   campaigns             Campaign[]        @relation("UserCampaigns")
+  satisfactionSurveyDispatchesSent SatisfactionSurveyDispatch[] @relation("SatisfactionSurveySentBy")
 }
 
 model Channel {
@@ -238,6 +245,25 @@ model Conversation {
   deal         Deal?
   // Relacionamento com campanhas
   campaignRecipients CampaignRecipient[]
+  satisfactionSurveyDispatches SatisfactionSurveyDispatch[]
+}
+
+model SatisfactionSurveyDispatch {
+  id                 String                         @id @default(cuid())
+  conversationId     String
+  sentByUserId       String?
+  status             SatisfactionSurveyDispatchStatus @default(PENDING)
+  score              Int?
+  promptMessageId    String?
+  responseMessageId  String?
+  expiresAt          DateTime?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation("SatisfactionSurveySentBy", fields: [sentByUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, status])
 }
 
 model Message {

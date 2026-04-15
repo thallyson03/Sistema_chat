@@ -1,8 +1,11 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { ConversationService } from '../services/conversationService';
+import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
+import { getSocketIO } from '../routes/webhookRoutes';
 
 const conversationService = new ConversationService();
+const satisfactionSurveyService = new SatisfactionSurveyService();
 
 export class ConversationController {
   async getConversations(req: AuthRequest, res: Response) {
@@ -122,6 +125,36 @@ export class ConversationController {
       res.json(conversation);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Envia pesquisa de satisfação (1–5 estrelas) ao contato no WhatsApp.
+   */
+  async sendSatisfactionSurvey(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Não autenticado' });
+      }
+      const { id } = req.params;
+      const { message } = await satisfactionSurveyService.dispatchSurvey(id, req.user.id);
+
+      const io = getSocketIO();
+      if (io) {
+        io.to(`conversation_${id}`).emit('new_message', {
+          conversationId: id,
+          messageId: message.id,
+        });
+        io.emit('new_message', {
+          conversationId: id,
+          messageId: message.id,
+        });
+        io.emit('conversation_updated');
+      }
+
+      res.status(201).json({ message });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || 'Erro ao enviar pesquisa de satisfação' });
     }
   }
 

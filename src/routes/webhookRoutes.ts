@@ -4,17 +4,23 @@ import { WebhookService } from '../services/webhookService';
 import { BotService } from '../services/botService';
 import { ConversationDistributionService } from '../services/conversationDistributionService';
 import { ConversationService } from '../services/conversationService';
+import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
 import crypto from 'crypto';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
 const conversationService = new ConversationService();
+const satisfactionSurveyService = new SatisfactionSurveyService();
 
 // io será injetado via função
 let io: any = null;
 
 export function setSocketIO(socketIO: any) {
   io = socketIO;
+}
+
+export function getSocketIO() {
+  return io;
 }
 
 const router = Router();
@@ -596,6 +602,38 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       }
     }
 
+    if (
+      messageType === 'interactive' &&
+      (message.interactive?.type === 'list_reply' || message.interactive?.list_reply)
+    ) {
+      const listReplyId = String(message.interactive?.list_reply?.id || '').trim();
+      if (listReplyId.startsWith('sat:')) {
+        const result = await satisfactionSurveyService.handleOfficialListReply({
+          conversationId: conversation.id,
+          listReplyId,
+          externalMessageId: messageId,
+          receivedAt: timestamp,
+          assignedToId: conversation.assignedToId,
+          contactId: contact.id,
+          channelId: contact.channelId,
+        });
+        if (result.handled) {
+          if (io) {
+            io.to(`conversation_${conversation.id}`).emit('new_message', {
+              conversationId: conversation.id,
+              messageId: result.messageId,
+            });
+            io.emit('new_message', {
+              conversationId: conversation.id,
+              messageId: result.messageId,
+            });
+            io.emit('conversation_updated');
+          }
+          return;
+        }
+      }
+    }
+
     // Extrair conteúdo da mensagem baseado no tipo
     let messageContent = '';
     let messageTypeDb = 'TEXT';
@@ -653,6 +691,37 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
           messageType,
         );
         return;
+    }
+
+    if (messageType === 'text') {
+      const trimmed = String(messageContent || '').trim();
+      if (/^[1-5]$/.test(trimmed)) {
+        const score = parseInt(trimmed, 10);
+        const result = await satisfactionSurveyService.tryConsumeTextSurveyReply({
+          conversationId: conversation.id,
+          score,
+          externalMessageId: messageId,
+          receivedAt: timestamp,
+          assignedToId: conversation.assignedToId,
+          contactId: contact.id,
+          channelId: contact.channelId,
+          provider: 'whatsapp_official',
+        });
+        if (result.handled) {
+          if (io) {
+            io.to(`conversation_${conversation.id}`).emit('new_message', {
+              conversationId: conversation.id,
+              messageId: result.messageId,
+            });
+            io.emit('new_message', {
+              conversationId: conversation.id,
+              messageId: result.messageId,
+            });
+            io.emit('conversation_updated');
+          }
+          return;
+        }
+      }
     }
 
     // Evita gravar bolha vazia para tipos que exigem corpo (texto/botão/interativo).
@@ -1329,6 +1398,38 @@ async function handleNewMessage(data: any) {
 
     // Verificar se mensagem já existe (evitar duplicatas)
     const messageId = messageKey?.id || data.key?.id;
+
+    if (messageType === 'TEXT' && messageId) {
+      const t = String(messageContent || '').trim();
+      if (/^[1-5]$/.test(t)) {
+        const score = parseInt(t, 10);
+        const result = await satisfactionSurveyService.tryConsumeTextSurveyReply({
+          conversationId: conversation.id,
+          score,
+          externalMessageId: messageId,
+          receivedAt: new Date(),
+          assignedToId: conversation.assignedToId,
+          contactId: contact.id,
+          channelId: channel.id,
+          provider: 'evolution',
+        });
+        if (result.handled) {
+          if (io) {
+            io.emit('new_message', {
+              conversationId: conversation.id,
+              channelId: channel.id,
+              messageId: result.messageId,
+            });
+            io.emit('conversation_updated', {
+              conversationId: conversation.id,
+              channelId: channel.id,
+            });
+          }
+          return;
+        }
+      }
+    }
+
     const existingMessage = await prisma.message.findFirst({
       where: {
         externalId: messageId,
