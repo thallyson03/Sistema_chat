@@ -11,6 +11,10 @@ router.use(authenticateToken);
 router.get('/', conversationController.getConversations.bind(conversationController));
 router.post('/', conversationController.createConversation.bind(conversationController));
 router.get('/stats', conversationController.getStats.bind(conversationController));
+router.get(
+  '/satisfaction-survey-stats',
+  conversationController.getSatisfactionSurveyStats.bind(conversationController),
+);
 router.get('/unread-count', conversationController.getUnreadCount.bind(conversationController));
 router.get('/:id', conversationController.getConversationById.bind(conversationController));
 router.put('/:id', conversationController.updateConversation.bind(conversationController));

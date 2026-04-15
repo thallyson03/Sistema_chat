@@ -177,6 +177,20 @@ export class ConversationController {
     }
   }
 
+  /**
+   * Estatísticas da pesquisa de satisfação (1–5) para o dashboard.
+   * Query: `days` (1–366, padrão 30).
+   */
+  async getSatisfactionSurveyStats(req: AuthRequest, res: Response) {
+    try {
+      const days = parseInt(String(req.query.days || '30'), 10);
+      const data = await satisfactionSurveyService.getDashboardStats(days);
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Erro ao carregar estatísticas da pesquisa' });
+    }
+  }
+
   async createConversation(req: AuthRequest, res: Response) {
     try {
       const { channelId, contactId, assignedToId } = req.body;

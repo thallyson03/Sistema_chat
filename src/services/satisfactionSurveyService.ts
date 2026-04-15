@@ -326,4 +326,90 @@ export class SatisfactionSurveyService {
 
     return { handled: true, messageId: rec.id };
   }
+
+  /**
+   * Métricas agregadas e últimas respostas para o dashboard.
+   */
+  async getDashboardStats(rawDays: number) {
+    const days = Math.min(Math.max(Math.floor(Number(rawDays)) || 30, 1), 366);
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    start.setHours(0, 0, 0, 0);
+
+    const [sentInPeriod, pendingTotal, distributionRows, recentRows] = await Promise.all([
+      prisma.satisfactionSurveyDispatch.count({
+        where: { createdAt: { gte: start } },
+      }),
+      prisma.satisfactionSurveyDispatch.count({
+        where: { status: 'PENDING' },
+      }),
+      prisma.satisfactionSurveyDispatch.groupBy({
+        by: ['score'],
+        where: {
+          status: 'COMPLETED',
+          score: { not: null },
+          updatedAt: { gte: start },
+        },
+        _count: { id: true },
+      }),
+      prisma.satisfactionSurveyDispatch.findMany({
+        where: { status: 'COMPLETED', score: { not: null } },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+        include: {
+          conversation: {
+            select: {
+              id: true,
+              contact: { select: { name: true, phone: true } },
+              channel: { select: { name: true } },
+            },
+          },
+          sentBy: { select: { name: true } },
+        },
+      }),
+    ]);
+
+    const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let completedInPeriod = 0;
+    let weighted = 0;
+    for (const row of distributionRows) {
+      const s = row.score;
+      if (s === null || s < 1 || s > 5) continue;
+      const c = row._count.id;
+      distribution[s] = c;
+      completedInPeriod += c;
+      weighted += s * c;
+    }
+
+    const averageScore =
+      completedInPeriod > 0 ? Math.round((weighted / completedInPeriod) * 10) / 10 : null;
+
+    const responseRatePercent =
+      sentInPeriod > 0 ? Math.round((completedInPeriod / sentInPeriod) * 1000) / 10 : null;
+
+    const recent = recentRows.map((r) => ({
+      id: r.id,
+      conversationId: r.conversationId,
+      score: r.score as number,
+      respondedAt: r.updatedAt.toISOString(),
+      contactName: r.conversation?.contact?.name ?? null,
+      contactPhone: r.conversation?.contact?.phone ?? null,
+      channelName: r.conversation?.channel?.name ?? null,
+      sentByName: r.sentBy?.name ?? null,
+    }));
+
+    return {
+      periodDays: days,
+      periodStart: start.toISOString(),
+      summary: {
+        sentInPeriod,
+        completedInPeriod,
+        pendingTotal,
+        averageScore,
+        distribution,
+        responseRatePercent,
+      },
+      recent,
+    };
+  }
 }
