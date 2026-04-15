@@ -4,8 +4,9 @@
   "description": "Sistema de atendimento ao cliente multicanal e multiusuário",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client:wait\"",
     "dev:server": "nodemon --exec ts-node src/server.ts",
+    "dev:client:wait": "wait-on tcp:3007 && npm run dev:client",
     "dev:client": "cd client && npm run dev",
     "build": "tsc && cd client && npm run build",
     "start": "node dist/server.js",
@@ -59,6 +60,7 @@
     "eslint": "^8.55.0",
     "nodemon": "^3.0.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "wait-on": "^9.0.5"
   }
 }

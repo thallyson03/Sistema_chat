@@ -17,6 +17,25 @@ function portalBase(): string | null {
   return raw || null;
 }
 
+function externalOrigin(): string | null {
+  const prefer = portalBase() || apiBase();
+  if (!prefer) return null;
+  try {
+    return new URL(prefer).origin;
+  } catch {
+    return null;
+  }
+}
+
+function toAbsoluteExternalUrl(rawUrl: string): string {
+  const url = (rawUrl || '').trim();
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  const origin = externalOrigin();
+  if (!origin) return url;
+  return url.startsWith('/') ? `${origin}${url}` : `${origin}/${url}`;
+}
+
 function ssoExchangePath(): string {
   const p = (process.env.EXTERNAL_TICKET_SSO_EXCHANGE_PATH || '/api/v1/sso/exchange').trim();
   return p.startsWith('/') ? p : `/${p}`;
@@ -30,6 +49,11 @@ function ssoExpSeconds(): number {
   const raw = Number(process.env.EXTERNAL_TICKET_SSO_EXP_SECONDS || '90');
   if (!Number.isFinite(raw) || raw <= 0) return 90;
   return Math.floor(raw);
+}
+
+function ssoRedirectQueryParam(): string {
+  const raw = (process.env.EXTERNAL_TICKET_SSO_REDIRECT_QUERY_PARAM || 'ticketAccessToken').trim();
+  return raw || 'ticketAccessToken';
 }
 
 function ssoEnabled(): boolean {
@@ -59,6 +83,94 @@ function parseExtraBody(): Record<string, unknown> {
     console.warn('[ExternalTicket] EXTERNAL_TICKET_CREATE_BODY_EXTRA inválido (JSON), ignorando.');
     return {};
   }
+}
+
+function normalizeUsername(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+}
+
+function roleToExternal(role: string | null | undefined): 'admin' | 'user' {
+  if (role === 'ADMIN') return 'admin';
+  return 'user';
+}
+
+function shouldSendDynamicUserMap(): boolean {
+  const raw = (process.env.EXTERNAL_TICKET_DYNAMIC_USER_MAP || 'true').trim().toLowerCase();
+  return raw !== '0' && raw !== 'false' && raw !== 'no';
+}
+
+function defaultExternalSector(): string | null {
+  const raw = (process.env.EXTERNAL_TICKET_DEFAULT_SECTOR || '').trim();
+  return raw || null;
+}
+
+function appendSsoTokenIfNeeded(redirectUrl: string, token: string | null | undefined): string {
+  const url = (redirectUrl || '').trim();
+  if (!url) return url;
+  try {
+    const baseForRelative = externalOrigin() || 'http://localhost';
+    const u = new URL(url, baseForRelative);
+    const qp = ssoRedirectQueryParam();
+    const directToken = (token || '').trim();
+    const discoveredToken =
+      directToken ||
+      u.searchParams.get(qp) ||
+      u.searchParams.get('ticketAccessToken') ||
+      u.searchParams.get('accessToken') ||
+      u.searchParams.get('access_token') ||
+      u.searchParams.get('token') ||
+      '';
+    const tk = discoveredToken.trim();
+    if (!tk) return url;
+
+    // Param principal configurado
+    if (!u.searchParams.get(qp)) u.searchParams.set(qp, tk);
+    // Aliases para compatibilidade com páginas legadas do sistema externo
+    if (!u.searchParams.get('ticketAccessToken')) u.searchParams.set('ticketAccessToken', tk);
+    if (!u.searchParams.get('accessToken')) u.searchParams.set('accessToken', tk);
+    if (!u.searchParams.get('token')) u.searchParams.set('token', tk);
+
+    // Se a URL original era relativa, devolve relativa para o normalizador torná-la absoluta externa.
+    if (!/^https?:\/\//i.test(url)) {
+      return `${u.pathname}${u.search}${u.hash}`;
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+function extractSsoRedirectUrl(data: Record<string, unknown> | undefined): string {
+  if (!data) return '';
+  const candidates = [data.redirectUrl, data.url, data.redirect_url, data.redirect];
+  for (const c of candidates) {
+    const v = (c || '').toString().trim();
+    if (v) return v;
+  }
+  return '';
+}
+
+function extractSsoAccessToken(data: Record<string, unknown> | undefined): string {
+  if (!data) return '';
+  const candidates = [
+    data.ticketAccessToken,
+    data.ticket_access_token,
+    data.accessToken,
+    data.access_token,
+    data.token,
+  ];
+  for (const c of candidates) {
+    const v = (c || '').toString().trim();
+    if (v) return v;
+  }
+  return '';
 }
 
 function authHeaders(): Record<string, string> {
@@ -118,11 +230,77 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
   }
 
   const url = `${base}${createPath()}`;
+  const localUser = await prisma.user.findUnique({
+    where: { id: input.localUserId },
+    include: {
+      sectors: {
+        include: {
+          sector: true,
+        },
+      },
+    },
+  });
+  const firstSectorName = localUser?.sectors?.[0]?.sector?.name?.trim() || null;
+  const firstSectorId = localUser?.sectors?.[0]?.sector?.id || null;
+  const fallbackSectorName = defaultExternalSector();
+  const resolvedSectorName = firstSectorName || fallbackSectorName;
+  const sectorsData = (localUser?.sectors || [])
+    .map((s) => ({ id: s.sector?.id, name: s.sector?.name?.trim() }))
+    .filter((s): s is { id: string; name: string } => !!s.id && !!s.name);
+  const sectorNames = sectorsData.map((s) => s.name);
+  const sectorIds = sectorsData.map((s) => s.id);
+  const safeEmail = (localUser?.email || input.email || '').trim();
+  const safeName = (localUser?.name || input.name || '').trim();
+  const roleRaw = localUser?.role || 'AGENT';
+  const usernameFromEmail = safeEmail.includes('@') ? safeEmail.split('@')[0] : safeEmail;
+  const usernameBase = normalizeUsername(usernameFromEmail || safeName || `user_${input.localUserId.slice(0, 8)}`);
+
   const body: Record<string, unknown> = {
-    email: input.email,
-    name: input.name,
-    ...parseExtraBody(),
+    email: safeEmail,
+    name: safeName,
   };
+
+  if (shouldSendDynamicUserMap()) {
+    const roleMapped = roleToExternal(roleRaw);
+    body.username = usernameBase || `user_${Date.now()}`;
+    body.role = roleMapped;
+    body.cargo = roleMapped.toUpperCase();
+    body.active = localUser?.isActive ?? true;
+    if (resolvedSectorName) {
+      body.setor = resolvedSectorName;
+      body.sector = resolvedSectorName;
+      body.setorNome = resolvedSectorName;
+      body.sectorName = resolvedSectorName;
+    }
+    if (firstSectorId) {
+      body.setorId = firstSectorId;
+      body.sectorId = firstSectorId;
+    }
+    if (sectorNames.length > 0) {
+      body.setores = sectorNames;
+      body.setoresNomes = sectorNames;
+      body.sectorNames = sectorNames;
+    }
+    if (sectorIds.length > 0) {
+      body.setoresIds = sectorIds;
+      body.sectorIds = sectorIds;
+    }
+  }
+
+  // Metadados de integração com informações de setor para auditoria/depuração no sistema externo.
+  body.metadata = {
+    ...(typeof body.metadata === 'object' && body.metadata !== null ? (body.metadata as Record<string, unknown>) : {}),
+    source: 'sistema_chat',
+    localUserId: input.localUserId,
+    localRole: roleRaw,
+    localSectorId: firstSectorId,
+    localSectorName: resolvedSectorName,
+    localSectorIds: sectorIds,
+    localSectorNames: sectorNames,
+  };
+
+  // Campos fixos opcionais via env (sobrescrevem os dinâmicos se houver conflito)
+  Object.assign(body, parseExtraBody());
   if (sendPasswordInCreate()) {
     body.password = input.plainPassword;
   }
@@ -209,28 +387,29 @@ export async function getTicketPortalUrlForUserId(userId: string): Promise<strin
     const base = apiBase();
     const secret = ssoSharedSecret();
     if (base && secret) {
-      const nonce = crypto.randomUUID();
-      const exp = Math.floor(Date.now() / 1000) + ssoExpSeconds();
-      const identity = (user.ticketSystemUserId || user.email || '').trim();
-      if (identity) {
+      const ssoUrl = `${base}${ssoExchangePath()}`;
+      const attempts: Array<{ kind: 'externalUserId' | 'email'; value: string }> = [];
+      const remoteId = (user.ticketSystemUserId || '').trim();
+      const email = (user.email || '').trim();
+      if (remoteId) attempts.push({ kind: 'externalUserId', value: remoteId });
+      if (email && (!remoteId || remoteId !== email)) attempts.push({ kind: 'email', value: email });
+
+      for (const attempt of attempts) {
+        const nonce = crypto.randomUUID();
+        const exp = Math.floor(Date.now() / 1000) + ssoExpSeconds();
         const signature = crypto
           .createHmac('sha256', secret)
-          .update(`${identity}|${nonce}|${exp}`)
+          .update(`${attempt.value}|${nonce}|${exp}`)
           .digest('hex');
-
         const body: Record<string, unknown> = {
           nonce,
           exp,
           signature,
+          ...(attempt.kind === 'externalUserId'
+            ? { externalUserId: attempt.value }
+            : { email: attempt.value }),
         };
-        if (user.ticketSystemUserId) {
-          body.externalUserId = user.ticketSystemUserId;
-        } else {
-          body.email = user.email;
-        }
-
         try {
-          const ssoUrl = `${base}${ssoExchangePath()}`;
           const res = await axios.post(ssoUrl, body, {
             headers: {
               'Content-Type': 'application/json',
@@ -238,18 +417,44 @@ export async function getTicketPortalUrlForUserId(userId: string): Promise<strin
             timeout: Number(process.env.EXTERNAL_TICKET_API_TIMEOUT_MS || '20000') || 20000,
             validateStatus: (s) => s >= 200 && s < 300,
           });
-          const redirectUrl = (res.data?.redirectUrl || res.data?.url || '').toString().trim();
+          const responseObj =
+            typeof res.data === 'object' && res.data !== null
+              ? (res.data as Record<string, unknown>)
+              : undefined;
+          const redirectFromApi = extractSsoRedirectUrl(responseObj);
+          const tokenFromApi = extractSsoAccessToken(responseObj);
+          const redirectRaw = appendSsoTokenIfNeeded(redirectFromApi, tokenFromApi);
+          const redirectUrl = toAbsoluteExternalUrl(redirectRaw);
+          console.log('[ExternalTicket] SSO exchange retornou:', {
+            hasRedirect: !!redirectFromApi,
+            hasToken: !!tokenFromApi,
+            redirectPreview: redirectFromApi ? `${redirectFromApi.slice(0, 120)}...` : null,
+          });
           if (redirectUrl) {
+            const qp = ssoRedirectQueryParam();
+            if (!redirectUrl.includes(`${qp}=`)) {
+              console.warn(
+                `[ExternalTicket] Redirect SSO sem ${qp}; sistema externo pode abrir login.`,
+              );
+            }
             return redirectUrl;
           }
           console.error('[ExternalTicket] SSO exchange sem redirectUrl válido:', res.data);
         } catch (err: unknown) {
-          const msg = axios.isAxiosError(err)
-            ? `${err.response?.status || '?'} ${JSON.stringify(err.response?.data || err.message).slice(0, 500)}`
+          const isAxios = axios.isAxiosError(err);
+          const status = isAxios ? err.response?.status : undefined;
+          const msg = isAxios
+            ? `${status || '?'} ${JSON.stringify(err.response?.data || err.message).slice(0, 500)}`
             : err instanceof Error
               ? err.message
               : String(err);
+          // Se 404 com externalUserId, tenta fallback por email automaticamente.
+          if (status === 404 && attempt.kind === 'externalUserId' && email) {
+            console.warn('[ExternalTicket] SSO exchange não encontrou externalUserId; tentando por email.');
+            continue;
+          }
           console.error('[ExternalTicket] Falha no SSO exchange:', msg);
+          break;
         }
       }
     }
@@ -269,6 +474,7 @@ export async function getTicketPortalUrlForUserId(userId: string): Promise<strin
   const extra = (process.env.EXTERNAL_TICKET_PORTAL_QUERY || '').trim();
   const sep = append.includes('?') ? '&' : '?';
   const suffix = extra ? (append ? `${sep}${extra.replace(/^\?/, '')}` : `?${extra.replace(/^\?/, '')}`) : append;
+  console.warn('[ExternalTicket] Usando fallback de portal sem SSO exchange bem-sucedido.');
   return `${portal}${suffix}`;
 }
 
