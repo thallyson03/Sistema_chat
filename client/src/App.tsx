@@ -19,6 +19,7 @@ import Journeys from './pages/Journeys';
 import ContactLists from './pages/ContactLists';
 import Templates from './pages/Templates';
 import Layout from './components/Layout';
+import TicketsRedirect from './pages/TicketsRedirect';
 
 // Componente para proteger rotas
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -57,6 +58,7 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:id" element={<ConversationDetail />} />
+          <Route path="tickets" element={<TicketsRedirect />} />
           <Route path="channels" element={<Channels />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="quick-replies" element={<QuickReplies />} />

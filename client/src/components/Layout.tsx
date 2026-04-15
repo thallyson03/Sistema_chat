@@ -208,6 +208,7 @@ export default function Layout() {
             <p className="mb-2 px-4 text-[10px] font-bold uppercase tracking-[0.18em] text-primary/50">Principal</p>
             <SidebarLink to="/dashboard" icon="📊">Dashboard</SidebarLink>
             <SidebarLink to="/conversations" icon="💬">Conversas</SidebarLink>
+            <SidebarLink to="/tickets" icon="🎫">Tickets</SidebarLink>
           </div>
 
           <div className="mb-4">

@@ -135,6 +135,10 @@ model User {
   pausedUntil DateTime?
   pauseReason String?
   lastActiveAt DateTime?
+  /// ID do usuário correspondente no sistema externo de tickets (API de provisionamento).
+  ticketSystemUserId   String?
+  ticketSystemSyncedAt DateTime?
+  ticketSystemSyncError String?  @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
