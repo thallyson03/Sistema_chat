@@ -560,10 +560,10 @@ export default function Dashboard() {
                                   {r.contactName || r.contactPhone || 'Contato'}
                                 </span>
                                 <Link
-                                  to={`/conversations/${r.conversationId}`}
+                                  to={`/conversations?c=${encodeURIComponent(r.conversationId)}`}
                                   className={`flex shrink-0 items-center gap-1 text-xs font-bold ${neon.text} hover:underline`}
                                 >
-                                  Ver conversa
+                                  Ver na conversa
                                   <ExternalLinkIcon className="opacity-90" />
                                 </Link>
                               </div>

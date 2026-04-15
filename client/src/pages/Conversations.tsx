@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
@@ -115,6 +116,34 @@ interface Message {
   };
 }
 
+/** Normaliza o payload de GET /api/conversations/:id para o formato da lista. */
+function conversationFromDetailApi(raw: Record<string, unknown>): Conversation {
+  const msgs = Array.isArray(raw.messages) ? (raw.messages as unknown[]) : [];
+  const lastRow = msgs.length > 0 ? (msgs[msgs.length - 1] as Record<string, unknown>) : null;
+  const lastMsg = lastRow ? String(lastRow.content ?? '').slice(0, 500) : '';
+  const ch = raw.channel as Record<string, unknown> | null | undefined;
+  return {
+    id: String(raw.id),
+    channelId: String(raw.channelId ?? ''),
+    assignedToId: (raw.assignedToId as string | null | undefined) ?? null,
+    assignedTo: (raw.assignedTo as Conversation['assignedTo']) ?? null,
+    contact: raw.contact as Conversation['contact'],
+    lastMessage: lastMsg,
+    status: String(raw.status ?? ''),
+    unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
+    lastCustomerMessageAt: raw.lastCustomerMessageAt as string | undefined,
+    lastAgentMessageAt: raw.lastAgentMessageAt as string | undefined,
+    channel: ch
+      ? {
+          id: String(ch.id),
+          name: String(ch.name ?? ''),
+          type: String(ch.type ?? 'WHATSAPP'),
+        }
+      : { id: String(raw.channelId ?? ''), name: 'Sem canal', type: 'WHATSAPP' },
+    inBot: raw.inBot as boolean | undefined,
+  };
+}
+
 const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'ALL', label: 'Todos' },
   { value: 'OPEN', label: 'Abertos' },
@@ -127,6 +156,10 @@ const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
 export default function Conversations() {
   // Base da API (mesma usada pelo axios)
   const apiBase = (api.defaults.baseURL || '').replace(/\/$/, '') || getPublicApiOrigin();
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkOpenedRef = useRef<string | null>(null);
+  const deepLinkInFlightRef = useRef<string | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -473,6 +506,63 @@ export default function Conversations() {
       setLoading(false);
     }
   };
+
+  // Abrir conversa a partir de /conversations?c=... (ex.: link no dashboard) — mesmo layout da área de conversas
+  useEffect(() => {
+    const id = searchParams.get('c') || searchParams.get('conversation');
+    if (!id) {
+      deepLinkOpenedRef.current = null;
+      return;
+    }
+    if (loading) return;
+    if (deepLinkOpenedRef.current === id) return;
+    if (deepLinkInFlightRef.current === id) return;
+    deepLinkInFlightRef.current = id;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        let conv = conversations.find((c) => c.id === id);
+        if (!conv) {
+          const { data } = await api.get(`/api/conversations/${id}`);
+          if (cancelled) return;
+          conv = conversationFromDetailApi(data);
+          setConversations((prev) => (prev.some((c) => c.id === conv!.id) ? prev : [conv!, ...prev]));
+        }
+        if (cancelled || !conv) return;
+
+        deepLinkOpenedRef.current = id;
+        setSelectedConversation(conv);
+        setNewMessagesBelowCount(0);
+        setHasMoreMessages(true);
+        setShouldScrollToBottom(true);
+
+        if (conv.unreadCount > 0) {
+          try {
+            await api.put(`/api/messages/conversation/${conv.id}/read`);
+            setConversations((prev) =>
+              prev.map((c) => (c.id === conv.id ? { ...c, unreadCount: 0 } : c)),
+            );
+          } catch (e) {
+            console.error('[Conversations] Erro ao marcar como lida (deep link):', e);
+          }
+        }
+
+        setSearchParams({}, { replace: true });
+      } catch (e) {
+        console.error('[Conversations] Deep link inválido ou sem permissão:', e);
+        if (!cancelled) setSearchParams({}, { replace: true });
+        deepLinkOpenedRef.current = null;
+      } finally {
+        deepLinkInFlightRef.current = null;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, conversations, searchParams, setSearchParams]);
 
   const fetchChannels = async () => {
     try {
