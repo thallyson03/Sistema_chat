@@ -183,16 +183,66 @@ function extractSsoAccessToken(data: Record<string, unknown> | undefined): strin
   return '';
 }
 
-function authHeaders(): Record<string, string> {
-  const token = (process.env.EXTERNAL_TICKET_API_TOKEN || '').trim();
-  const headerName = (process.env.EXTERNAL_TICKET_API_KEY_HEADER || '').trim();
-  if (headerName && token) {
+type ExternalAuthScope = 'user_create' | 'sector_create';
+
+function scopedToken(scope: ExternalAuthScope): string {
+  if (scope === 'user_create') {
+    return (
+      (process.env.EXTERNAL_TICKET_USER_API_TOKEN || '').trim() ||
+      (process.env.EXTERNAL_TICKET_API_TOKEN || '').trim()
+    );
+  }
+  return (
+    (process.env.EXTERNAL_TICKET_SECTOR_API_TOKEN || '').trim() ||
+    (process.env.EXTERNAL_TICKET_API_TOKEN || '').trim()
+  );
+}
+
+function scopedHeaderName(scope: ExternalAuthScope): string {
+  if (scope === 'user_create') {
+    return (
+      (process.env.EXTERNAL_TICKET_USER_API_KEY_HEADER || '').trim() ||
+      (process.env.EXTERNAL_TICKET_API_KEY_HEADER || '').trim()
+    );
+  }
+  return (
+    (process.env.EXTERNAL_TICKET_SECTOR_API_KEY_HEADER || '').trim() ||
+    (process.env.EXTERNAL_TICKET_API_KEY_HEADER || '').trim()
+  );
+}
+
+function scopedAuthScheme(scope: ExternalAuthScope): string {
+  if (scope === 'user_create') {
+    return (
+      (process.env.EXTERNAL_TICKET_USER_API_TOKEN_SCHEME || '').trim() ||
+      (process.env.EXTERNAL_TICKET_API_TOKEN_SCHEME || '').trim() ||
+      'Bearer'
+    );
+  }
+  return (
+    (process.env.EXTERNAL_TICKET_SECTOR_API_TOKEN_SCHEME || '').trim() ||
+    (process.env.EXTERNAL_TICKET_API_TOKEN_SCHEME || '').trim() ||
+    'Bearer'
+  );
+}
+
+function authHeaders(scope: ExternalAuthScope): Record<string, string> {
+  const token = scopedToken(scope);
+  const headerName = scopedHeaderName(scope);
+  const scheme = scopedAuthScheme(scope);
+
+  if (!token) return {};
+
+  // Quando header customizado é informado, envia o token cru no header escolhido.
+  if (headerName) {
     return { [headerName]: token };
   }
-  if (token) {
-    return { Authorization: `Bearer ${token}` };
+
+  // Para casos em que Authorization não usa "Bearer".
+  if (scheme.toLowerCase() === 'none') {
+    return { Authorization: token };
   }
-  return {};
+  return { Authorization: `${scheme} ${token}` };
 }
 
 function extractRemoteUserId(data: unknown): string | null {
@@ -233,10 +283,11 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
   if (!isEnabled()) return;
 
   const base = apiBase();
-  const headers = authHeaders();
-  const tokenConfigured = (process.env.EXTERNAL_TICKET_API_TOKEN || '').trim().length > 0;
+  const headers = authHeaders('user_create');
+  const tokenConfigured = scopedToken('user_create').length > 0;
   if (!base || !tokenConfigured) {
-    const msg = 'EXTERNAL_TICKET_API_BASE_URL ou EXTERNAL_TICKET_API_TOKEN não configurados';
+    const msg =
+      'EXTERNAL_TICKET_API_BASE_URL e token de criação de usuário não configurados (EXTERNAL_TICKET_USER_API_TOKEN/EXTERNAL_TICKET_API_TOKEN)';
     console.error('[ExternalTicket]', msg);
     await prisma.user.update({
       where: { id: input.localUserId },
@@ -396,11 +447,11 @@ export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicket
   if (!isEnabled()) return;
 
   const base = apiBase();
-  const headers = authHeaders();
-  const tokenConfigured = (process.env.EXTERNAL_TICKET_API_TOKEN || '').trim().length > 0;
+  const headers = authHeaders('sector_create');
+  const tokenConfigured = scopedToken('sector_create').length > 0;
   if (!base || !tokenConfigured) {
     console.error(
-      '[ExternalTicket] EXTERNAL_TICKET_API_BASE_URL ou EXTERNAL_TICKET_API_TOKEN não configurados; ignorando criação de setor externo.',
+      '[ExternalTicket] EXTERNAL_TICKET_API_BASE_URL e token de criação de setor não configurados; ignorando criação de setor externo.',
     );
     return;
   }
