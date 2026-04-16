@@ -796,6 +796,8 @@ model QuickReply {
 model Sector {
   id          String   @id @default(cuid())
   name        String   @unique
+  /// ID numérico do setor correspondente no sistema externo de tickets (CEAPDesk).
+  ticketSystemSectorId Int?     @unique
   description String?
   color       String   @default("#3B82F6")
   isActive    Boolean  @default(true)

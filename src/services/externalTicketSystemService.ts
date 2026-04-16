@@ -280,6 +280,25 @@ function extractRemoteUserId(data: unknown): string | null {
   return null;
 }
 
+function extractRemoteSectorId(data: unknown): number | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  const candidates = [
+    d.id,
+    d.sectorId,
+    d.setorId,
+    (d.sector as Record<string, unknown> | undefined)?.id,
+    (d.setor as Record<string, unknown> | undefined)?.id,
+    (d.data as Record<string, unknown> | undefined)?.id,
+    (d.result as Record<string, unknown> | undefined)?.id,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'number' && Number.isInteger(c) && c >= 1) return c;
+    if (typeof c === 'string' && /^\d+$/.test(c.trim())) return Number(c.trim());
+  }
+  return null;
+}
+
 export interface CreateRemoteTicketUserInput {
   localUserId: string;
   email: string;
@@ -330,8 +349,12 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
   const fallbackSectorName = defaultExternalSector();
   const resolvedSectorName = firstSectorName || fallbackSectorName;
   const sectorsData = (localUser?.sectors || [])
-    .map((s) => ({ id: s.sector?.id, name: s.sector?.name?.trim() }))
-    .filter((s): s is { id: string; name: string } => !!s.id && !!s.name);
+    .map((s) => ({
+      id: s.sector?.id,
+      name: s.sector?.name?.trim(),
+      remoteId: s.sector?.ticketSystemSectorId ?? null,
+    }))
+    .filter((s): s is { id: string; name: string; remoteId: number | null } => !!s.id && !!s.name);
   const sectorNames = sectorsData.map((s) => s.name);
   const sectorIds = sectorsData.map((s) => s.id);
   const safeEmail = (localUser?.email || input.email || '').trim();
@@ -341,12 +364,19 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
   const usernameBase = normalizeUsername(usernameFromEmail || safeName || `user_${input.localUserId.slice(0, 8)}`);
 
   // Reduz falhas de criação de usuário quando o sistema externo exige setor pré-cadastrado.
+  const remoteSectorIds = sectorsData
+    .map((s) => s.remoteId)
+    .filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id >= 1);
+
   if (syncSectorsOnUserCreateEnabled() && sectorsData.length > 0) {
     for (const sector of sectorsData) {
-      await syncSectorToExternalTicketSystem({
+      const remoteId = await syncSectorToExternalTicketSystem({
         localSectorId: sector.id,
         name: sector.name,
       });
+      if (typeof remoteId === 'number' && Number.isInteger(remoteId) && remoteId >= 1 && !remoteSectorIds.includes(remoteId)) {
+        remoteSectorIds.push(remoteId);
+      }
     }
   }
 
@@ -377,9 +407,13 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
       body.setoresNomes = sectorNames;
       body.sectorNames = sectorNames;
     }
+    if (remoteSectorIds.length > 0) {
+      body.setorIds = remoteSectorIds;
+      body.sectorIds = remoteSectorIds;
+    }
     if (sendLocalSectorIdsToExternal() && sectorIds.length > 0) {
-      body.setoresIds = sectorIds;
-      body.sectorIds = sectorIds;
+      body.localSetorIds = sectorIds;
+      body.localSectorIds = sectorIds;
     }
   }
 
@@ -393,6 +427,7 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
     localSectorName: resolvedSectorName,
     localSectorIds: sectorIds,
     localSectorNames: sectorNames,
+    remoteSectorIds,
   };
 
   // Campos fixos opcionais via env (sobrescrevem os dinâmicos se houver conflito)
@@ -462,8 +497,8 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
  * Cria setor no sistema externo de tickets quando um novo setor é criado no Sistema_chat.
  * Best-effort: falhas são apenas logadas e não impedem o cadastro local.
  */
-export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicketSectorInput): Promise<void> {
-  if (!isEnabled()) return;
+export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicketSectorInput): Promise<number | null> {
+  if (!isEnabled()) return null;
 
   const base = apiBase();
   const headers = authHeaders('sector_create');
@@ -472,7 +507,7 @@ export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicket
     console.error(
       '[ExternalTicket] EXTERNAL_TICKET_API_BASE_URL e token de criação de setor não configurados; ignorando criação de setor externo.',
     );
-    return;
+    return null;
   }
 
   const url = `${base}${sectorCreatePath()}`;
@@ -492,7 +527,7 @@ export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicket
   };
 
   try {
-    await axios.post(url, body, {
+    const res = await axios.post(url, body, {
       headers: {
         'Content-Type': 'application/json',
         ...headers,
@@ -500,7 +535,15 @@ export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicket
       timeout: Number(process.env.EXTERNAL_TICKET_API_TIMEOUT_MS || '20000') || 20000,
       validateStatus: (s) => s >= 200 && s < 300,
     });
+    const remoteSectorId = extractRemoteSectorId(res.data);
+    if (typeof remoteSectorId === 'number' && Number.isInteger(remoteSectorId) && remoteSectorId >= 1) {
+      await prisma.sector.update({
+        where: { id: input.localSectorId },
+        data: { ticketSystemSectorId: remoteSectorId },
+      });
+    }
     console.log('[ExternalTicket] Setor sincronizado:', input.name, '->', url);
+    return remoteSectorId;
   } catch (err: unknown) {
     const ax = axios.isAxiosError(err);
     const status = ax ? err.response?.status : undefined;
@@ -508,7 +551,7 @@ export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicket
     // Idempotência prática: setor já existente no externo não deve quebrar o fluxo.
     if (status === 400 && /ja existe|já existe/i.test(responseText)) {
       console.log('[ExternalTicket] Setor já existente no externo, seguindo fluxo:', input.name);
-      return;
+      return null;
     }
     const msg = ax
       ? `${status || '?'}` +
@@ -517,6 +560,7 @@ export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicket
         ? err.message
         : String(err);
     console.error('[ExternalTicket] Falha ao criar setor remoto:', msg);
+    return null;
   }
 }
 
