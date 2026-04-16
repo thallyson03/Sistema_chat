@@ -215,7 +215,7 @@ export class ConversationController {
   async getSatisfactionSurveyStats(req: AuthRequest, res: Response) {
     try {
       const days = parseInt(String(req.query.days || '30'), 10);
-      const data = await satisfactionSurveyService.getDashboardStats(days);
+      const data = await satisfactionSurveyService.getDashboardStats(days, req.user);
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar estatísticas da pesquisa' });
@@ -229,7 +229,7 @@ export class ConversationController {
   async getDashboardPerformance(req: AuthRequest, res: Response) {
     try {
       const days = parseInt(String(req.query.days || '30'), 10);
-      const data = await dashboardPerformanceService.getInsights(days);
+      const data = await dashboardPerformanceService.getInsights(days, req.user);
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar performance do dashboard' });

@@ -838,21 +838,31 @@ export class ConversationService {
 
   async getStats(viewer?: ConversationViewer) {
     const visibilityWhere = await this.buildVisibilityWhere(viewer);
+    const ownershipWhere =
+      viewer && viewer.role !== 'ADMIN'
+        ? viewer.id
+          ? { assignedToId: viewer.id }
+          : { id: '__no_access__' }
+        : {};
     const [total, open, waiting, closed] = await Promise.all([
-      prisma.conversation.count({ where: visibilityWhere }),
       prisma.conversation.count({
         where: {
-          AND: [visibilityWhere, { status: ConversationStatus.OPEN }],
+          AND: [visibilityWhere, ownershipWhere],
         },
       }),
       prisma.conversation.count({
         where: {
-          AND: [visibilityWhere, { status: ConversationStatus.WAITING }],
+          AND: [visibilityWhere, ownershipWhere, { status: ConversationStatus.OPEN }],
         },
       }),
       prisma.conversation.count({
         where: {
-          AND: [visibilityWhere, { status: ConversationStatus.CLOSED }],
+          AND: [visibilityWhere, ownershipWhere, { status: ConversationStatus.WAITING }],
+        },
+      }),
+      prisma.conversation.count({
+        where: {
+          AND: [visibilityWhere, ownershipWhere, { status: ConversationStatus.CLOSED }],
         },
       }),
     ]);

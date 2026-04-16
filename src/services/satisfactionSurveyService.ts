@@ -330,22 +330,31 @@ export class SatisfactionSurveyService {
   /**
    * Métricas agregadas e últimas respostas para o dashboard.
    */
-  async getDashboardStats(rawDays: number) {
+  async getDashboardStats(rawDays: number, viewer?: { id: string; role: string }) {
     const days = Math.min(Math.max(Math.floor(Number(rawDays)) || 30, 1), 366);
     const start = new Date();
     start.setDate(start.getDate() - days);
     start.setHours(0, 0, 0, 0);
 
+    const isAdmin = viewer?.role === 'ADMIN';
+    const ownScope =
+      !isAdmin && viewer?.id
+        ? { sentByUserId: viewer.id }
+        : !isAdmin
+          ? { sentByUserId: '__no_access__' }
+          : {};
+
     const [sentInPeriod, pendingTotal, distributionRows, recentRows] = await Promise.all([
       prisma.satisfactionSurveyDispatch.count({
-        where: { createdAt: { gte: start } },
+        where: { ...ownScope, createdAt: { gte: start } },
       }),
       prisma.satisfactionSurveyDispatch.count({
-        where: { status: 'PENDING' },
+        where: { ...ownScope, status: 'PENDING' },
       }),
       prisma.satisfactionSurveyDispatch.groupBy({
         by: ['score'],
         where: {
+          ...ownScope,
           status: 'COMPLETED',
           score: { not: null },
           updatedAt: { gte: start },
@@ -353,7 +362,7 @@ export class SatisfactionSurveyService {
         _count: { id: true },
       }),
       prisma.satisfactionSurveyDispatch.findMany({
-        where: { status: 'COMPLETED', score: { not: null } },
+        where: { ...ownScope, status: 'COMPLETED', score: { not: null } },
         orderBy: { updatedAt: 'desc' },
         take: 20,
         include: {
