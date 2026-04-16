@@ -67,6 +67,11 @@ function createPath(): string {
   return p.startsWith('/') ? p : `/${p}`;
 }
 
+function sectorCreatePath(): string {
+  const p = (process.env.EXTERNAL_TICKET_SECTOR_CREATE_PATH || '/api/v1/setores').trim();
+  return p.startsWith('/') ? p : `/${p}`;
+}
+
 function sendPasswordInCreate(): boolean {
   const v = process.env.EXTERNAL_TICKET_SEND_PASSWORD;
   if (v === '0' || v === 'false' || v === 'no') return false;
@@ -207,6 +212,12 @@ export interface CreateRemoteTicketUserInput {
   email: string;
   name: string;
   plainPassword: string;
+}
+
+export interface CreateRemoteTicketSectorInput {
+  localSectorId: string;
+  name: string;
+  description?: string | null;
 }
 
 /**
@@ -359,6 +370,61 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
       },
     });
     maybeThrowStrict(msg);
+  }
+}
+
+/**
+ * Cria setor no sistema externo de tickets quando um novo setor é criado no Sistema_chat.
+ * Best-effort: falhas são apenas logadas e não impedem o cadastro local.
+ */
+export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicketSectorInput): Promise<void> {
+  if (!isEnabled()) return;
+
+  const base = apiBase();
+  const headers = authHeaders();
+  const tokenConfigured = (process.env.EXTERNAL_TICKET_API_TOKEN || '').trim().length > 0;
+  if (!base || !tokenConfigured) {
+    console.error(
+      '[ExternalTicket] EXTERNAL_TICKET_API_BASE_URL ou EXTERNAL_TICKET_API_TOKEN não configurados; ignorando criação de setor externo.',
+    );
+    return;
+  }
+
+  const url = `${base}${sectorCreatePath()}`;
+  const body: Record<string, unknown> = {
+    nome: input.name,
+  };
+  if (input.description) {
+    body.descricao = input.description;
+  }
+  // Correlação estável entre setor local e remoto
+  body.externalSectorId = input.localSectorId;
+  body.localSectorId = input.localSectorId;
+  body.metadata = {
+    source: 'sistema_chat',
+    localSectorId: input.localSectorId,
+    localSectorName: input.name,
+  };
+
+  try {
+    await axios.post(url, body, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      timeout: Number(process.env.EXTERNAL_TICKET_API_TIMEOUT_MS || '20000') || 20000,
+      validateStatus: (s) => s >= 200 && s < 300,
+    });
+    console.log('[ExternalTicket] Setor sincronizado:', input.name, '->', url);
+  } catch (err: unknown) {
+    const ax = axios.isAxiosError(err);
+    const msg = ax
+      ? `${err.response?.status || '?'}` +
+        (err.response?.data ? ` ${JSON.stringify(err.response.data).slice(0, 500)}` : ` ${err.message}`)
+      : err instanceof Error
+        ? err.message
+        : String(err);
+    console.error('[ExternalTicket] Falha ao criar setor remoto:', msg);
   }
 }
 
