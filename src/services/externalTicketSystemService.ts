@@ -116,6 +116,11 @@ function defaultExternalSector(): string | null {
   return raw || null;
 }
 
+function sendLocalSectorIdsToExternal(): boolean {
+  const raw = (process.env.EXTERNAL_TICKET_SEND_LOCAL_SECTOR_IDS || 'false').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
 function syncSectorsOnUserCreateEnabled(): boolean {
   const raw = (process.env.EXTERNAL_TICKET_SYNC_SECTORS_ON_USER_CREATE || 'true').trim().toLowerCase();
   return raw !== '0' && raw !== 'false' && raw !== 'no';
@@ -185,43 +190,56 @@ function extractSsoAccessToken(data: Record<string, unknown> | undefined): strin
 
 type ExternalAuthScope = 'user_create' | 'sector_create';
 
+function cleanEnvValue(raw: string): string {
+  const v = (raw || '').trim();
+  // Remove aspas acidentais comuns em variáveis de ambiente.
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    return v.slice(1, -1).trim();
+  }
+  return v;
+}
+
+function stripAuthPrefix(token: string): string {
+  return token.replace(/^(bearer|token)\s+/i, '').trim();
+}
+
 function scopedToken(scope: ExternalAuthScope): string {
   if (scope === 'user_create') {
     return (
-      (process.env.EXTERNAL_TICKET_USER_API_TOKEN || '').trim() ||
-      (process.env.EXTERNAL_TICKET_API_TOKEN || '').trim()
+      cleanEnvValue(process.env.EXTERNAL_TICKET_USER_API_TOKEN || '') ||
+      cleanEnvValue(process.env.EXTERNAL_TICKET_API_TOKEN || '')
     );
   }
   return (
-    (process.env.EXTERNAL_TICKET_SECTOR_API_TOKEN || '').trim() ||
-    (process.env.EXTERNAL_TICKET_API_TOKEN || '').trim()
+    cleanEnvValue(process.env.EXTERNAL_TICKET_SECTOR_API_TOKEN || '') ||
+    cleanEnvValue(process.env.EXTERNAL_TICKET_API_TOKEN || '')
   );
 }
 
 function scopedHeaderName(scope: ExternalAuthScope): string {
   if (scope === 'user_create') {
     return (
-      (process.env.EXTERNAL_TICKET_USER_API_KEY_HEADER || '').trim() ||
-      (process.env.EXTERNAL_TICKET_API_KEY_HEADER || '').trim()
+      cleanEnvValue(process.env.EXTERNAL_TICKET_USER_API_KEY_HEADER || '') ||
+      cleanEnvValue(process.env.EXTERNAL_TICKET_API_KEY_HEADER || '')
     );
   }
   return (
-    (process.env.EXTERNAL_TICKET_SECTOR_API_KEY_HEADER || '').trim() ||
-    (process.env.EXTERNAL_TICKET_API_KEY_HEADER || '').trim()
+    cleanEnvValue(process.env.EXTERNAL_TICKET_SECTOR_API_KEY_HEADER || '') ||
+    cleanEnvValue(process.env.EXTERNAL_TICKET_API_KEY_HEADER || '')
   );
 }
 
 function scopedAuthScheme(scope: ExternalAuthScope): string {
   if (scope === 'user_create') {
     return (
-      (process.env.EXTERNAL_TICKET_USER_API_TOKEN_SCHEME || '').trim() ||
-      (process.env.EXTERNAL_TICKET_API_TOKEN_SCHEME || '').trim() ||
+      cleanEnvValue(process.env.EXTERNAL_TICKET_USER_API_TOKEN_SCHEME || '') ||
+      cleanEnvValue(process.env.EXTERNAL_TICKET_API_TOKEN_SCHEME || '') ||
       'Bearer'
     );
   }
   return (
-    (process.env.EXTERNAL_TICKET_SECTOR_API_TOKEN_SCHEME || '').trim() ||
-    (process.env.EXTERNAL_TICKET_API_TOKEN_SCHEME || '').trim() ||
+    cleanEnvValue(process.env.EXTERNAL_TICKET_SECTOR_API_TOKEN_SCHEME || '') ||
+    cleanEnvValue(process.env.EXTERNAL_TICKET_API_TOKEN_SCHEME || '') ||
     'Bearer'
   );
 }
@@ -235,14 +253,14 @@ function authHeaders(scope: ExternalAuthScope): Record<string, string> {
 
   // Quando header customizado é informado, envia o token cru no header escolhido.
   if (headerName) {
-    return { [headerName]: token };
+    return { [headerName]: stripAuthPrefix(token) };
   }
 
   // Para casos em que Authorization não usa "Bearer".
   if (scheme.toLowerCase() === 'none') {
-    return { Authorization: token };
+    return { Authorization: stripAuthPrefix(token) };
   }
-  return { Authorization: `${scheme} ${token}` };
+  return { Authorization: `${scheme} ${stripAuthPrefix(token)}` };
 }
 
 function extractRemoteUserId(data: unknown): string | null {
@@ -349,7 +367,8 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
       body.setorNome = resolvedSectorName;
       body.sectorName = resolvedSectorName;
     }
-    if (firstSectorId) {
+    // Por padrão, NÃO envia IDs locais de setor para evitar incompatibilidade com IDs remotos.
+    if (sendLocalSectorIdsToExternal() && firstSectorId) {
       body.setorId = firstSectorId;
       body.sectorId = firstSectorId;
     }
@@ -358,7 +377,7 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
       body.setoresNomes = sectorNames;
       body.sectorNames = sectorNames;
     }
-    if (sectorIds.length > 0) {
+    if (sendLocalSectorIdsToExternal() && sectorIds.length > 0) {
       body.setoresIds = sectorIds;
       body.sectorIds = sectorIds;
     }
@@ -484,8 +503,15 @@ export async function syncSectorToExternalTicketSystem(input: CreateRemoteTicket
     console.log('[ExternalTicket] Setor sincronizado:', input.name, '->', url);
   } catch (err: unknown) {
     const ax = axios.isAxiosError(err);
+    const status = ax ? err.response?.status : undefined;
+    const responseText = ax ? JSON.stringify(err.response?.data || '') : '';
+    // Idempotência prática: setor já existente no externo não deve quebrar o fluxo.
+    if (status === 400 && /ja existe|já existe/i.test(responseText)) {
+      console.log('[ExternalTicket] Setor já existente no externo, seguindo fluxo:', input.name);
+      return;
+    }
     const msg = ax
-      ? `${err.response?.status || '?'}` +
+      ? `${status || '?'}` +
         (err.response?.data ? ` ${JSON.stringify(err.response.data).slice(0, 500)}` : ` ${err.message}`)
       : err instanceof Error
         ? err.message
