@@ -116,6 +116,11 @@ function defaultExternalSector(): string | null {
   return raw || null;
 }
 
+function syncSectorsOnUserCreateEnabled(): boolean {
+  const raw = (process.env.EXTERNAL_TICKET_SYNC_SECTORS_ON_USER_CREATE || 'true').trim().toLowerCase();
+  return raw !== '0' && raw !== 'false' && raw !== 'no';
+}
+
 function appendSsoTokenIfNeeded(redirectUrl: string, token: string | null | undefined): string {
   const url = (redirectUrl || '').trim();
   if (!url) return url;
@@ -265,6 +270,16 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
   const roleRaw = localUser?.role || 'AGENT';
   const usernameFromEmail = safeEmail.includes('@') ? safeEmail.split('@')[0] : safeEmail;
   const usernameBase = normalizeUsername(usernameFromEmail || safeName || `user_${input.localUserId.slice(0, 8)}`);
+
+  // Reduz falhas de criação de usuário quando o sistema externo exige setor pré-cadastrado.
+  if (syncSectorsOnUserCreateEnabled() && sectorsData.length > 0) {
+    for (const sector of sectorsData) {
+      await syncSectorToExternalTicketSystem({
+        localSectorId: sector.id,
+        name: sector.name,
+      });
+    }
+  }
 
   const body: Record<string, unknown> = {
     email: safeEmail,
