@@ -1,8 +1,10 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { MessageService } from '../services/messageService';
+import { ConversationService } from '../services/conversationService';
 
 const messageService = new MessageService();
+const conversationService = new ConversationService();
 
 // io será injetado via função (similar ao webhookRoutes)
 let io: any = null;
@@ -12,6 +14,20 @@ export function setSocketIO(socketIO: any) {
 }
 
 export class MessageController {
+  private async ensureConversationAccess(req: AuthRequest, res: Response, conversationId: string) {
+    if (!req.user) {
+      res.status(401).json({ error: 'Usuário não autenticado' });
+      return false;
+    }
+
+    const canAccess = await conversationService.canViewerAccessConversation(conversationId, req.user);
+    if (!canAccess) {
+      res.status(403).json({ error: 'Acesso negado para esta conversa' });
+      return false;
+    }
+    return true;
+  }
+
   async sendMessage(req: AuthRequest, res: Response) {
     try {
       if (!req.user) {
@@ -22,6 +38,9 @@ export class MessageController {
 
       if (!conversationId) {
         return res.status(400).json({ error: 'Conversa é obrigatória' });
+      }
+      if (!(await this.ensureConversationAccess(req, res, conversationId))) {
+        return;
       }
 
       // Para mídias, content pode ser vazio (será usado como caption)
@@ -82,6 +101,9 @@ export class MessageController {
       const { conversationId } = req.params;
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
+      if (!(await this.ensureConversationAccess(req, res, conversationId))) {
+        return;
+      }
 
       const messages = await messageService.getMessagesByConversation(
         conversationId,
@@ -109,6 +131,9 @@ export class MessageController {
       if (conversationId && message.conversationId !== conversationId) {
         return res.status(403).json({ error: 'Mensagem não pertence à conversa indicada' });
       }
+      if (!(await this.ensureConversationAccess(req, res, conversationId || message.conversationId))) {
+        return;
+      }
 
       res.json(message);
     } catch (error: any) {
@@ -123,6 +148,9 @@ export class MessageController {
       }
 
       const { conversationId } = req.params;
+      if (!(await this.ensureConversationAccess(req, res, conversationId))) {
+        return;
+      }
       await messageService.markConversationAsRead(conversationId, req.user.id);
 
       res.json({ message: 'Conversa marcada como lida' });

@@ -10,6 +10,20 @@ const satisfactionSurveyService = new SatisfactionSurveyService();
 const dashboardPerformanceService = new DashboardPerformanceService();
 
 export class ConversationController {
+  private async ensureConversationAccess(req: AuthRequest, res: Response, conversationId: string) {
+    if (!req.user) {
+      res.status(401).json({ error: 'Usuário não autenticado' });
+      return false;
+    }
+
+    const canAccess = await conversationService.canViewerAccessConversation(conversationId, req.user);
+    if (!canAccess) {
+      res.status(403).json({ error: 'Acesso negado para esta conversa' });
+      return false;
+    }
+    return true;
+  }
+
   async getConversations(req: AuthRequest, res: Response) {
     try {
       const filters = {
@@ -67,6 +81,9 @@ export class ConversationController {
     try {
       const { id } = req.params;
       const { assignedToId, status, priority } = req.body;
+      if (!(await this.ensureConversationAccess(req, res, id))) {
+        return;
+      }
 
       const conversation = await conversationService.updateConversation(id, {
         assignedToId,
@@ -84,6 +101,9 @@ export class ConversationController {
     try {
       const { id } = req.params;
       const { userId } = req.body;
+      if (!(await this.ensureConversationAccess(req, res, id))) {
+        return;
+      }
 
       if (!userId) {
         return res.status(400).json({ error: 'ID do usuário é obrigatório' });
@@ -99,6 +119,9 @@ export class ConversationController {
   async activateBot(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (!(await this.ensureConversationAccess(req, res, id))) {
+        return;
+      }
       const conversation = await conversationService.activateBotForConversation(id);
       res.json(conversation);
     } catch (error: any) {
@@ -114,6 +137,9 @@ export class ConversationController {
     try {
       const { id } = req.params;
       const { sectorId, autoAssign, userId } = req.body || {};
+      if (!(await this.ensureConversationAccess(req, res, id))) {
+        return;
+      }
 
       if (!sectorId) {
         return res.status(400).json({ error: 'ID do setor (sectorId) é obrigatório' });
@@ -139,6 +165,9 @@ export class ConversationController {
         return res.status(401).json({ error: 'Não autenticado' });
       }
       const { id } = req.params;
+      if (!(await this.ensureConversationAccess(req, res, id))) {
+        return;
+      }
       const { message } = await satisfactionSurveyService.dispatchSurvey(id, req.user.id);
 
       const io = getSocketIO();

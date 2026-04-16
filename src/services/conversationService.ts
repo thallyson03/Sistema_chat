@@ -364,6 +364,16 @@ export class ConversationService {
     } as any;
   }
 
+  async canViewerAccessConversation(conversationId: string, viewer?: ConversationViewer) {
+    const visibilityWhere = await this.buildVisibilityWhere(viewer);
+    const total = await prisma.conversation.count({
+      where: {
+        AND: [{ id: conversationId }, visibilityWhere],
+      },
+    });
+    return total > 0;
+  }
+
   async updateConversation(
     id: string,
     data: { assignedToId?: string; status?: string; priority?: string },
