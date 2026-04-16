@@ -11,7 +11,75 @@ export interface ConversationFilters {
   inBot?: boolean;
 }
 
+interface ConversationViewer {
+  id: string;
+  role: string;
+}
+
 export class ConversationService {
+  private async buildVisibilityWhere(viewer?: ConversationViewer) {
+    // Chamadas internas do serviço (sem viewer) não devem ser bloqueadas.
+    if (!viewer) {
+      return {};
+    }
+
+    // Com viewer informado, id é obrigatório.
+    if (!viewer.id) {
+      return { id: '__no_access__' };
+    }
+
+    // ADMIN mantém visão global.
+    if (viewer.role === 'ADMIN') {
+      return {};
+    }
+
+    const userSectors = await prisma.userSector.findMany({
+      where: { userId: viewer.id },
+      select: { sectorId: true },
+    });
+    const sectorIds = userSectors.map((s) => s.sectorId);
+    if (sectorIds.length === 0) {
+      return { id: '__no_access__' };
+    }
+
+    // "Setor primário e agregados":
+    // - setor atual da conversa (conversation.sectorId), quando definido
+    // - ou setor principal/secundário do canal quando conversation.sectorId for nulo
+    return {
+      OR: [
+        { sectorId: { in: sectorIds } },
+        {
+          AND: [
+            { sectorId: null },
+            {
+              channel: {
+                is: {
+                  sectorId: { in: sectorIds },
+                },
+              },
+            },
+          ],
+        },
+        {
+          AND: [
+            { sectorId: null },
+            {
+              channel: {
+                is: {
+                  secondarySectors: {
+                    some: {
+                      sectorId: { in: sectorIds },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
   async createConversation(data: { channelId: string; contactId: string; assignedToId?: string }) {
     // Verificar se já existe conversa para este contato neste canal
     const existing = await prisma.conversation.findFirst({
@@ -62,9 +130,16 @@ export class ConversationService {
     return conversation;
   }
 
-  async getConversations(filters: ConversationFilters, limit: number, offset: number) {
+  async getConversations(
+    filters: ConversationFilters,
+    limit: number,
+    offset: number,
+    viewer?: ConversationViewer,
+  ) {
     const where: any = {};
     const andConditions: any[] = [];
+    const visibilityWhere = await this.buildVisibilityWhere(viewer);
+    andConditions.push(visibilityWhere);
 
     if (filters.channelId) {
       andConditions.push({ channelId: filters.channelId });
@@ -220,9 +295,13 @@ export class ConversationService {
     };
   }
 
-  async getConversationById(id: string) {
-    const conv = await prisma.conversation.findUnique({
-      where: { id },
+  async getConversationById(id: string, viewer?: ConversationViewer) {
+    const visibilityWhere = await this.buildVisibilityWhere(viewer);
+    const conv = await prisma.conversation.findFirst({
+      where: {
+        id,
+        ...visibilityWhere,
+      },
       include: {
         channel: {
           include: {
@@ -726,32 +805,45 @@ export class ConversationService {
     return updatedConversation;
   }
 
-  async getUnreadCount(userId?: string) {
-    if (!userId) {
+  async getUnreadCount(userId?: string, viewer?: ConversationViewer) {
+    if (!userId || !viewer) {
       return 0;
     }
+    const visibilityWhere = await this.buildVisibilityWhere(viewer);
 
     return await prisma.conversation.count({
       where: {
-        OR: [
-          { assignedToId: userId, unreadCount: { gt: 0 } },
-          { assignedToId: null, unreadCount: { gt: 0 } },
+        AND: [
+          visibilityWhere,
+          {
+            OR: [
+              { assignedToId: userId, unreadCount: { gt: 0 } },
+              { assignedToId: null, unreadCount: { gt: 0 } },
+            ],
+          },
         ],
       },
     });
   }
 
-  async getStats() {
+  async getStats(viewer?: ConversationViewer) {
+    const visibilityWhere = await this.buildVisibilityWhere(viewer);
     const [total, open, waiting, closed] = await Promise.all([
-      prisma.conversation.count(),
+      prisma.conversation.count({ where: visibilityWhere }),
       prisma.conversation.count({
-        where: { status: ConversationStatus.OPEN },
+        where: {
+          AND: [visibilityWhere, { status: ConversationStatus.OPEN }],
+        },
       }),
       prisma.conversation.count({
-        where: { status: ConversationStatus.WAITING },
+        where: {
+          AND: [visibilityWhere, { status: ConversationStatus.WAITING }],
+        },
       }),
       prisma.conversation.count({
-        where: { status: ConversationStatus.CLOSED },
+        where: {
+          AND: [visibilityWhere, { status: ConversationStatus.CLOSED }],
+        },
       }),
     ]);
 

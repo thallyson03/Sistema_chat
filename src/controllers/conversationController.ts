@@ -34,7 +34,7 @@ export class ConversationController {
         userId: req.user?.id,
       });
 
-      const result = await conversationService.getConversations(filters, limit, offset);
+      const result = await conversationService.getConversations(filters, limit, offset, req.user);
 
       console.log('[ConversationController] Conversas encontradas:', {
         total: result.total,
@@ -51,7 +51,7 @@ export class ConversationController {
   async getConversationById(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const conversation = await conversationService.getConversationById(id);
+      const conversation = await conversationService.getConversationById(id, req.user);
 
       if (!conversation) {
         return res.status(404).json({ error: 'Conversa não encontrada' });
@@ -163,7 +163,7 @@ export class ConversationController {
   async getUnreadCount(req: AuthRequest, res: Response) {
     try {
       const userId = req.user?.id;
-      const count = await conversationService.getUnreadCount(userId);
+      const count = await conversationService.getUnreadCount(userId, req.user);
       res.json({ count });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -172,7 +172,7 @@ export class ConversationController {
 
   async getStats(req: AuthRequest, res: Response) {
     try {
-      const stats = await conversationService.getStats();
+      const stats = await conversationService.getStats(req.user);
       res.json(stats);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
