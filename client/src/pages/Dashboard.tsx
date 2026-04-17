@@ -101,64 +101,6 @@ function mapCeapdeskStatsToCards(raw: unknown): {
   return { total, open, waiting, closed };
 }
 
-function buildPerfFromCeapdesk(
-  completo: unknown,
-  usuariosPerf: unknown,
-  surveyDays: number,
-): DashboardPerformancePayload {
-  const c = completo && typeof completo === 'object' ? (completo as Record<string, unknown>) : null;
-  const slaRaw =
-    c && typeof c.slaStats === 'object' && c.slaStats !== null
-      ? (c.slaStats as Record<string, unknown>)
-      : c && typeof c.sla === 'object' && c.sla !== null
-        ? (c.sla as Record<string, unknown>)
-        : {};
-  const first =
-    slaRaw.tempoMedioPrimeiraRespostaMinutos != null
-      ? Number(slaRaw.tempoMedioPrimeiraRespostaMinutos)
-      : slaRaw.avgFirstResponseMinutes != null
-        ? Number(slaRaw.avgFirstResponseMinutes)
-        : null;
-  let closedMin: number | null = null;
-  if (slaRaw.tempoMedioResolucaoHoras != null) {
-    closedMin = Number(slaRaw.tempoMedioResolucaoHoras) * 60;
-  } else if (slaRaw.tempoMedioResolucaoMinutos != null) {
-    closedMin = Number(slaRaw.tempoMedioResolucaoMinutos);
-  }
-
-  const up = usuariosPerf && typeof usuariosPerf === 'object' ? (usuariosPerf as Record<string, unknown>) : {};
-  const rows = Array.isArray(usuariosPerf)
-    ? (usuariosPerf as unknown[])
-    : Array.isArray(up.data)
-      ? (up.data as unknown[])
-      : Array.isArray(up.items)
-        ? (up.items as unknown[])
-        : [];
-
-  const usuarios = rows.slice(0, 25).map((row: unknown, idx: number) => {
-    const r = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
-    return {
-      userId: String(r.userId ?? r.usuarioId ?? r.id ?? idx),
-      name: String(r.usuario ?? r.nome ?? r.name ?? r.usuarioResponsavel ?? '—'),
-      messagesSent: Number(r.mensagens ?? r.messagesSent ?? 0) || 0,
-      conversationsTouched:
-        Number(r.totalTickets ?? r.totalFechado ?? r.total ?? r.ticketsResolvidos ?? 0) || 0,
-    };
-  });
-
-  return {
-    periodDays: surveyDays,
-    periodStart: typeof c?.periodStart === 'string' ? c.periodStart : new Date().toISOString(),
-    tempo: {
-      avgFirstResponseMinutes: first,
-      firstResponseSampleSize: Number(slaRaw.samples ?? slaRaw.amostras ?? 0) || 0,
-      avgClosedConversationMinutes: closedMin,
-      closedConversationsSampleSize: Number(slaRaw.closedSamples ?? 0) || 0,
-    },
-    usuarios,
-  };
-}
-
 function formatDurationMinutes(minutes: number | null | undefined): string {
   if (minutes == null || Number.isNaN(minutes)) return '—';
   if (minutes < 60) return `${Math.round(minutes)} min`;
@@ -249,15 +191,13 @@ function ExternalLinkIcon({ className }: { className?: string }) {
 }
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ total: 0, open: 0, waiting: 0, closed: 0 });
+  const [externalStats, setExternalStats] = useState({ total: 0, open: 0, waiting: 0, closed: 0 });
   const [ceapdeskEnabled, setCeapdeskEnabled] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [externalLoading, setExternalLoading] = useState(true);
   const [surveyStats, setSurveyStats] = useState<SatisfactionStatsResponse | null>(null);
   const [perfStats, setPerfStats] = useState<DashboardPerformancePayload | null>(null);
   const [periodLoading, setPeriodLoading] = useState(true);
   const [surveyUpdatedAt, setSurveyUpdatedAt] = useState<Date | null>(null);
-  /** Seção Operação: métricas vindas do CEAPDesk ou fallback local (ex.: CEAPDesk indisponível). */
-  const [operacaoFonte, setOperacaoFonte] = useState<'ceapdesk' | 'local' | null>(null);
 
   const [convMetrics, setConvMetrics] = useState<ConversationDashboardMetrics | null>(null);
   const [convMetricsLoading, setConvMetricsLoading] = useState(true);
@@ -335,7 +275,7 @@ export default function Dashboard() {
     if (ceapdeskEnabled === null) return;
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      setExternalLoading(true);
       const commonParams: Record<string, string> = {
         days: String(globalDays),
       };
@@ -343,48 +283,21 @@ export default function Dashboard() {
       if (globalSectorId) commonParams.sectorId = globalSectorId;
       try {
         if (ceapdeskEnabled) {
-          try {
-            const s = await api.get<Record<string, unknown>>('/api/external-dashboard/stats', {
-              params: {
-                periodo: periodoFromDays(globalDays),
-                ...commonParams,
-              },
-            });
-            if (!cancelled) setStats(mapCeapdeskStatsToCards(s.data));
-          } catch (err) {
-            console.error('[Dashboard] CEAPDesk stats indisponível, usando conversas locais:', err);
-            const response = await api.get<ConversationDashboardMetrics>(
-              '/api/conversations/dashboard-conversation-metrics',
-              { params: commonParams },
-            );
-            if (!cancelled) {
-              setCeapdeskEnabled(false);
-              setStats({
-                total: response.data.total,
-                open: response.data.open,
-                waiting: response.data.waiting,
-                closed: response.data.closed,
-              });
-            }
-          }
+          const s = await api.get<Record<string, unknown>>('/api/external-dashboard/stats', {
+            params: {
+              periodo: periodoFromDays(globalDays),
+              ...commonParams,
+            },
+          });
+          if (!cancelled) setExternalStats(mapCeapdeskStatsToCards(s.data));
         } else {
-          const response = await api.get<ConversationDashboardMetrics>(
-            '/api/conversations/dashboard-conversation-metrics',
-            { params: commonParams },
-          );
-          if (!cancelled) {
-            setStats({
-              total: response.data.total,
-              open: response.data.open,
-              waiting: response.data.waiting,
-              closed: response.data.closed,
-            });
-          }
+          if (!cancelled) setExternalStats({ total: 0, open: 0, waiting: 0, closed: 0 });
         }
       } catch (e) {
         console.error(e);
+        if (!cancelled) setExternalStats({ total: 0, open: 0, waiting: 0, closed: 0 });
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setExternalLoading(false);
       }
     })();
     return () => {
@@ -393,12 +306,9 @@ export default function Dashboard() {
   }, [ceapdeskEnabled, globalDays, globalChannelId, globalSectorId]);
 
   useEffect(() => {
-    if (ceapdeskEnabled === null) return;
-
     let cancelled = false;
     (async () => {
       setPeriodLoading(true);
-      setOperacaoFonte(null);
       try {
         const commonParams: Record<string, string> = { days: String(globalDays) };
         if (globalChannelId) commonParams.channelId = globalChannelId;
@@ -409,39 +319,11 @@ export default function Dashboard() {
         if (cancelled) return;
         setSurveyStats(surveyRes.data);
 
-        if (ceapdeskEnabled) {
-          try {
-            const periodo = periodoFromDays(globalDays);
-            const [completoRes, usuariosRes] = await Promise.all([
-              api.get<unknown>('/api/external-dashboard/dashboard-completo', {
-                params: { periodo, ...commonParams },
-              }),
-              api.get<unknown>('/api/external-dashboard/usuarios-performance', {
-                params: { periodo, ...commonParams },
-              }),
-            ]);
-            if (!cancelled) {
-              setPerfStats(buildPerfFromCeapdesk(completoRes.data, usuariosRes.data, globalDays));
-              setOperacaoFonte('ceapdesk');
-            }
-          } catch (perfErr) {
-            console.error('[Dashboard] CEAPDesk operação indisponível, usando métricas locais:', perfErr);
-            const perfRes = await api.get<DashboardPerformancePayload>('/api/conversations/dashboard-performance', {
-              params: commonParams,
-            });
-            if (!cancelled) {
-              setPerfStats(perfRes.data);
-              setOperacaoFonte('local');
-            }
-          }
-        } else {
-          const perfRes = await api.get<DashboardPerformancePayload>('/api/conversations/dashboard-performance', {
-            params: commonParams,
-          });
-          if (!cancelled) {
-            setPerfStats(perfRes.data);
-            setOperacaoFonte('local');
-          }
+        const perfRes = await api.get<DashboardPerformancePayload>('/api/conversations/dashboard-performance', {
+          params: commonParams,
+        });
+        if (!cancelled) {
+          setPerfStats(perfRes.data);
         }
         if (!cancelled) setSurveyUpdatedAt(new Date());
       } catch (e) {
@@ -457,9 +339,9 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [globalDays, globalChannelId, globalSectorId, ceapdeskEnabled]);
+  }, [globalDays, globalChannelId, globalSectorId]);
 
-  const periodBlockLoading = periodLoading || ceapdeskEnabled === null;
+  const periodBlockLoading = periodLoading;
 
   const maxDist = useMemo(() => {
     const dist = surveyStats?.summary.distribution;
@@ -610,45 +492,49 @@ export default function Dashboard() {
 
         <section className="mt-8">
           <div className={`rounded-2xl border p-5 sm:p-6 ${neon.panel}`}>
-            <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Resumo integrado</h2>
+            <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Tickets (CEAPDesk)</h2>
             <p className="mt-1 text-xs text-[#8b9490]">
               {ceapdeskEnabled
-                ? 'Visão do CEAPDesk no mesmo recorte global.'
-                : 'Visão local do sistema no mesmo recorte global.'}
+                ? 'Indicadores externos no mesmo recorte global.'
+                : 'Integração CEAPDesk desabilitada.'}
             </p>
-            {loading ? (
+            {externalLoading ? (
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[1, 2, 3, 4].map((i) => (
                   <div key={i} className={`h-[120px] animate-pulse rounded-xl border ${neon.card}`} />
                 ))}
               </div>
+            ) : !ceapdeskEnabled ? (
+              <p className="mt-4 text-sm text-[#6b7280]">
+                Ative o CEAPDesk para visualizar métricas externas de tickets neste bloco.
+              </p>
             ) : (
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <RefStatCard
-                  title={ceapdeskEnabled ? 'TOTAL DE TICKETS' : 'TOTAL'}
-                  value={stats.total}
+                  title="TOTAL DE TICKETS"
+                  value={externalStats.total}
                   trend="+0%"
                   icon="💬"
-                  barActive={stats.total > 0}
+                  barActive={externalStats.total > 0}
                 />
                 <RefStatCard
-                  title={ceapdeskEnabled ? 'ABERTOS' : 'ABERTAS'}
-                  value={stats.open}
+                  title="ABERTOS"
+                  value={externalStats.open}
                   trend="+0%"
                   icon="🚩"
-                  barActive={stats.open > 0}
+                  barActive={externalStats.open > 0}
                 />
                 <RefStatCard
                   title="EM FILA"
-                  value={stats.waiting}
+                  value={externalStats.waiting}
                   icon="📋"
-                  barActive={stats.waiting > 0}
+                  barActive={externalStats.waiting > 0}
                 />
                 <RefStatCard
-                  title={ceapdeskEnabled ? 'FECHADOS' : 'FECHADAS'}
-                  value={stats.closed}
+                  title="FECHADOS"
+                  value={externalStats.closed}
                   icon="✓"
-                  barActive={stats.closed > 0}
+                  barActive={externalStats.closed > 0}
                 />
               </div>
             )}
@@ -664,14 +550,8 @@ export default function Dashboard() {
             <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Operação</h2>
             <p className="mt-1 text-xs text-[#8b9490]">
               {periodBlockLoading
-                ? ceapdeskEnabled
-                  ? 'Carregando indicadores de operação (CEAPDesk ou fallback local)...'
-                  : 'Carregando métricas de operação...'
-                : operacaoFonte === 'ceapdesk'
-                  ? 'Indicadores do CEAPDesk (tickets). A tabela usa performance por usuário no período.'
-                  : ceapdeskEnabled && operacaoFonte === 'local'
-                    ? 'Os cards no topo vêm do CEAPDesk; esta seção usa métricas locais (fallback).'
-                    : 'Tempo de atendimento e volume de mensagens por atendente no período.'}
+                ? 'Carregando métricas de conversas...'
+                : 'Tempo de atendimento e volume de mensagens por atendente no período.'}
             </p>
             {periodBlockLoading ? (
               <div className="mt-5 grid animate-pulse gap-4 lg:grid-cols-2">
@@ -701,15 +581,14 @@ export default function Dashboard() {
                     </div>
                     <div className="rounded-lg border border-[#2a322c] bg-[#141816] p-4">
                       <p className="text-[10px] font-bold uppercase tracking-wide text-[#8b9490]">
-                        {operacaoFonte === 'ceapdesk' ? 'Tickets fechados' : 'Conversas fechadas'}
+                        Conversas fechadas
                       </p>
                       <p className="mt-1 font-headline text-2xl font-bold text-white">
                         {formatDurationMinutes(perfStats.tempo.avgClosedConversationMinutes)}
                       </p>
                       <p className="mt-2 text-[10px] leading-snug text-[#6b7280]">
-                        {operacaoFonte === 'ceapdesk'
-                          ? 'Tempo médio de resolução conforme SLA / métricas do CEAPDesk no período.'
-                          : 'Tempo médio entre criação e última atualização em conversas com status fechado atualizadas no período (aproximação de duração).'}
+                        Tempo médio entre criação e última atualização em conversas com status fechado
+                        atualizadas no período (aproximação de duração).
                         {perfStats.tempo.closedConversationsSampleSize > 0
                           ? ` Base: ${perfStats.tempo.closedConversationsSampleSize}.`
                           : ''}
@@ -727,9 +606,7 @@ export default function Dashboard() {
                         <tr>
                           <th className="px-3 py-2">Atendente</th>
                           <th className="px-3 py-2 text-right">Msgs</th>
-                          <th className="px-3 py-2 text-right">
-                            {operacaoFonte === 'ceapdesk' ? 'Tickets' : 'Conversas'}
-                          </th>
+                          <th className="px-3 py-2 text-right">Conversas</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#252b28] text-[#e8ece9]">
@@ -759,9 +636,8 @@ export default function Dashboard() {
                     </table>
                   </div>
                   <p className="mt-2 text-[10px] text-[#6b7280]">
-                    {operacaoFonte === 'ceapdesk'
-                      ? 'Dados agregados do CEAPDesk no período selecionado.'
-                      : 'Mensagens enviadas pelo app (exclui bot). Conversas = distintas com ao menos uma mensagem sua no período.'}
+                    Mensagens enviadas pelo app (exclui bot). Conversas = distintas com ao menos uma mensagem
+                    sua no período.
                   </p>
                 </div>
               </div>
