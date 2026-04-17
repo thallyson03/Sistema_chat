@@ -209,6 +209,33 @@ export class ConversationController {
   }
 
   /**
+   * Métricas de conversas (abertas, fechadas, fila, bot) com filtros opcionais.
+   * Query: `days` (0 ou omitido = sem filtro de criação), `channelId`, `sectorId`.
+   */
+  async getDashboardConversationMetrics(req: AuthRequest, res: Response) {
+    try {
+      const daysRaw = req.query.days;
+      let days: number | undefined;
+      if (daysRaw !== undefined && daysRaw !== '') {
+        const n = parseInt(String(daysRaw), 10);
+        if (Number.isFinite(n) && n >= 0) {
+          days = n;
+        }
+      }
+      const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
+      const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
+      const data = await conversationService.getDashboardConversationMetrics(req.user, {
+        days,
+        channelId,
+        sectorId,
+      });
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Erro ao carregar métricas de conversas' });
+    }
+  }
+
+  /**
    * Estatísticas da pesquisa de satisfação (1–5) para o dashboard.
    * Query: `days` (1–366, padrão 30).
    */

@@ -874,4 +874,106 @@ export class ConversationService {
       closed,
     };
   }
+
+  /**
+   * Métricas de conversas para o dashboard (inclui bot e fila), com filtros opcionais.
+   * `days`: apenas conversas criadas nos últimos N dias (omitir ou 0 = todo o período).
+   */
+  async getDashboardConversationMetrics(
+    viewer?: ConversationViewer,
+    filters?: { channelId?: string; sectorId?: string; days?: number },
+  ) {
+    const visibilityWhere = await this.buildVisibilityWhere(viewer);
+    const ownershipWhere =
+      viewer && viewer.role !== 'ADMIN'
+        ? viewer.id
+          ? { assignedToId: viewer.id }
+          : { id: '__no_access__' }
+        : {};
+
+    const days = filters?.days;
+    const hasDays = typeof days === 'number' && Number.isFinite(days) && days > 0;
+    const createdGte = hasDays
+      ? (() => {
+          const d = new Date();
+          d.setDate(d.getDate() - Math.floor(days as number));
+          d.setHours(0, 0, 0, 0);
+          return d;
+        })()
+      : null;
+
+    const baseAnd: object[] = [
+      visibilityWhere,
+      ownershipWhere,
+      ...(filters?.channelId ? [{ channelId: filters.channelId }] : []),
+      ...(filters?.sectorId ? [{ sectorId: filters.sectorId }] : []),
+      ...(createdGte ? [{ createdAt: { gte: createdGte } }] : []),
+    ];
+
+    const baseWhere = { AND: baseAnd };
+
+    const [
+      total,
+      open,
+      waiting,
+      closed,
+      inBot,
+      finishedByBot,
+    ] = await Promise.all([
+      prisma.conversation.count({ where: baseWhere }),
+      prisma.conversation.count({
+        where: { AND: [...baseAnd, { status: ConversationStatus.OPEN }] },
+      }),
+      prisma.conversation.count({
+        where: { AND: [...baseAnd, { status: ConversationStatus.WAITING }] },
+      }),
+      prisma.conversation.count({
+        where: { AND: [...baseAnd, { status: ConversationStatus.CLOSED }] },
+      }),
+      prisma.conversation.count({
+        where: {
+          AND: [
+            ...baseAnd,
+            {
+              botSession: {
+                is: {
+                  isActive: true,
+                  handoffToUserId: null,
+                },
+              },
+            },
+          ],
+        },
+      }),
+      prisma.conversation.count({
+        where: {
+          AND: [
+            ...baseAnd,
+            { status: ConversationStatus.CLOSED },
+            {
+              botSession: {
+                is: {
+                  handoffToUserId: null,
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+
+    return {
+      total,
+      open,
+      waiting,
+      closed,
+      inBot,
+      finishedByBot,
+      filters: {
+        channelId: filters?.channelId ?? null,
+        sectorId: filters?.sectorId ?? null,
+        days: hasDays ? Math.floor(days as number) : null,
+      },
+    };
+  }
 }

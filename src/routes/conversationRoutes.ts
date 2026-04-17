@@ -12,6 +12,10 @@ router.get('/', conversationController.getConversations.bind(conversationControl
 router.post('/', conversationController.createConversation.bind(conversationController));
 router.get('/stats', conversationController.getStats.bind(conversationController));
 router.get(
+  '/dashboard-conversation-metrics',
+  conversationController.getDashboardConversationMetrics.bind(conversationController),
+);
+router.get(
   '/satisfaction-survey-stats',
   conversationController.getSatisfactionSurveyStats.bind(conversationController),
 );

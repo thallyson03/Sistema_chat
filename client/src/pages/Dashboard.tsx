@@ -60,6 +60,20 @@ type DashboardPerformancePayload = {
   }[];
 };
 
+type ConversationDashboardMetrics = {
+  total: number;
+  open: number;
+  waiting: number;
+  closed: number;
+  inBot: number;
+  finishedByBot: number;
+  filters: {
+    channelId: string | null;
+    sectorId: string | null;
+    days: number | null;
+  };
+};
+
 /** Alinha período do seletor com query `periodo` do CEAPDesk (30 | 60 | 90 | all). */
 function periodoFromDays(days: number): string {
   if (days <= 30) return '30';
@@ -246,6 +260,63 @@ export default function Dashboard() {
   /** Seção Operação: métricas vindas do CEAPDesk ou fallback local (ex.: CEAPDesk indisponível). */
   const [operacaoFonte, setOperacaoFonte] = useState<'ceapdesk' | 'local' | null>(null);
 
+  const [convMetrics, setConvMetrics] = useState<ConversationDashboardMetrics | null>(null);
+  const [convMetricsLoading, setConvMetricsLoading] = useState(true);
+  /** '' = todo o período; senão número de dias (criação da conversa). */
+  const [convFilterDays, setConvFilterDays] = useState<string>('');
+  const [convChannelId, setConvChannelId] = useState('');
+  const [convSectorId, setConvSectorId] = useState('');
+  const [channelOptions, setChannelOptions] = useState<{ id: string; name: string }[]>([]);
+  const [sectorOptions, setSectorOptions] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [chRes, secRes] = await Promise.all([
+          api.get<{ id: string; name: string }[]>('/api/channels'),
+          api.get<{ id: string; name: string }[]>('/api/sectors?includeInactive=true'),
+        ]);
+        if (!cancelled) {
+          setChannelOptions(Array.isArray(chRes.data) ? chRes.data : []);
+          setSectorOptions(Array.isArray(secRes.data) ? secRes.data : []);
+        }
+      } catch (e) {
+        console.error('[Dashboard] Falha ao carregar canais/setores para filtros:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setConvMetricsLoading(true);
+      try {
+        const params: Record<string, string> = {};
+        if (convFilterDays !== '') {
+          params.days = convFilterDays;
+        }
+        if (convChannelId) params.channelId = convChannelId;
+        if (convSectorId) params.sectorId = convSectorId;
+        const res = await api.get<ConversationDashboardMetrics>('/api/conversations/dashboard-conversation-metrics', {
+          params,
+        });
+        if (!cancelled) setConvMetrics(res.data);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setConvMetrics(null);
+      } finally {
+        if (!cancelled) setConvMetricsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [convFilterDays, convChannelId, convSectorId]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -426,6 +497,120 @@ export default function Dashboard() {
             />
           </div>
         )}
+
+        <section className="mt-10 border-t border-[#252b28] pt-10">
+          <div className="mb-4">
+            <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Conversas (sistema chat)</h2>
+            <p className="mt-1 max-w-3xl text-xs text-[#8b9490]">
+              Métricas locais: abertas, em fila (aguardando atendimento), fechadas, sessão ativa com o bot e
+              fechadas sem handoff humano. Use os filtros para recortar por canal, setor ou conversas criadas no
+              período.
+            </p>
+          </div>
+
+          <div className="mb-5 flex flex-wrap items-end gap-3">
+            <div className="flex min-w-[150px] flex-col gap-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">
+                Criação (últimos…)
+              </label>
+              <select
+                value={convFilterDays}
+                onChange={(e) => setConvFilterDays(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
+              >
+                <option value="">Todo o período</option>
+                <option value="7">7 dias</option>
+                <option value="30">30 dias</option>
+                <option value="90">90 dias</option>
+              </select>
+            </div>
+            <div className="flex min-w-[170px] flex-col gap-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">Canal</label>
+              <select
+                value={convChannelId}
+                onChange={(e) => setConvChannelId(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
+              >
+                <option value="">Todos</option>
+                {channelOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex min-w-[170px] flex-col gap-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">Setor</label>
+              <select
+                value={convSectorId}
+                onChange={(e) => setConvSectorId(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
+              >
+                <option value="">Todos</option>
+                {sectorOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {convMetricsLoading ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className={`h-[100px] animate-pulse rounded-xl border ${neon.card}`} />
+              ))}
+            </div>
+          ) : convMetrics ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <RefStatCard
+                title="TOTAL"
+                value={convMetrics.total}
+                trend="+0%"
+                icon="💬"
+                barActive={convMetrics.total > 0}
+              />
+              <RefStatCard
+                title="ABERTAS"
+                value={convMetrics.open}
+                trend="+0%"
+                icon="🟢"
+                barActive={convMetrics.open > 0}
+              />
+              <RefStatCard
+                title="EM FILA"
+                value={convMetrics.waiting}
+                trend="+0%"
+                icon="⏳"
+                barActive={convMetrics.waiting > 0}
+              />
+              <RefStatCard
+                title="FECHADAS"
+                value={convMetrics.closed}
+                trend="+0%"
+                icon="✓"
+                barActive={convMetrics.closed > 0}
+              />
+              <RefStatCard
+                title="NO BOT"
+                value={convMetrics.inBot}
+                trend="+0%"
+                icon="🤖"
+                barActive={convMetrics.inBot > 0}
+              />
+              <RefStatCard
+                title="FIM NO BOT"
+                value={convMetrics.finishedByBot}
+                trend="+0%"
+                icon="🛑"
+                barActive={convMetrics.finishedByBot > 0}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-[#6b7280]">Não foi possível carregar as métricas de conversas.</p>
+          )}
+        </section>
 
         {!loading && ceapdeskEnabled !== null && (
           <div className="mt-6 flex flex-col gap-2 border-b border-[#252b28] pb-4 sm:flex-row sm:items-center sm:justify-end">
