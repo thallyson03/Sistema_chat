@@ -17,6 +17,7 @@ import quickReplyRoutes from './routes/quickReplyRoutes';
 import sectorRoutes from './routes/sectorRoutes';
 import userRoutes from './routes/userRoutes';
 import ticketPortalRoutes from './routes/ticketPortalRoutes';
+import externalDashboardRoutes from './routes/externalDashboardRoutes';
 import pipelineRoutes from './routes/pipelineRoutes';
 import publicPipelineRoutes from './routes/publicPipelineRoutes';
 import contactRoutes from './routes/contactRoutes';
@@ -119,6 +120,7 @@ app.use('/api/quick-replies', quickReplyRoutes);
 app.use('/api/sectors', sectorRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/ticket-portal', ticketPortalRoutes);
+app.use('/api/external-dashboard', externalDashboardRoutes);
 app.use('/api/pipelines', pipelineRoutes);
 app.use('/api/public/pipelines', publicPipelineRoutes); // API pública para pipelines
 app.use('/api/contacts', contactImportRoutes); // Rotas de importação de contatos (deve vir antes)

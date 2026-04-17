@@ -1,7 +1,7 @@
 import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
 import { userPresenceFromLastActiveAt } from '../utils/userPresence';
-import { syncUserToExternalTicketSystem } from './externalTicketSystemService';
+import { isExternalTicketEnabled, syncUserToExternalTicketSystem } from './externalTicketSystemService';
 
 export interface CreateUserData {
   email: string;
@@ -180,6 +180,15 @@ export class UserService {
         },
       },
     });
+
+    if (isExternalTicketEnabled()) {
+      await syncUserToExternalTicketSystem({
+        localUserId: id,
+        email: user.email,
+        name: user.name,
+        plainPassword: data.password,
+      });
+    }
 
     const { password: _, ...userWithoutPassword } = user;
     return userWithoutPassword as any;

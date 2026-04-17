@@ -7,6 +7,11 @@ function isEnabled(): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
+/** Integração com CEAPDesk / tickets externos ligada (variável de ambiente). */
+export function isExternalTicketEnabled(): boolean {
+  return isEnabled();
+}
+
 function apiBase(): string | null {
   const raw = (process.env.EXTERNAL_TICKET_API_BASE_URL || '').trim().replace(/\/$/, '');
   return raw || null;
@@ -86,6 +91,19 @@ function parseExtraBody(): Record<string, unknown> {
     return typeof o === 'object' && o !== null && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
   } catch {
     console.warn('[ExternalTicket] EXTERNAL_TICKET_CREATE_BODY_EXTRA inválido (JSON), ignorando.');
+    return {};
+  }
+}
+
+/** JSON extra mesclado só quando o usuário local é ADMIN (ex.: flags de analytics no CEAPDesk). */
+function parseAdminExtraBody(): Record<string, unknown> {
+  const raw = (process.env.EXTERNAL_TICKET_CREATE_ADMIN_BODY_EXTRA || '').trim();
+  if (!raw) return {};
+  try {
+    const o = JSON.parse(raw) as unknown;
+    return typeof o === 'object' && o !== null && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+  } catch {
+    console.warn('[ExternalTicket] EXTERNAL_TICKET_CREATE_ADMIN_BODY_EXTRA inválido (JSON), ignorando.');
     return {};
   }
 }
@@ -303,7 +321,8 @@ export interface CreateRemoteTicketUserInput {
   localUserId: string;
   email: string;
   name: string;
-  plainPassword: string;
+  /** Se omitido ou vazio, a senha não é enviada no corpo (re-sync após edição). */
+  plainPassword?: string;
 }
 
 export interface CreateRemoteTicketSectorInput {
@@ -342,6 +361,16 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
           sector: true,
         },
       },
+      pipelineAccesses: {
+        include: {
+          pipeline: true,
+        },
+      },
+      channelAccesses: {
+        include: {
+          channel: true,
+        },
+      },
     },
   });
   const firstSectorName = localUser?.sectors?.[0]?.sector?.name?.trim() || null;
@@ -357,6 +386,25 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
     .filter((s): s is { id: string; name: string; remoteId: number | null } => !!s.id && !!s.name);
   const sectorNames = sectorsData.map((s) => s.name);
   const sectorIds = sectorsData.map((s) => s.id);
+
+  const pipelineRows = (localUser?.pipelineAccesses || [])
+    .map((a) => ({
+      id: a.pipeline?.id,
+      name: a.pipeline?.name?.trim(),
+    }))
+    .filter((p): p is { id: string; name: string } => !!p.id && !!p.name);
+  const pipelineIds = pipelineRows.map((p) => p.id);
+  const pipelineNames = pipelineRows.map((p) => p.name);
+
+  const channelRows = (localUser?.channelAccesses || [])
+    .map((a) => ({
+      id: a.channel?.id,
+      name: a.channel?.name?.trim(),
+    }))
+    .filter((c): c is { id: string; name: string } => !!c.id && !!c.name);
+  const channelIds = channelRows.map((c) => c.id);
+  const channelNames = channelRows.map((c) => c.name);
+
   const safeEmail = (localUser?.email || input.email || '').trim();
   const safeName = (localUser?.name || input.name || '').trim();
   const roleRaw = localUser?.role || 'AGENT';
@@ -415,6 +463,17 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
       body.localSetorIds = sectorIds;
       body.localSectorIds = sectorIds;
     }
+    if (pipelineIds.length > 0) {
+      body.pipelineIds = pipelineIds;
+      body.pipelines = pipelineNames;
+      body.pipelineNames = pipelineNames;
+    }
+    if (channelIds.length > 0) {
+      body.channelIds = channelIds;
+      body.canais = channelNames;
+      body.channels = channelNames;
+      body.channelNames = channelNames;
+    }
   }
 
   // Metadados de integração com informações de setor para auditoria/depuração no sistema externo.
@@ -428,11 +487,60 @@ export async function syncUserToExternalTicketSystem(input: CreateRemoteTicketUs
     localSectorIds: sectorIds,
     localSectorNames: sectorNames,
     remoteSectorIds,
+    localPipelineIds: pipelineIds,
+    localPipelineNames: pipelineNames,
+    localChannelIds: channelIds,
+    localChannelNames: channelNames,
   };
 
   // Campos fixos opcionais via env (sobrescrevem os dinâmicos se houver conflito)
   Object.assign(body, parseExtraBody());
-  if (sendPasswordInCreate()) {
+  if (roleRaw === 'ADMIN') {
+    Object.assign(body, parseAdminExtraBody());
+  }
+
+  const fromExtra =
+    body.permissoes && typeof body.permissoes === 'object' && body.permissoes !== null
+      ? (body.permissoes as Record<string, unknown>)
+      : {};
+
+  /** Indica ao CEAPDesk que o admin deve poder usar analytics/reports (ajuste fino via EXTERNAL_TICKET_CREATE_ADMIN_BODY_EXTRA). */
+  const adminDashboardHint =
+    roleRaw === 'ADMIN'
+      ? {
+          analytics: true,
+          reports: true,
+          dashboard: true,
+          acessoAnalytics: true,
+          acessoRelatorios: true,
+          acessoDashboard: true,
+        }
+      : {};
+
+  /** Snapshot de permissões locais (merge com EXTERNAL_TICKET_CREATE_BODY_EXTRA.permissoes se houver). */
+  body.permissoes = {
+    ...fromExtra,
+    ...adminDashboardHint,
+    roleLocal: roleRaw,
+    roleExterno: roleToExternal(roleRaw),
+    setores: sectorNames,
+    setorIdsRemotos: remoteSectorIds,
+    pipelineIds,
+    pipelines: pipelineNames,
+    channelIds,
+    canais: channelNames,
+  };
+
+  if (roleRaw === 'ADMIN') {
+    if (shouldSendDynamicUserMap()) {
+      body.acessoAnalytics = true;
+      body.acessoRelatorios = true;
+    }
+    if (typeof body.metadata === 'object' && body.metadata !== null) {
+      (body.metadata as Record<string, unknown>).expectDashboardApiAccess = true;
+    }
+  }
+  if (sendPasswordInCreate() && input.plainPassword) {
     body.password = input.plainPassword;
   }
   // Correlação estável para o sistema externo (muitas APIs aceitam campo customizado ou ignoram)
