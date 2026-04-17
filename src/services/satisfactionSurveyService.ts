@@ -330,7 +330,11 @@ export class SatisfactionSurveyService {
   /**
    * Métricas agregadas e últimas respostas para o dashboard.
    */
-  async getDashboardStats(rawDays: number, viewer?: { id: string; role: string }) {
+  async getDashboardStats(
+    rawDays: number,
+    viewer?: { id: string; role: string },
+    filters?: { channelId?: string; sectorId?: string },
+  ) {
     const days = Math.min(Math.max(Math.floor(Number(rawDays)) || 30, 1), 366);
     const start = new Date();
     start.setDate(start.getDate() - days);
@@ -344,12 +348,17 @@ export class SatisfactionSurveyService {
           ? { sentByUserId: '__no_access__' }
           : {};
 
+    const conversationScope = {
+      ...(filters?.channelId ? { channelId: filters.channelId } : {}),
+      ...(filters?.sectorId ? { sectorId: filters.sectorId } : {}),
+    };
+
     const [sentInPeriod, pendingTotal, distributionRows, recentRows] = await Promise.all([
       prisma.satisfactionSurveyDispatch.count({
-        where: { ...ownScope, createdAt: { gte: start } },
+        where: { ...ownScope, createdAt: { gte: start }, ...(Object.keys(conversationScope).length ? { conversation: { is: conversationScope } } : {}) },
       }),
       prisma.satisfactionSurveyDispatch.count({
-        where: { ...ownScope, status: 'PENDING' },
+        where: { ...ownScope, status: 'PENDING', ...(Object.keys(conversationScope).length ? { conversation: { is: conversationScope } } : {}) },
       }),
       prisma.satisfactionSurveyDispatch.groupBy({
         by: ['score'],
@@ -358,11 +367,17 @@ export class SatisfactionSurveyService {
           status: 'COMPLETED',
           score: { not: null },
           updatedAt: { gte: start },
+          ...(Object.keys(conversationScope).length ? { conversation: { is: conversationScope } } : {}),
         },
         _count: { id: true },
       }),
       prisma.satisfactionSurveyDispatch.findMany({
-        where: { ...ownScope, status: 'COMPLETED', score: { not: null } },
+        where: {
+          ...ownScope,
+          status: 'COMPLETED',
+          score: { not: null },
+          ...(Object.keys(conversationScope).length ? { conversation: { is: conversationScope } } : {}),
+        },
         orderBy: { updatedAt: 'desc' },
         take: 20,
         include: {

@@ -88,7 +88,11 @@ type DashboardViewer = {
 };
 
 export class DashboardPerformanceService {
-  async getInsights(rawDays: number, viewer?: DashboardViewer): Promise<DashboardPerformancePayload> {
+  async getInsights(
+    rawDays: number,
+    viewer?: DashboardViewer,
+    filters?: { channelId?: string; sectorId?: string },
+  ): Promise<DashboardPerformancePayload> {
     const periodDays = Math.min(Math.max(Math.floor(Number(rawDays)) || 30, 1), 366);
     const start = startDateFromDays(periodDays);
     const scopedUserId =
@@ -98,6 +102,12 @@ export class DashboardPerformanceService {
       : Prisma.empty;
     const scopedUserFilter = scopedUserId
       ? Prisma.sql` AND u.id = ${scopedUserId}`
+      : Prisma.empty;
+    const channelConversationFilter = filters?.channelId
+      ? Prisma.sql` AND c."channelId" = ${filters.channelId}`
+      : Prisma.empty;
+    const sectorConversationFilter = filters?.sectorId
+      ? Prisma.sql` AND c."sectorId" = ${filters.sectorId}`
       : Prisma.empty;
 
     let firstResp = { avg: null as number | null, samples: 0 };
@@ -131,6 +141,8 @@ export class DashboardPerformanceService {
         WHERE fh.t_human > fc.t_customer
           AND c."createdAt" >= ${start}
           ${scopedConversationFilter}
+          ${channelConversationFilter}
+          ${sectorConversationFilter}
       `;
       const row = rows[0];
       firstResp = row && row.avg != null
@@ -149,6 +161,8 @@ export class DashboardPerformanceService {
         WHERE c.status = 'CLOSED'
           AND c."updatedAt" >= ${start}
           ${scopedConversationFilter}
+          ${channelConversationFilter}
+          ${sectorConversationFilter}
       `;
       const row = rows[0];
       closedDur = row && row.avg != null
@@ -168,8 +182,11 @@ export class DashboardPerformanceService {
         COUNT(DISTINCT m."conversationId")::bigint AS "conversationsTouched"
       FROM "User" u
       INNER JOIN "Message" m ON m."userId" = u.id
+      INNER JOIN "Conversation" c ON c.id = m."conversationId"
       WHERE m."createdAt" >= ${start}
         ${scopedUserFilter}
+        ${channelConversationFilter}
+        ${sectorConversationFilter}
         AND (
           m.metadata IS NULL
           OR (m.metadata::jsonb ->> 'fromBot') IS NULL

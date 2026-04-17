@@ -242,7 +242,12 @@ export class ConversationController {
   async getSatisfactionSurveyStats(req: AuthRequest, res: Response) {
     try {
       const days = parseInt(String(req.query.days || '30'), 10);
-      const data = await satisfactionSurveyService.getDashboardStats(days, req.user);
+      const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
+      const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
+      const data = await satisfactionSurveyService.getDashboardStats(days, req.user, {
+        channelId,
+        sectorId,
+      });
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar estatísticas da pesquisa' });
@@ -256,7 +261,12 @@ export class ConversationController {
   async getDashboardPerformance(req: AuthRequest, res: Response) {
     try {
       const days = parseInt(String(req.query.days || '30'), 10);
-      const data = await dashboardPerformanceService.getInsights(days, req.user);
+      const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
+      const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
+      const data = await dashboardPerformanceService.getInsights(days, req.user, {
+        channelId,
+        sectorId,
+      });
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar performance do dashboard' });
