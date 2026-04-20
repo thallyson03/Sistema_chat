@@ -178,280 +178,176 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
     setShowBlockPalette(true);
   };
 
+  const sortedStages = [...pipeline.stages].sort((a, b) => a.order - b.order);
+  const selectedStageName = sortedStages.find((stage) => stage.id === selectedStageForBlock)?.name;
+  const blockCatalog = [
+    { type: 'sales_bot', icon: '🤖', label: 'Robô de vendas' },
+    { type: 'add_task', icon: '➕', label: 'Adicionar tarefa' },
+    { type: 'send_email', icon: '✉️', label: 'Enviar e-mail' },
+    { type: 'change_stage', icon: '🔄', label: 'Mudar etapa' },
+    { type: 'change_user', icon: '👥', label: 'Alterar responsável' },
+  ];
+
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: '#f9fafb',
-        zIndex: 1000,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
+    <div className="fixed inset-0 z-[1000] flex flex-col bg-surface text-on-surface">
       {/* Header */}
-      <div
-        style={{
-          backgroundColor: 'white',
-          borderBottom: '1px solid #e5e7eb',
-          padding: '16px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '16px', fontWeight: '600', color: '#1f2937' }}>
-            {pipeline.name}
-          </span>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container px-6 py-4">
+        <div>
+          <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-primary/60">Automatize</p>
+          <h2 className="font-headline text-xl font-bold text-on-surface">{pipeline.name}</h2>
+          <p className="mt-0.5 text-xs text-on-surface-variant">
+            Configure ações automáticas por etapa do funil.
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="flex items-center gap-2">
           <button
             onClick={onClose}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#f3f4f6',
-              color: '#1f2937',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-            }}
+            className="rounded-lg border border-outline-variant bg-surface-container-highest px-4 py-2 text-sm font-semibold text-on-surface transition hover:bg-surface-container"
           >
             Voltar
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: saving ? '#9ca3af' : '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: saving ? 'not-allowed' : 'pointer',
-              fontSize: '14px',
-              fontWeight: '600',
-            }}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-on-primary shadow-emerald-send transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
           >
-            {saving ? 'Salvando...' : 'Salvar'}
+            {saving ? 'Salvando...' : 'Salvar automações'}
           </button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Sidebar Esquerda - Fontes de Lead */}
-        <div
-          style={{
-            width: '320px',
-            backgroundColor: 'white',
-            borderRight: '1px solid #e5e7eb',
-            padding: '20px',
-            overflowY: 'auto',
-          }}
-        >
-          <h2
-            style={{
-              fontSize: '16px',
-              fontWeight: '600',
-              color: '#1f2937',
-              marginBottom: '20px',
-            }}
-          >
-            FONTES DE LEAD
-          </h2>
+        <aside className="hidden w-80 shrink-0 overflow-y-auto border-r border-outline-variant bg-surface-container-low p-5 lg:block">
+          <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.16em] text-on-surface-variant">
+            Fontes de lead
+          </h3>
 
           {/* Controle duplicado */}
-          <div
-            style={{
-              backgroundColor: '#f9fafb',
-              borderRadius: '8px',
-              padding: '16px',
-              marginBottom: '16px',
-              border: '1px solid #e5e7eb',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1f2937', margin: 0 }}>
+          <div className="mb-4 rounded-xl border border-outline-variant bg-surface-container p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-on-surface">
                 Controle duplicado
-              </h3>
-              <label
-                style={{
-                  position: 'relative',
-                  display: 'inline-block',
-                  width: '44px',
-                  height: '24px',
-                }}
-              >
+              </h4>
+              <label className="relative inline-block h-6 w-11">
                 <input
                   type="checkbox"
                   checked={duplicateControlEnabled}
                   onChange={(e) => setDuplicateControlEnabled(e.target.checked)}
-                  style={{
-                    opacity: 0,
-                    width: 0,
-                    height: 0,
-                  }}
+                  className="peer sr-only"
                 />
                 <span
-                  style={{
-                    position: 'absolute',
-                    cursor: 'pointer',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: duplicateControlEnabled ? '#10b981' : '#d1d5db',
-                    borderRadius: '24px',
-                    transition: '0.3s',
-                  }}
+                  className="absolute inset-0 cursor-pointer rounded-full bg-surface-variant transition peer-checked:bg-primary"
                 >
                   <span
-                    style={{
-                      position: 'absolute',
-                      content: '""',
-                      height: '18px',
-                      width: '18px',
-                      left: '3px',
-                      bottom: '3px',
-                      backgroundColor: 'white',
-                      borderRadius: '50%',
-                      transition: '0.3s',
-                      transform: duplicateControlEnabled ? 'translateX(20px)' : 'translateX(0)',
-                    }}
+                    className={`absolute bottom-[3px] left-[3px] h-[18px] w-[18px] rounded-full bg-white transition ${
+                      duplicateControlEnabled ? 'translate-x-5' : ''
+                    }`}
                   />
                 </span>
               </label>
             </div>
-            <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, lineHeight: '1.5', marginBottom: '8px' }}>
+            <p className="mb-2 text-xs leading-relaxed text-on-surface-variant">
               Escolha como o sistema detecta e lida com leads de entrada duplicados
             </p>
-            <a
-              href="#"
+            <button
+              type="button"
               onClick={(e) => {
                 e.preventDefault();
                 alert('Configurar regras de duplicados');
               }}
-              style={{
-                fontSize: '12px',
-                color: '#3b82f6',
-                textDecoration: 'none',
-                fontWeight: '500',
-              }}
+              className="text-xs font-semibold text-primary-fixed-dim transition hover:opacity-80"
             >
               Configurar regras
-            </a>
+            </button>
           </div>
 
           <button
             onClick={() => alert('Adicionar fonte')}
-            style={{
-              width: '100%',
-              padding: '12px',
-              backgroundColor: '#f3f4f6',
-              color: '#1f2937',
-              border: '1px solid #e5e7eb',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-            }}
+            className="w-full rounded-lg border border-dashed border-primary/35 bg-primary/5 px-3 py-2.5 text-sm font-semibold text-primary-fixed-dim transition hover:bg-primary/10"
           >
             + Adicionar fonte
           </button>
-        </div>
+        </aside>
 
         {/* Área Central - Canvas de Automação */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'auto', backgroundColor: '#f9fafb' }}>
-          <div style={{ padding: '20px', minHeight: '100%' }}>
+        <div className="relative flex-1 overflow-auto bg-surface">
+          <div className="min-h-full p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm font-semibold text-on-surface-variant">
+                Etapas do pipeline ({sortedStages.length})
+              </p>
+              {showBlockPalette && (
+                <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary-fixed-dim">
+                  Adicionando em: {selectedStageName || 'Etapa selecionada'}
+                </span>
+              )}
+            </div>
             {/* Colunas de Etapas */}
-            <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
-              {pipeline.stages
-                .sort((a, b) => a.order - b.order)
+            <div className="flex gap-4">
+              {sortedStages
                 .map((stage) => (
                   <div
                     key={stage.id}
-                    style={{
-                      minWidth: '250px',
-                      backgroundColor: 'white',
-                      borderRadius: '8px',
-                      padding: '16px',
-                      border: '1px solid #e5e7eb',
-                    }}
+                    className="min-h-[250px] min-w-[260px] rounded-xl border border-outline-variant bg-surface-container-low p-4"
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1f2937', margin: 0 }}>
-                        {stage.name.toUpperCase()}
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold uppercase tracking-wide text-on-surface">
+                        {stage.name}
                       </h3>
                       <button
-                        style={{
-                          padding: '4px 8px',
-                          backgroundColor: '#f3f4f6',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                        }}
+                        type="button"
+                        onClick={() => handleCreateTrigger(stage.id)}
+                        className="rounded-md border border-outline-variant bg-surface-container px-2 py-1 text-xs font-semibold text-on-surface-variant transition hover:border-primary/35 hover:text-primary-fixed-dim"
                       >
-                        +
+                        + bloco
                       </button>
                     </div>
-                    <a
-                      href="#"
+                    <button
+                      type="button"
                       onClick={(e) => {
                         e.preventDefault();
                         alert('Adicionar dicas');
                       }}
-                      style={{
-                        fontSize: '12px',
-                        color: '#3b82f6',
-                        textDecoration: 'none',
-                      }}
+                      className="text-xs text-primary-fixed-dim transition hover:opacity-80"
                     >
                       Adicionar dicas
-                    </a>
+                    </button>
 
                     {/* Blocos de automação nesta etapa */}
-                    <div style={{ marginTop: '16px' }}>
+                    <div className="mt-4 space-y-2">
                       {automationBlocks
                         .filter((block) => block.stageId === stage.id)
                         .map((block) => (
                           <div
                             key={block.id}
-                            style={{
-                              backgroundColor: selectedBlock?.id === block.id ? '#e0f2fe' : 'white',
-                              border: `2px solid ${selectedBlock?.id === block.id ? '#0ea5e9' : '#e5e7eb'}`,
-                              borderRadius: '6px',
-                              padding: '12px',
-                              marginBottom: '8px',
-                              cursor: 'pointer',
-                            }}
+                            className={`rounded-lg border p-3 transition ${
+                              selectedBlock?.id === block.id
+                                ? 'border-primary/45 bg-primary/10'
+                                : 'border-outline-variant bg-surface-container'
+                            }`}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <div 
+                            <div className="flex items-start justify-between gap-2">
+                              <div
                                 onClick={() => {
                                   setSelectedBlock(block);
                                   setConfigData(block.config);
                                   setShowConfigModal(true);
                                 }}
-                                style={{ flex: 1 }}
+                                className="flex-1 cursor-pointer"
                               >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                  <span style={{ fontSize: '16px' }}>
+                                <div className="mb-1.5 flex items-center gap-2">
+                                  <span className="text-base">
                                     {block.type === 'change_stage' ? '🔄' : 
                                      block.type === 'sales_bot' ? '🤖' :
                                      block.type === 'add_task' ? '➕' : '⚙️'}
                                   </span>
-                                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#1f2937' }}>
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-on-surface">
                                     {getBlockName(block.type)}
                                   </span>
                                 </div>
-                                <p style={{ fontSize: '11px', color: '#6b7280', margin: 0 }}>
+                                <p className="text-xs leading-relaxed text-on-surface-variant">
                                   {getBlockDescription(block)}
                                 </p>
                               </div>
@@ -460,15 +356,7 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
                                   e.stopPropagation();
                                   handleDeleteBlock(block.id);
                                 }}
-                                style={{
-                                  padding: '4px 8px',
-                                  backgroundColor: '#fee2e2',
-                                  color: '#dc2626',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: '12px',
-                                }}
+                                className="rounded-md border border-error/40 bg-error/10 px-2 py-1 text-xs font-semibold text-red-200 transition hover:bg-error/20"
                               >
                                 ✕
                               </button>
@@ -479,26 +367,11 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
                       {/* Área de criar gatilho com gradiente */}
                       <div
                         onClick={() => handleCreateTrigger(stage.id)}
-                        style={{
-                          background: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 50%, #7dd3fc 100%)',
-                          border: '2px dashed #0ea5e9',
-                          borderRadius: '8px',
-                          padding: '20px',
-                          textAlign: 'center',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s',
-                          marginTop: automationBlocks.filter((block) => block.stageId === stage.id).length > 0 ? '8px' : '0',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = 'scale(1.02)';
-                          e.currentTarget.style.boxShadow = '0 4px 8px rgba(14, 165, 233, 0.2)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.boxShadow = 'none';
-                        }}
+                        className={`cursor-pointer rounded-lg border-2 border-dashed border-primary/40 bg-primary/10 p-4 text-center transition hover:bg-primary/15 ${
+                          automationBlocks.filter((block) => block.stageId === stage.id).length > 0 ? 'mt-2' : ''
+                        }`}
                       >
-                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#0369a1' }}>
+                        <span className="text-sm font-semibold text-primary-fixed-dim">
                           + Criar gatilho
                         </span>
                       </div>
@@ -510,203 +383,43 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
         </div>
 
         {/* Sidebar Direita - Blocos de Automação */}
-        <div
-          style={{
-            width: '320px',
-            backgroundColor: 'white',
-            borderLeft: '1px solid #e5e7eb',
-            padding: '20px',
-            overflowY: 'auto',
-            display: showBlockPalette ? 'block' : 'none',
-          }}
+        <aside
+          className={`w-80 shrink-0 overflow-y-auto border-l border-outline-variant bg-surface-container-low p-5 transition-all ${
+            showBlockPalette ? 'block' : 'hidden xl:block xl:w-0 xl:border-l-0 xl:p-0'
+          }`}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h2
-              style={{
-                fontSize: '16px',
-                fontWeight: '600',
-                color: '#1f2937',
-                margin: 0,
-              }}
-            >
-              Blocos
-            </h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-on-surface-variant">Blocos</h3>
             <button
               onClick={() => {
                 setShowBlockPalette(false);
                 setSelectedStageForBlock(null);
               }}
-              style={{
-                padding: '4px 8px',
-                backgroundColor: '#f3f4f6',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                color: '#6b7280',
-              }}
+              className="rounded-md border border-outline-variant bg-surface-container px-2 py-1 text-xs text-on-surface-variant transition hover:bg-surface-variant"
             >
               ✕
             </button>
           </div>
-          <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '20px' }}>
-            💡 Clique para adicionar à etapa
+          <p className="mb-4 text-xs leading-relaxed text-on-surface-variant">
+            Clique para adicionar na etapa {selectedStageName ? `"${selectedStageName}"` : 'selecionada'}.
           </p>
 
           {/* Grid de 3 colunas */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-            {/* Robô de vendas */}
-            <button
-              onClick={() => addBlock('sales_bot', selectedStageForBlock || undefined)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '12px',
-                backgroundColor: '#e0f2fe',
-                border: '1px solid #bae6fd',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <span style={{ fontSize: '24px', marginBottom: '4px' }}>🤖</span>
-              <span style={{ fontSize: '10px', fontWeight: '600', color: '#0369a1', textAlign: 'center' }}>
-                + Robô de vendas
-              </span>
-            </button>
-
-            {/* Adicionar uma tarefa */}
-            <button
-              onClick={() => addBlock('add_task', selectedStageForBlock || undefined)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '12px',
-                backgroundColor: '#e0f2fe',
-                border: '1px solid #bae6fd',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <span style={{ fontSize: '24px', marginBottom: '4px' }}>➕</span>
-              <span style={{ fontSize: '10px', fontWeight: '600', color: '#0369a1', textAlign: 'center' }}>
-                + Adicionar uma tarefa
-              </span>
-            </button>
-
-            {/* Enviar e-mail */}
-            <button
-              onClick={() => addBlock('send_email', selectedStageForBlock || undefined)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '12px',
-                backgroundColor: '#e0f2fe',
-                border: '1px solid #bae6fd',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <span style={{ fontSize: '24px', marginBottom: '4px' }}>✉️</span>
-              <span style={{ fontSize: '10px', fontWeight: '600', color: '#0369a1', textAlign: 'center' }}>
-                + Enviar e-mail
-              </span>
-            </button>
-
-            {/* Mudar a etapa do lead */}
-            <button
-              onClick={() => addBlock('change_stage', selectedStageForBlock || undefined)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '12px',
-                backgroundColor: '#e0f2fe',
-                border: '1px solid #bae6fd',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <span style={{ fontSize: '24px', marginBottom: '4px' }}>🔄</span>
-              <span style={{ fontSize: '10px', fontWeight: '600', color: '#0369a1', textAlign: 'center' }}>
-                + Mudar a etapa do lead
-              </span>
-            </button>
-
-            {/* Alterar usuário de lead */}
-            <button
-              onClick={() => addBlock('change_user', selectedStageForBlock || undefined)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '12px',
-                backgroundColor: '#e0f2fe',
-                border: '1px solid #bae6fd',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <span style={{ fontSize: '24px', marginBottom: '4px' }}>👥</span>
-              <span style={{ fontSize: '10px', fontWeight: '600', color: '#0369a1', textAlign: 'center' }}>
-                + Alterar usuário de lead
-              </span>
-            </button>
-
+          <div className="grid grid-cols-2 gap-2">
+            {blockCatalog.map((item) => (
+              <button
+                key={item.type}
+                onClick={() => addBlock(item.type, selectedStageForBlock || undefined)}
+                className="flex min-h-[92px] flex-col items-center justify-center rounded-lg border border-primary/30 bg-primary/10 p-2.5 text-center transition hover:scale-[1.03] hover:bg-primary/15"
+              >
+                <span className="mb-1 text-2xl">{item.icon}</span>
+                <span className="text-[11px] font-semibold leading-tight text-primary-fixed-dim">
+                  {item.label}
+                </span>
+              </button>
+            ))}
           </div>
-        </div>
+        </aside>
       </div>
 
       {/* Modal de Configuração */}
@@ -722,21 +435,10 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
       )}
 
       {loading && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 2000,
-          }}
-        >
-          <div style={{ color: 'white', fontSize: '18px' }}>Carregando...</div>
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
+          <div className="rounded-lg border border-outline-variant bg-surface-container-highest px-5 py-3 text-sm font-semibold text-on-surface">
+            Carregando automações...
+          </div>
         </div>
       )}
     </div>
