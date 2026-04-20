@@ -2621,6 +2621,30 @@ export default function BotFlowBuilderVisual() {
     if (!selectedFlow || !editingNode) return;
 
     try {
+      const imageUrl = String(stepFormData.config?.imageUrl || '').trim();
+      const videoUrl = String(stepFormData.config?.videoUrl || '').trim();
+      const audioUrl = String(stepFormData.config?.audioUrl || '').trim();
+
+      if (uploadingImage || uploadingVideo) {
+        alert('Aguarde o upload da mídia terminar antes de salvar o step.');
+        return;
+      }
+
+      if (stepFormData.type === 'IMAGE' && !imageUrl) {
+        alert('Configure a imagem antes de salvar o step.');
+        return;
+      }
+
+      if (stepFormData.type === 'VIDEO' && !videoUrl) {
+        alert('Configure o vídeo antes de salvar o step.');
+        return;
+      }
+
+      if (stepFormData.type === 'AUDIO' && !audioUrl) {
+        alert('Configure o áudio antes de salvar o step.');
+        return;
+      }
+
       // Verificar se é edição: stepId existe e não começa com "step-" (que indica ID temporário)
       const stepIdValue = editingNode.data.stepId;
       const isEditing = stepIdValue && !stepIdValue.startsWith('step-');
@@ -2734,12 +2758,12 @@ export default function BotFlowBuilderVisual() {
         } catch (responseError: any) {
           console.error('Erro ao criar resposta:', responseError);
         }
-      } else if (stepFormData.type === 'IMAGE' && stepFormData.config?.imageUrl) {
+      } else if (stepFormData.type === 'IMAGE' && imageUrl) {
         try {
           const response = await api.post('/api/bots/responses', {
             type: 'IMAGE',
             content: stepFormData.config.altText || '',
-            mediaUrl: stepFormData.config.imageUrl,
+            mediaUrl: imageUrl,
             flowStepId: stepId,
             intentId: null,
           });
@@ -2751,12 +2775,12 @@ export default function BotFlowBuilderVisual() {
         } catch (responseError: any) {
           console.error('Erro ao criar resposta de imagem:', responseError);
         }
-      } else if (stepFormData.type === 'VIDEO' && stepFormData.config?.videoUrl) {
+      } else if (stepFormData.type === 'VIDEO' && videoUrl) {
         try {
           const response = await api.post('/api/bots/responses', {
             type: 'VIDEO',
             content: '',
-            mediaUrl: stepFormData.config.videoUrl,
+            mediaUrl: videoUrl,
             flowStepId: stepId,
             intentId: null,
           });
@@ -2768,12 +2792,12 @@ export default function BotFlowBuilderVisual() {
         } catch (responseError: any) {
           console.error('Erro ao criar resposta de vídeo:', responseError);
         }
-      } else if (stepFormData.type === 'AUDIO' && stepFormData.config?.audioUrl) {
+      } else if (stepFormData.type === 'AUDIO' && audioUrl) {
         try {
           const response = await api.post('/api/bots/responses', {
             type: 'AUDIO',
             content: '',
-            mediaUrl: stepFormData.config.audioUrl,
+            mediaUrl: audioUrl,
             flowStepId: stepId,
             intentId: null,
           });

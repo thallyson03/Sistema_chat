@@ -250,9 +250,16 @@ export class BotController {
       }
 
       const { intentId, flowStepId, type, content, buttons, mediaUrl, metadata, order } = req.body;
+      const normalizedType = String(type || '').toUpperCase();
+      const normalizedContent = typeof content === 'string' ? content : '';
 
-      if (!type || !content) {
-        return res.status(400).json({ error: 'type e content são obrigatórios' });
+      if (!normalizedType) {
+        return res.status(400).json({ error: 'type é obrigatório' });
+      }
+
+      // Para mídia, legenda vazia é válida; para texto, manter obrigatoriedade.
+      if (normalizedType === 'TEXT' && !normalizedContent.trim()) {
+        return res.status(400).json({ error: 'content é obrigatório para type TEXT' });
       }
 
       if (!intentId && !flowStepId) {
@@ -262,8 +269,8 @@ export class BotController {
       const response = await botService.createResponse({
         intentId,
         flowStepId,
-        type,
-        content,
+        type: normalizedType,
+        content: normalizedContent,
         buttons,
         mediaUrl,
         metadata,
