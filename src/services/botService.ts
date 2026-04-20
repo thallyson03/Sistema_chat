@@ -611,6 +611,79 @@ export class BotService {
 
     console.log(`[BotService] Processando step tipo: ${currentStep.type}, order: ${currentStep.order}`);
 
+    const inputStepTypes = [
+      'PICTURE_CHOICE',
+      'INPUT',
+      'TEXT_INPUT',
+      'EMAIL_INPUT',
+      'NUMBER_INPUT',
+      'PHONE_INPUT',
+      'DATE_INPUT',
+      'FILE_UPLOAD',
+    ];
+
+    const advanceToNextStep = async (
+      nextStepId: string | null | undefined,
+      reason: string,
+    ) => {
+      if (!nextStepId) {
+        console.log(
+          `[BotService] Fluxo "${flow.name}" finalizado ${reason} (sem próximo step)`,
+        );
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: {
+            currentFlowId: null,
+            currentStepId: null,
+          },
+        });
+        return;
+      }
+
+      if (nextStepId === 'END') {
+        console.log(`[BotService] Fluxo "${flow.name}" finalizado ${reason} (step END)`);
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: {
+            currentFlowId: null,
+            currentStepId: null,
+          },
+        });
+        return;
+      }
+
+      await prisma.botSession.update({
+        where: { id: session.id },
+        data: { currentStepId: nextStepId },
+      });
+
+      const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
+      if (!nextStep) {
+        console.warn(
+          `[BotService] Próximo step não encontrado após ${currentStep.type}: ${nextStepId}`,
+        );
+        return;
+      }
+
+      if (inputStepTypes.includes(nextStep.type)) {
+        console.log(
+          `[BotService] Aguardando input/imagem do usuário no step ${nextStep.id} (tipo: ${nextStep.type})`,
+        );
+        return;
+      }
+
+      const updatedSession = {
+        ...session,
+        currentStepId: nextStepId,
+      };
+      await this.executeFlow(
+        flow,
+        updatedSession as any,
+        input,
+        { ...(inputMeta || {}), _fromFlow: true } as any,
+      );
+    };
+
     // Processar step baseado no tipo
     switch (currentStep.type) {
       case 'MESSAGE':
@@ -1133,13 +1206,7 @@ export class BotService {
           content: currentStep.config?.altText || '',
           mediaUrl: imageUrl,
         } as any, session.botId, (session.context as Record<string, any>) || {});
-        
-        if (currentStep.nextStepId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: { currentStepId: currentStep.nextStepId },
-          });
-        }
+        await advanceToNextStep(currentStep.nextStepId, 'após IMAGE');
         break;
 
       case 'VIDEO':
@@ -1150,13 +1217,7 @@ export class BotService {
           content: '',
           mediaUrl: videoUrl,
         } as any, session.botId, (session.context as Record<string, any>) || {});
-        
-        if (currentStep.nextStepId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: { currentStepId: currentStep.nextStepId },
-          });
-        }
+        await advanceToNextStep(currentStep.nextStepId, 'após VIDEO');
         break;
 
       case 'AUDIO':
@@ -1167,13 +1228,7 @@ export class BotService {
           content: '',
           mediaUrl: audioUrl,
         } as any, session.botId, (session.context as Record<string, any>) || {});
-        
-        if (currentStep.nextStepId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: { currentStepId: currentStep.nextStepId },
-          });
-        }
+        await advanceToNextStep(currentStep.nextStepId, 'após AUDIO');
         break;
 
       case 'EMBED':
@@ -1183,13 +1238,7 @@ export class BotService {
           type: 'TEXT',
           content: `Embed: ${embedUrl}`,
         } as any, session.botId, (session.context as Record<string, any>) || {});
-        
-        if (currentStep.nextStepId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: { currentStepId: currentStep.nextStepId },
-          });
-        }
+        await advanceToNextStep(currentStep.nextStepId, 'após EMBED');
         break;
 
       case 'EMAIL_INPUT':
