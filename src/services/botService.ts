@@ -2,8 +2,8 @@ import prisma from '../config/database';
 import { MessageService } from './messageService';
 import { BotVariableService } from './botVariableService';
 import vm from 'vm';
-import fs from 'fs';
-import path from 'path';
+import axios from 'axios';
+import { resolvePublicAppBaseUrl } from '../utils/publicBaseUrl';
 
 export interface CreateBotData {
   name: string;
@@ -1883,6 +1883,46 @@ export class BotService {
   /**
    * Envia uma resposta do bot
    */
+  private buildAbsoluteMediaUrl(mediaUrl: string): string {
+    if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
+      return mediaUrl;
+    }
+
+    if (mediaUrl.startsWith('/')) {
+      const publicBaseUrl = resolvePublicAppBaseUrl();
+      if (!publicBaseUrl) {
+        throw new Error(
+          '[BotService] mediaUrl relativa sem base pública válida. Configure PUBLIC_APP_URL/APP_URL.',
+        );
+      }
+      return `${publicBaseUrl}${mediaUrl}`;
+    }
+
+    throw new Error(`[BotService] mediaUrl inválida: ${mediaUrl}`);
+  }
+
+  private async ensureMediaUrlReachable(mediaUrl: string, responseType: string): Promise<string> {
+    const absoluteMediaUrl = this.buildAbsoluteMediaUrl(mediaUrl);
+
+    try {
+      const response = await axios.get(absoluteMediaUrl, {
+        responseType: 'stream',
+        timeout: 10000,
+        headers: { Range: 'bytes=0-0' },
+        validateStatus: (status) => (status >= 200 && status < 400) || status === 206,
+      });
+
+      response.data?.destroy?.();
+      return absoluteMediaUrl;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const reason = status ? `HTTP ${status}` : error?.message || 'erro desconhecido';
+      throw new Error(
+        `[BotService] Step ${responseType} com mediaUrl inacessível (${reason}): ${absoluteMediaUrl}`,
+      );
+    }
+  }
+
   private async sendBotResponse(conversationId: string, response: any, botId: string, context?: Record<string, any>) {
     try {
       // Buscar conversa para obter userId (pode ser null para mensagens do bot)
@@ -1909,6 +1949,7 @@ export class BotService {
 
       const mediaTypes = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'];
       const isMediaStep = mediaTypes.includes(responseType);
+      let finalMediaUrl = parsedMediaUrl || undefined;
 
       // Regra de negócio: se um bloco de mídia falhar (URL ausente/inválida), não pode avançar.
       if (isMediaStep && !parsedMediaUrl) {
@@ -1917,14 +1958,8 @@ export class BotService {
         );
       }
 
-      if (isMediaStep && parsedMediaUrl.startsWith('/api/media/file/')) {
-        const filename = parsedMediaUrl.replace('/api/media/file/', '').split('?')[0];
-        const localFilePath = path.resolve(path.join(__dirname, '../../uploads', filename));
-        if (!fs.existsSync(localFilePath)) {
-          throw new Error(
-            `[BotService] Step ${responseType} com mediaUrl local inválida (arquivo não encontrado): ${filename}`,
-          );
-        }
+      if (isMediaStep && parsedMediaUrl) {
+        finalMediaUrl = await this.ensureMediaUrlReachable(parsedMediaUrl, responseType);
       }
 
       await this.messageService.sendMessage({
@@ -1932,7 +1967,7 @@ export class BotService {
         userId: '', // Bot não tem userId (será normalizado para null no MessageService)
         content: content || '',
         type: responseType,
-        mediaUrl: parsedMediaUrl || undefined,
+        mediaUrl: finalMediaUrl,
         fileName: response.metadata?.fileName || undefined,
         caption: content || '',
         fromBot: true,
