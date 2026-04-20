@@ -10,6 +10,7 @@ interface Pipeline {
   color: string;
   isActive: boolean;
   stages: PipelineStage[];
+  customFields?: PipelineCustomField[];
   _count?: {
     deals: number;
   };
@@ -397,6 +398,12 @@ export default function Pipelines() {
   );
 }
 
+const PIPELINE_MODAL_LABEL =
+  'mb-1.5 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant';
+const PIPELINE_MODAL_INPUT =
+  'w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/55 outline-none transition focus:border-primary/45 focus:ring-1 focus:ring-primary/25';
+const PIPELINE_MODAL_SELECT = `${PIPELINE_MODAL_INPUT} cursor-pointer`;
+
 // Modal para criar pipeline
 function CreatePipelineModal({
   onClose,
@@ -432,163 +439,148 @@ function CreatePipelineModal({
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]"
       onClick={onClose}
+      role="presentation"
     >
       <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          padding: '24px',
-          width: '90%',
-          maxWidth: '500px',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-highest p-6 shadow-2xl sm:p-7"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="create-pipeline-title"
       >
-        <h2 style={{ margin: '0 0 20px 0' }}>Criar Novo Pipeline</h2>
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
-              Nome do Pipeline
+        <div className="mb-6 border-b border-outline-variant pb-4">
+          <h2
+            id="create-pipeline-title"
+            className="font-headline text-xl font-bold tracking-tight text-on-surface"
+          >
+            Criar novo pipeline
+          </h2>
+          <p className="mt-1.5 text-sm text-on-surface-variant">
+            Defina nome, cor e etapas iniciais. Você pode ajustar depois em &quot;Editar funil&quot;.
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label htmlFor="pipeline-name" className={PIPELINE_MODAL_LABEL}>
+              Nome do pipeline
             </label>
             <input
+              id="pipeline-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-              }}
-              placeholder="Ex: Vendas, Suporte, etc."
+              className={PIPELINE_MODAL_INPUT}
+              placeholder="Ex.: Vendas, Suporte, etc."
             />
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
+          <div>
+            <label htmlFor="pipeline-desc" className={PIPELINE_MODAL_LABEL}>
               Descrição
             </label>
             <textarea
+              id="pipeline-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                minHeight: '80px',
-                resize: 'vertical',
-              }}
-              placeholder="Descrição opcional do pipeline"
+              className={`${PIPELINE_MODAL_INPUT} min-h-[88px] resize-y`}
+              placeholder="Descrição opcional (visível para a equipe)"
             />
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
-              Cor
-            </label>
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              style={{
-                width: '100%',
-                height: '40px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                cursor: 'pointer',
-              }}
-            />
+          <div>
+            <label className={PIPELINE_MODAL_LABEL}>Cor do funil</label>
+            <p className="mb-2 text-xs text-on-surface-variant/90">
+              Clique no retângulo para abrir o seletor do sistema. A cor aparece na lista de pipelines.
+            </p>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-outline-variant bg-surface-container px-3 py-3 sm:py-2.5">
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                title="Escolher cor"
+                aria-label="Escolher cor do pipeline"
+                className="h-11 w-[4.5rem] shrink-0 cursor-pointer rounded-lg border border-outline-variant bg-surface-container-highest p-1"
+              />
+              <code className="rounded-md bg-surface-container-highest px-2 py-1 font-mono text-sm text-on-surface">
+                {color.toUpperCase()}
+              </code>
+              <span
+                className="ml-auto h-9 w-9 shrink-0 rounded-lg border border-outline-variant shadow-inner"
+                style={{ backgroundColor: color }}
+                aria-hidden
+              />
+            </div>
           </div>
 
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-              Etapas do Pipeline
-            </label>
-            {stages.map((stage, index) => (
-              <div
-                key={index}
-                style={{
-                  display: 'flex',
-                  gap: '8px',
-                  marginBottom: '8px',
-                  alignItems: 'center',
-                }}
-              >
-                <input
-                  type="text"
-                  value={stage.name}
-                  onChange={(e) => {
-                    const newStages = [...stages];
-                    newStages[index].name = e.target.value;
-                    setStages(newStages);
-                  }}
-                  placeholder="Nome da etapa"
-                  style={{
-                    flex: 1,
-                    padding: '6px 10px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
-                />
-                <input
-                  type="number"
-                  value={stage.probability}
-                  onChange={(e) => {
-                    const newStages = [...stages];
-                    newStages[index].probability = parseInt(e.target.value) || 0;
-                    setStages(newStages);
-                  }}
-                  min="0"
-                  max="100"
-                  placeholder="%"
-                  style={{
-                    width: '80px',
-                    padding: '6px 10px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
-                />
-                {stages.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStages(stages.filter((_, i) => i !== index));
-                    }}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                    }}
-                  >
-                    Remover
-                  </button>
-                )}
+          <div>
+            <div className="mb-3 flex items-end justify-between gap-2">
+              <div>
+                <span className={PIPELINE_MODAL_LABEL}>Etapas do pipeline</span>
+                <p className="mt-0.5 text-xs text-on-surface-variant/90">
+                  Probabilidade em % (0–100) por etapa.
+                </p>
               </div>
-            ))}
+            </div>
+            <div className="space-y-2.5">
+              {stages.map((stage, index) => (
+                <div
+                  key={index}
+                  className="flex flex-col gap-2.5 rounded-xl border border-outline-variant bg-surface-container p-3 sm:flex-row sm:items-center sm:gap-3"
+                >
+                  <input
+                    type="text"
+                    value={stage.name}
+                    onChange={(e) => {
+                      const newStages = [...stages];
+                      newStages[index].name = e.target.value;
+                      setStages(newStages);
+                    }}
+                    placeholder="Nome da etapa"
+                    className={`${PIPELINE_MODAL_INPUT} sm:min-w-0 sm:flex-1`}
+                  />
+                  <div className="flex shrink-0 items-center gap-2 sm:w-auto">
+                    <label className="sr-only" htmlFor={`stage-prob-${index}`}>
+                      Probabilidade %
+                    </label>
+                    <div className="relative">
+                      <input
+                        id={`stage-prob-${index}`}
+                        type="number"
+                        value={stage.probability}
+                        onChange={(e) => {
+                          const newStages = [...stages];
+                          newStages[index].probability = parseInt(e.target.value, 10) || 0;
+                          setStages(newStages);
+                        }}
+                        min={0}
+                        max={100}
+                        className={`${PIPELINE_MODAL_INPUT} w-[5.5rem] pr-7 text-center tabular-nums sm:w-[6rem]`}
+                        aria-describedby={`stage-prob-hint-${index}`}
+                      />
+                      <span
+                        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant"
+                        id={`stage-prob-hint-${index}`}
+                      >
+                        %
+                      </span>
+                    </div>
+                    {stages.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStages(stages.filter((_, i) => i !== index));
+                        }}
+                        className="rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-xs font-semibold text-red-200 transition hover:bg-error/20"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => {
@@ -597,52 +589,25 @@ function CreatePipelineModal({
                   { name: '', order: stages.length, probability: 0 },
                 ]);
               }}
-              style={{
-                marginTop: '8px',
-                padding: '8px 16px',
-                backgroundColor: '#e5e7eb',
-                color: '#1f2937',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-              }}
+              className="mt-3 w-full rounded-lg border border-dashed border-primary/35 bg-primary/5 py-2.5 text-sm font-semibold text-primary-fixed-dim transition hover:bg-primary/10 sm:w-auto sm:px-4"
             >
-              + Adicionar Etapa
+              + Adicionar etapa
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <div className="flex flex-col-reverse gap-2 border-t border-outline-variant pt-5 sm:flex-row sm:justify-end sm:gap-3">
             <button
               type="button"
               onClick={onClose}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#e5e7eb',
-                color: '#1f2937',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-              }}
+              className="rounded-lg border border-outline-variant bg-surface-container px-5 py-2.5 text-sm font-semibold text-on-surface transition hover:bg-surface-variant"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-              }}
+              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-on-primary transition hover:brightness-110"
             >
-              Criar Pipeline
+              Criar pipeline
             </button>
           </div>
         </form>
@@ -766,240 +731,152 @@ function EditPipelineModal({
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]"
       onClick={onClose}
+      role="presentation"
     >
       <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          padding: '24px',
-          width: '90%',
-          maxWidth: '500px',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-highest p-6 shadow-2xl sm:p-7"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="edit-pipeline-title"
       >
-        <h2 style={{ margin: '0 0 20px 0' }}>Editar Pipeline</h2>
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
-              Nome do Pipeline
+        <div className="mb-6 border-b border-outline-variant pb-4">
+          <h2 id="edit-pipeline-title" className="font-headline text-xl font-bold tracking-tight text-on-surface">
+            Editar pipeline
+          </h2>
+          <p className="mt-1.5 text-sm text-on-surface-variant">
+            Nome, descrição e cor. Reordene ou remova etapas — negócios não podem ficar em etapa excluída.
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label htmlFor="edit-pipeline-name" className={PIPELINE_MODAL_LABEL}>
+              Nome do pipeline
             </label>
             <input
+              id="edit-pipeline-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-              }}
+              className={PIPELINE_MODAL_INPUT}
             />
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
+          <div>
+            <label htmlFor="edit-pipeline-desc" className={PIPELINE_MODAL_LABEL}>
               Descrição
             </label>
             <textarea
+              id="edit-pipeline-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                minHeight: '80px',
-                resize: 'vertical',
-              }}
+              className={`${PIPELINE_MODAL_INPUT} min-h-[88px] resize-y`}
               placeholder="Descrição opcional do pipeline"
             />
           </div>
 
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
-              Cor
-            </label>
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              style={{
-                width: '100%',
-                height: '40px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                cursor: 'pointer',
-              }}
-            />
+          <div>
+            <label className={PIPELINE_MODAL_LABEL}>Cor do funil</label>
+            <p className="mb-2 text-xs text-on-surface-variant/90">
+              Clique no retângulo para alterar. O código hex é só referência.
+            </p>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-outline-variant bg-surface-container px-3 py-3 sm:py-2.5">
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                title="Escolher cor"
+                aria-label="Escolher cor do pipeline"
+                className="h-11 w-[4.5rem] shrink-0 cursor-pointer rounded-lg border border-outline-variant bg-surface-container-highest p-1"
+              />
+              <code className="rounded-md bg-surface-container-highest px-2 py-1 font-mono text-sm text-on-surface">
+                {color.toUpperCase()}
+              </code>
+              <span
+                className="ml-auto h-9 w-9 shrink-0 rounded-lg border border-outline-variant shadow-inner"
+                style={{ backgroundColor: color }}
+                aria-hidden
+              />
+            </div>
           </div>
 
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-              Etapas do Pipeline
-            </label>
-            {stages
-              .slice()
-              .sort((a, b) => a.order - b.order)
-              .map((stage, index) => (
-                <div
-                  key={stage.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    marginBottom: '8px',
-                    padding: '6px 8px',
-                    borderRadius: '6px',
-                    backgroundColor: '#f9fafb',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      color: '#6b7280',
-                      width: '20px',
-                      textAlign: 'center',
-                    }}
+          <div>
+            <div className="mb-3">
+              <span className={PIPELINE_MODAL_LABEL}>Etapas</span>
+              <p className="mt-0.5 text-xs text-on-surface-variant/90">
+                Use as setas para reordenar. {savingStages ? 'Salvando…' : ''}
+              </p>
+            </div>
+            <div className="space-y-2">
+              {stages
+                .slice()
+                .sort((a, b) => a.order - b.order)
+                .map((stage, index) => (
+                  <div
+                    key={stage.id}
+                    className="flex flex-wrap items-center gap-2 rounded-xl border border-outline-variant bg-surface-container px-3 py-2.5 sm:flex-nowrap"
                   >
-                    {index + 1}.
-                  </span>
-                  <span
-                    style={{
-                      flex: 1,
-                      fontSize: '14px',
-                      color: '#111827',
-                    }}
-                  >
-                    {stage.name}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: '#6b7280',
-                    }}
-                  >
-                    {stage.probability}%
-                  </span>
-                  <button
-                    type="button"
-                    disabled={index === 0 || savingStages}
-                    onClick={() => handleMoveStage(stage.id, 'up')}
-                    style={{
-                      padding: '4px 6px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      backgroundColor: index === 0 ? '#e5e7eb' : '#d1fae5',
-                      color: '#065f46',
-                      cursor: index === 0 || savingStages ? 'default' : 'pointer',
-                      fontSize: '12px',
-                    }}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    disabled={index === stages.length - 1 || savingStages}
-                    onClick={() => handleMoveStage(stage.id, 'down')}
-                    style={{
-                      padding: '4px 6px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      backgroundColor:
-                        index === stages.length - 1 ? '#e5e7eb' : '#dbeafe',
-                      color: '#1d4ed8',
-                      cursor:
-                        index === stages.length - 1 || savingStages
-                          ? 'default'
-                          : 'pointer',
-                      fontSize: '12px',
-                    }}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteStage(stage)}
-                    disabled={savingStages}
-                    style={{
-                      padding: '4px 8px',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: savingStages ? 'default' : 'pointer',
-                      fontSize: '12px',
-                    }}
-                  >
-                    Excluir
-                  </button>
-                </div>
-              ))}
+                    <span className="w-6 shrink-0 text-center text-xs font-bold tabular-nums text-on-surface-variant">
+                      {index + 1}.
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm font-medium text-on-surface">{stage.name}</span>
+                    <span className="shrink-0 rounded-md bg-surface-container-highest px-2 py-0.5 text-xs tabular-nums text-on-surface-variant">
+                      {stage.probability}%
+                    </span>
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={index === 0 || savingStages}
+                        onClick={() => handleMoveStage(stage.id, 'up')}
+                        className="rounded-lg border border-outline-variant bg-surface-container-highest px-2 py-1.5 text-xs font-semibold text-on-surface transition enabled:hover:border-primary/40 enabled:hover:text-primary-fixed-dim disabled:cursor-not-allowed disabled:opacity-35"
+                        title="Mover para cima"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        disabled={index === stages.length - 1 || savingStages}
+                        onClick={() => handleMoveStage(stage.id, 'down')}
+                        className="rounded-lg border border-outline-variant bg-surface-container-highest px-2 py-1.5 text-xs font-semibold text-on-surface transition enabled:hover:border-primary/40 enabled:hover:text-primary-fixed-dim disabled:cursor-not-allowed disabled:opacity-35"
+                        title="Mover para baixo"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteStage(stage)}
+                        disabled={savingStages}
+                        className="rounded-lg border border-error/40 bg-error/10 px-2.5 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-error/20 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
             <button
               type="button"
               onClick={handleAddStage}
               disabled={savingStages}
-              style={{
-                marginTop: '8px',
-                padding: '8px 16px',
-                backgroundColor: '#e5e7eb',
-                color: '#1f2937',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: savingStages ? 'default' : 'pointer',
-                fontSize: '14px',
-              }}
+              className="mt-3 w-full rounded-lg border border-dashed border-primary/35 bg-primary/5 py-2.5 text-sm font-semibold text-primary-fixed-dim transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-4"
             >
               + Adicionar etapa
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <div className="flex flex-col-reverse gap-2 border-t border-outline-variant pt-5 sm:flex-row sm:justify-end sm:gap-3">
             <button
               type="button"
               onClick={onClose}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#e5e7eb',
-                color: '#1f2937',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-              }}
+              className="rounded-lg border border-outline-variant bg-surface-container px-5 py-2.5 text-sm font-semibold text-on-surface transition hover:bg-surface-variant"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-              }}
+              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-on-primary transition hover:brightness-110"
             >
               Salvar alterações
             </button>
@@ -1115,55 +992,42 @@ function CreateDealModal({
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]"
       onClick={onClose}
+      role="presentation"
     >
       <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          padding: '24px',
-          width: '90%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
+        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-highest p-6 text-on-surface shadow-2xl sm:p-7"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="create-deal-title"
       >
-        <h2 style={{ margin: '0 0 20px 0' }}>Criar Novo Negócio</h2>
-        <form onSubmit={handleSubmit}>
-          {/* Seleção de Contato */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
+        <div className="mb-6 border-b border-outline-variant pb-4">
+          <h2 id="create-deal-title" className="font-headline text-xl font-bold tracking-tight">
+            Criar novo negócio
+          </h2>
+          <p className="mt-1.5 text-sm text-on-surface-variant">
+            Vincule a um contato e escolha a etapa inicial do funil <span className="text-on-surface">{pipeline.name}</span>.
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label htmlFor="deal-contact" className={PIPELINE_MODAL_LABEL}>
               Contato *
             </label>
             {loading ? (
-              <div style={{ padding: '20px', textAlign: 'center' }}>Carregando contatos...</div>
+              <div className="rounded-lg border border-outline-variant bg-surface-container py-8 text-center text-sm text-on-surface-variant">
+                Carregando contatos…
+              </div>
             ) : (
               <select
+                id="deal-contact"
                 value={selectedContactId}
                 onChange={(e) => {
                   setSelectedContactId(e.target.value);
                 }}
                 required
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="">Selecione um contato</option>
                 {contacts.map((contact) => (
@@ -1175,22 +1039,16 @@ function CreateDealModal({
             )}
           </div>
 
-          {/* Seleção de Etapa */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
-              Etapa Inicial *
+          <div>
+            <label htmlFor="deal-stage" className={PIPELINE_MODAL_LABEL}>
+              Etapa inicial *
             </label>
             <select
+              id="deal-stage"
               value={selectedStageId}
               onChange={(e) => setSelectedStageId(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-              }}
+              className={PIPELINE_MODAL_SELECT}
             >
               {pipeline.stages
                 .filter((s) => s.isActive)
@@ -1203,62 +1061,45 @@ function CreateDealModal({
             </select>
           </div>
 
-          {/* Nome */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
-              Nome do Lead/Negócio *
+          <div>
+            <label htmlFor="deal-name" className={PIPELINE_MODAL_LABEL}>
+              Nome do lead / negócio *
             </label>
             <input
+              id="deal-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ex: João Silva"
+              placeholder="Ex.: João Silva"
               required
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-              }}
+              className={PIPELINE_MODAL_INPUT}
             />
           </div>
 
-          {/* Valor e Moeda */}
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
+            <div className="min-w-0 flex-1">
+              <label htmlFor="deal-value" className={PIPELINE_MODAL_LABEL}>
                 Valor
               </label>
               <input
+                id="deal-value"
                 type="number"
                 step="0.01"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder="0.00"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                }}
+                placeholder="0,00"
+                className={PIPELINE_MODAL_INPUT}
               />
             </div>
-            <div style={{ width: '100px' }}>
-              <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }}>
+            <div className="w-full shrink-0 sm:w-28">
+              <label htmlFor="deal-currency" className={PIPELINE_MODAL_LABEL}>
                 Moeda
               </label>
               <select
+                id="deal-currency"
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="BRL">BRL</option>
                 <option value="USD">USD</option>
@@ -1267,118 +1108,81 @@ function CreateDealModal({
             </div>
           </div>
 
-          {/* Campos Personalizados */}
           {pipeline.customFields && pipeline.customFields.length > 0 && (
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-                Informações Adicionais
-              </label>
-              {pipeline.customFields.map((field) => (
-                <div key={field.id} style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500' }}>
-                    {field.name} {field.required && '*'}
-                  </label>
-                  {field.type === 'SELECT' ? (
-                    <select
-                      value={customFieldsValues[field.id] || ''}
-                      onChange={(e) => setCustomFieldsValues({ ...customFieldsValues, [field.id]: e.target.value })}
-                      required={field.required}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                      }}
-                    >
-                      <option value="">Selecione...</option>
-                      {field.options?.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  ) : field.type === 'NUMBER' ? (
-                    <input
-                      type="number"
-                      value={customFieldsValues[field.id] || ''}
-                      onChange={(e) => setCustomFieldsValues({ ...customFieldsValues, [field.id]: e.target.value })}
-                      required={field.required}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                      }}
-                    />
-                  ) : field.type === 'DATE' ? (
-                    <input
-                      type="date"
-                      value={customFieldsValues[field.id] || ''}
-                      onChange={(e) => setCustomFieldsValues({ ...customFieldsValues, [field.id]: e.target.value })}
-                      required={field.required}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                      }}
-                    />
-                  ) : (
-                    <input
-                      type={field.type === 'EMAIL' ? 'email' : field.type === 'PHONE' ? 'tel' : 'text'}
-                      value={customFieldsValues[field.id] || ''}
-                      onChange={(e) => setCustomFieldsValues({ ...customFieldsValues, [field.id]: e.target.value })}
-                      required={field.required}
-                      placeholder={`Digite ${field.name.toLowerCase()}`}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                      }}
-                    />
-                  )}
-                </div>
-              ))}
+            <div className="rounded-xl border border-outline-variant bg-surface-container p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                Informações adicionais
+              </p>
+              <div className="space-y-3">
+                {pipeline.customFields.map((field) => (
+                  <div key={field.id}>
+                    <label htmlFor={`cf-${field.id}`} className="mb-1 block text-sm font-medium text-on-surface">
+                      {field.name} {field.required && <span className="text-primary">*</span>}
+                    </label>
+                    {field.type === 'SELECT' ? (
+                      <select
+                        id={`cf-${field.id}`}
+                        value={customFieldsValues[field.id] || ''}
+                        onChange={(e) => setCustomFieldsValues({ ...customFieldsValues, [field.id]: e.target.value })}
+                        required={field.required}
+                        className={PIPELINE_MODAL_SELECT}
+                      >
+                        <option value="">Selecione…</option>
+                        {field.options?.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : field.type === 'NUMBER' ? (
+                      <input
+                        id={`cf-${field.id}`}
+                        type="number"
+                        value={customFieldsValues[field.id] || ''}
+                        onChange={(e) => setCustomFieldsValues({ ...customFieldsValues, [field.id]: e.target.value })}
+                        required={field.required}
+                        className={PIPELINE_MODAL_INPUT}
+                      />
+                    ) : field.type === 'DATE' ? (
+                      <input
+                        id={`cf-${field.id}`}
+                        type="date"
+                        value={customFieldsValues[field.id] || ''}
+                        onChange={(e) => setCustomFieldsValues({ ...customFieldsValues, [field.id]: e.target.value })}
+                        required={field.required}
+                        className={PIPELINE_MODAL_INPUT}
+                      />
+                    ) : (
+                      <input
+                        id={`cf-${field.id}`}
+                        type={field.type === 'EMAIL' ? 'email' : field.type === 'PHONE' ? 'tel' : 'text'}
+                        value={customFieldsValues[field.id] || ''}
+                        onChange={(e) => setCustomFieldsValues({ ...customFieldsValues, [field.id]: e.target.value })}
+                        required={field.required}
+                        placeholder={`Digite ${field.name.toLowerCase()}`}
+                        className={PIPELINE_MODAL_INPUT}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <div className="flex flex-col-reverse gap-2 border-t border-outline-variant pt-5 sm:flex-row sm:justify-end sm:gap-3">
             <button
               type="button"
               onClick={onClose}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#e5e7eb',
-                color: '#1f2937',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-              }}
+              className="rounded-lg border border-outline-variant bg-surface-container px-5 py-2.5 text-sm font-semibold text-on-surface transition hover:bg-surface-variant"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: submitting ? '#9ca3af' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-              }}
+              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-on-primary shadow-emerald-send transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
             >
-              {submitting ? 'Criando...' : 'Criar Negócio'}
+              {submitting ? 'Criando…' : 'Criar negócio'}
             </button>
           </div>
         </form>
