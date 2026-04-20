@@ -1200,10 +1200,13 @@ export class BotService {
 
       case 'IMAGE':
         // Enviar imagem
-        const imageUrl = this.parseVariables(currentStep.config?.imageUrl || '', (session.context as Record<string, any>) || {});
+        const imageUrl = this.parseVariables(
+          currentStep.config?.imageUrl || currentStep.response?.mediaUrl || '',
+          (session.context as Record<string, any>) || {},
+        );
         await this.sendBotResponse(session.conversationId, {
           type: 'IMAGE',
-          content: currentStep.config?.altText || '',
+          content: currentStep.config?.altText || currentStep.response?.content || '',
           mediaUrl: imageUrl,
         } as any, session.botId, (session.context as Record<string, any>) || {});
         await advanceToNextStep(currentStep.nextStepId, 'após IMAGE');
@@ -1211,10 +1214,13 @@ export class BotService {
 
       case 'VIDEO':
         // Enviar vídeo
-        const videoUrl = this.parseVariables(currentStep.config?.videoUrl || '', (session.context as Record<string, any>) || {});
+        const videoUrl = this.parseVariables(
+          currentStep.config?.videoUrl || currentStep.response?.mediaUrl || '',
+          (session.context as Record<string, any>) || {},
+        );
         await this.sendBotResponse(session.conversationId, {
           type: 'VIDEO',
-          content: '',
+          content: currentStep.response?.content || '',
           mediaUrl: videoUrl,
         } as any, session.botId, (session.context as Record<string, any>) || {});
         await advanceToNextStep(currentStep.nextStepId, 'após VIDEO');
@@ -1222,10 +1228,13 @@ export class BotService {
 
       case 'AUDIO':
         // Enviar áudio
-        const audioUrl = this.parseVariables(currentStep.config?.audioUrl || '', (session.context as Record<string, any>) || {});
+        const audioUrl = this.parseVariables(
+          currentStep.config?.audioUrl || currentStep.response?.mediaUrl || '',
+          (session.context as Record<string, any>) || {},
+        );
         await this.sendBotResponse(session.conversationId, {
           type: 'AUDIO',
-          content: '',
+          content: currentStep.response?.content || '',
           mediaUrl: audioUrl,
         } as any, session.botId, (session.context as Record<string, any>) || {});
         await advanceToNextStep(currentStep.nextStepId, 'após AUDIO');
@@ -1889,16 +1898,41 @@ export class BotService {
       }
 
       // Parse variáveis no conteúdo usando o novo parser
-      let content = this.parseVariables(response.content, sessionContext);
+      const content = this.parseVariables(response.content, sessionContext);
+      const contentText = typeof content === 'string' ? content.trim() : '';
+      const responseType = String(response.type || 'TEXT').toUpperCase();
+      const parsedMediaUrl =
+        typeof response.mediaUrl === 'string'
+          ? this.parseVariables(response.mediaUrl, sessionContext).trim()
+          : '';
+
+      // Evita quebrar o fluxo quando um step de mídia está sem URL configurada.
+      // Nesses casos, degradamos para texto (se houver conteúdo) ou apenas seguimos.
+      let finalType = responseType;
+      let finalMediaUrl: string | undefined = parsedMediaUrl || undefined;
+
+      if (responseType !== 'TEXT' && !finalMediaUrl) {
+        if (contentText.length > 0) {
+          console.warn(
+            `[BotService] Step ${responseType} sem mediaUrl; enviando fallback como texto`,
+          );
+          finalType = 'TEXT';
+        } else {
+          console.warn(
+            `[BotService] Step ${responseType} sem mediaUrl e sem conteúdo; pulando envio para não quebrar o fluxo`,
+          );
+          return;
+        }
+      }
 
       await this.messageService.sendMessage({
         conversationId,
         userId: '', // Bot não tem userId (será normalizado para null no MessageService)
-        content,
-        type: response.type || 'TEXT',
-        mediaUrl: response.mediaUrl || undefined,
+        content: content || '',
+        type: finalType,
+        mediaUrl: finalMediaUrl,
         fileName: response.metadata?.fileName || undefined,
-        caption: content,
+        caption: content || '',
         fromBot: true,
       });
 
