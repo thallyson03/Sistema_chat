@@ -8,6 +8,7 @@ import fs from 'fs';
 import { authenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
 import { convertWebmToOgg, convertOggToMp3 } from '../utils/audioConverter';
+import { objectStorageService } from '../services/objectStorageService';
 
 const router = Router();
 
@@ -73,6 +74,15 @@ function resolveGraphMediaId(metadata: any): string | undefined {
     return s;
   }
   return undefined;
+}
+
+function getMediaObjectKey(filename: string): string {
+  const prefix = String(process.env.MEDIA_OBJECT_PREFIX || 'uploads').trim().replace(/^\/+|\/+$/g, '');
+  return `${prefix}/${filename}`;
+}
+
+function getPublicMediaUrlForFilename(filename: string): string {
+  return objectStorageService.buildPublicUrl(getMediaObjectKey(filename));
 }
 
 // Rota para upload de arquivos
@@ -167,7 +177,31 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req: Aut
       }
     }
 
-    const fileUrl = `/api/media/file/${finalFilename}`;
+    const finalFilePath = path.join(uploadDir, finalFilename);
+    let fileUrl = `/api/media/file/${finalFilename}`;
+
+    if (objectStorageService.isEnabled() && fs.existsSync(finalFilePath)) {
+      try {
+        const fileBuffer = fs.readFileSync(finalFilePath);
+        const objectKey = getMediaObjectKey(finalFilename);
+        const uploadedUrl = await objectStorageService.uploadBuffer({
+          objectKey,
+          buffer: fileBuffer,
+          contentType: finalMimetype,
+        });
+        fileUrl = uploadedUrl;
+        console.log('[Media] ☁️ Upload para object storage concluído:', {
+          provider: process.env.STORAGE_PROVIDER,
+          objectKey,
+          url: uploadedUrl,
+        });
+      } catch (storageError: any) {
+        console.error('[Media] ❌ Falha ao enviar arquivo para object storage, mantendo URL local:', {
+          error: storageError?.message || storageError,
+          filename: finalFilename,
+        });
+      }
+    }
     
     res.json({
       url: fileUrl,
@@ -200,6 +234,19 @@ router.get('/file/:filename', (req: Request, res: Response) => {
   }
 
   if (!fs.existsSync(filePath)) {
+    if (objectStorageService.isEnabled()) {
+      try {
+        const storageUrl = getPublicMediaUrlForFilename(filename);
+        console.warn('[Media] ⚠️ Arquivo local ausente, redirecionando para object storage:', {
+          filename,
+          storageUrl,
+        });
+        return res.redirect(storageUrl);
+      } catch (storageError: any) {
+        console.error('[Media] ❌ Falha ao montar URL do object storage:', storageError?.message || storageError);
+      }
+    }
+
     console.error('[Media] ❌ Arquivo não encontrado:', filename);
     return res.status(404).json({ error: 'Arquivo não encontrado' });
   }
@@ -363,6 +410,18 @@ router.get('/:messageId', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'URL de mídia não encontrada' });
     }
 
+    const hasGraphMediaId = !!resolveGraphMediaId(metadata);
+    const isHttpMediaUrl = mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://');
+    const isPersistedObjectUrl =
+      (isHttpMediaUrl && metadata?.storageProvider === 'object') ||
+      (isHttpMediaUrl && !!mediaMetadata?.storageKey) ||
+      (isHttpMediaUrl && !hasGraphMediaId && !mediaMetadata?.mediaKey);
+
+    if (isPersistedObjectUrl) {
+      console.log('[Media] ☁️ Mídia persistida em object storage, redirecionando URL pública.');
+      return res.redirect(mediaUrl);
+    }
+
     // Verificar se é base64 (dados já estão no content)
     if (mediaUrl.startsWith('data:')) {
       const base64Data = mediaUrl.split(',')[1];
@@ -393,7 +452,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
       console.log('[Media] 📁 Detectado arquivo local, servindo diretamente...');
       
       // Extrair nome do arquivo da URL
-      const filename = mediaUrl.replace('/api/media/file/', '');
+      const filename = mediaUrl.replace('/api/media/file/', '').split('?')[0];
 
       if (!isSafeFilename(filename)) {
         console.error('[Media] ❌ Nome de arquivo inválido em mediaUrl (possível path traversal):', filename);
@@ -410,7 +469,17 @@ router.get('/:messageId', async (req: Request, res: Response) => {
       
       // Verificar se arquivo existe (em K8s sem volume persistente o disco pode estar vazio)
       if (!fs.existsSync(filePath)) {
+        let objectStorageFallback: string | null = null;
+        if (objectStorageService.isEnabled()) {
+          try {
+            objectStorageFallback = getPublicMediaUrlForFilename(filename);
+          } catch (_) {
+            objectStorageFallback = null;
+          }
+        }
+
         const httpFallback =
+          objectStorageFallback ||
           (typeof mediaMetadata?.originalUrl === 'string' &&
             mediaMetadata.originalUrl.startsWith('http') &&
             mediaMetadata.originalUrl) ||
@@ -682,6 +751,26 @@ router.get('/:messageId', async (req: Request, res: Response) => {
 
           fs.writeFileSync(filePath, buffer);
 
+          let persistedMediaUrl = `/api/media/file/${filename}`;
+          let storageKey: string | null = null;
+          if (objectStorageService.isEnabled()) {
+            try {
+              storageKey = getMediaObjectKey(filename);
+              persistedMediaUrl = await objectStorageService.uploadBuffer({
+                objectKey: storageKey,
+                buffer,
+                contentType,
+              });
+              console.log('[Media] ☁️ Mídia oficial persistida no object storage:', {
+                messageId,
+                storageKey,
+                persistedMediaUrl,
+              });
+            } catch (storageError: any) {
+              console.error('[Media] ❌ Erro ao persistir mídia oficial no object storage:', storageError?.message || storageError);
+            }
+          }
+
           console.log('[Media] 💾 Mídia oficial salva em cache local:', {
             filename,
             filePath,
@@ -692,11 +781,13 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           // Atualizar metadata da mensagem para apontar para o arquivo local
           const newMetadata: any = {
             ...(metadata || {}),
-            mediaUrl: `/api/media/file/${filename}`,
+            mediaUrl: persistedMediaUrl,
+            storageProvider: storageKey ? 'object' : undefined,
             mediaMetadata: {
               ...(mediaMetadata || {}),
               originalUrl: mediaUrl,
               contentType,
+              storageKey: storageKey || undefined,
             },
           };
 
@@ -1063,13 +1154,35 @@ router.get('/:messageId', async (req: Request, res: Response) => {
 
         fs.writeFileSync(filePath, buffer);
 
+        let persistedMediaUrl = `/api/media/file/${filename}`;
+        let storageKey: string | null = null;
+        if (objectStorageService.isEnabled()) {
+          try {
+            storageKey = getMediaObjectKey(filename);
+            persistedMediaUrl = await objectStorageService.uploadBuffer({
+              objectKey: storageKey,
+              buffer,
+              contentType,
+            });
+            console.log('[Media] ☁️ Mídia Evolution persistida no object storage:', {
+              messageId,
+              storageKey,
+              persistedMediaUrl,
+            });
+          } catch (storageError: any) {
+            console.error('[Media] ❌ Erro ao persistir mídia Evolution no object storage:', storageError?.message || storageError);
+          }
+        }
+
         const newMetadata: any = {
           ...(metadata || {}),
-          mediaUrl: `/api/media/file/${filename}`,
+          mediaUrl: persistedMediaUrl,
+          storageProvider: storageKey ? 'object' : undefined,
           mediaMetadata: {
             ...(mediaMetadata || {}),
             evolutionSourceUrl: mediaUrl,
             contentType,
+            storageKey: storageKey || undefined,
           },
         };
 
