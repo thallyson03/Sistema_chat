@@ -21,6 +21,8 @@ interface Bot {
     flows: number;
     sessions: number;
   };
+  hasDraftFlow?: boolean;
+  draftFlowUpdatedAt?: string | null;
 }
 
 interface Channel {
@@ -180,6 +182,31 @@ export default function Bots() {
     }
   };
 
+  const handleOpenDraft = async (bot: Bot) => {
+    try {
+      await api.post(`/api/bots/${bot.id}/draft-flow`);
+      navigate(`/bots/${bot.id}/flows/visual?draft=1`);
+    } catch (error: any) {
+      console.error('Erro ao abrir rascunho do bot:', error);
+      alert(error.response?.data?.error || 'Erro ao preparar rascunho do bot');
+    }
+  };
+
+  const handlePublishDraft = async (bot: Bot) => {
+    if (!confirm(`Publicar rascunho do bot "${bot.name}" em produção?`)) {
+      return;
+    }
+
+    try {
+      await api.post(`/api/bots/${bot.id}/publish-draft`);
+      await fetchBots();
+      alert('Mudanças publicadas com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao publicar rascunho:', error);
+      alert(error.response?.data?.error || 'Erro ao publicar rascunho');
+    }
+  };
+
   if (loading) {
     return <div className="p-5 text-on-surface-variant">Carregando...</div>;
   }
@@ -229,6 +256,11 @@ export default function Bots() {
                     >
                       {bot.isActive ? 'Ativo' : 'Pausado'}
                     </span>
+                    {bot.hasDraftFlow && (
+                      <span className="rounded-md border border-sky-500/25 bg-sky-500/10 px-2 py-0.5 text-xs font-semibold text-sky-200">
+                        Rascunho pendente
+                      </span>
+                    )}
                   </div>
                   {bot.description && (
                     <p className="my-1 text-sm text-on-surface-variant">{bot.description}</p>
@@ -263,6 +295,20 @@ export default function Bots() {
                   >
                     🎨 Criar Fluxo Visual
                   </button>
+                  <button
+                    onClick={() => handleOpenDraft(bot)}
+                    className="rounded-md border border-sky-500/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/20"
+                  >
+                    🧪 {bot.hasDraftFlow ? 'Editar Rascunho' : 'Criar Rascunho'}
+                  </button>
+                  {bot.hasDraftFlow && (
+                    <button
+                      onClick={() => handlePublishDraft(bot)}
+                      className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
+                    >
+                      🚀 Publicar Rascunho
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setSelectedBotId(bot.id);

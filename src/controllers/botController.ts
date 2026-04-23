@@ -347,6 +347,7 @@ export class BotController {
             description: flow.description,
             trigger: flow.trigger,
             triggerValue: flow.triggerValue,
+            isActive: flow.isActive,
             botId: flow.botId,
             createdAt: flow.createdAt,
             updatedAt: flow.updatedAt,
@@ -528,6 +529,7 @@ export class BotController {
           description: flow.description,
           trigger: flow.trigger,
           triggerValue: flow.triggerValue,
+          isActive: flow.isActive,
           botId: flow.botId,
           createdAt: flow.createdAt,
           updatedAt: flow.updatedAt,
@@ -903,6 +905,48 @@ export class BotController {
     } catch (error: any) {
       console.error('[BotController] Erro ao testar HTTP Request:', error);
       res.status(400).json({ error: error.message || 'Erro ao testar requisição HTTP' });
+    }
+  }
+
+  /**
+   * Garante/retorna fluxo de rascunho para edição sem impacto em produção
+   */
+  async ensureDraftFlow(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR') {
+        return res.status(403).json({ error: 'Apenas administradores e supervisores podem criar rascunho' });
+      }
+
+      const { botId } = req.params;
+      const draftFlow = await botService.ensureDraftFlow(botId);
+      res.json(draftFlow);
+    } catch (error: any) {
+      console.error('[BotController] Erro ao garantir rascunho:', error);
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Publica o rascunho mais recente de um bot
+   */
+  async publishDraftFlow(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR') {
+        return res.status(403).json({ error: 'Apenas administradores e supervisores podem publicar rascunho' });
+      }
+
+      const { botId } = req.params;
+      const bot = await botService.publishLatestDraftFlow(botId);
+      res.json(bot);
+    } catch (error: any) {
+      console.error('[BotController] Erro ao publicar rascunho:', error);
+      res.status(400).json({ error: error.message });
     }
   }
 }

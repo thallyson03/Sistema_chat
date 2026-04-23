@@ -28,6 +28,8 @@ router.get('/:botId/flows', botController.listFlows.bind(botController));
 
 // Testar bot
 router.post('/:id/test', botController.testBot.bind(botController));
+router.post('/:botId/draft-flow', botController.ensureDraftFlow.bind(botController));
+router.post('/:botId/publish-draft', botController.publishDraftFlow.bind(botController));
 
 // Fluxos
 router.get('/flows/:flowId', botController.getFlow.bind(botController));

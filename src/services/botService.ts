@@ -190,13 +190,32 @@ export class BotService {
             sessions: true,
           },
         },
+        flows: {
+          select: {
+            id: true,
+            isActive: true,
+            updatedAt: true,
+          },
+          orderBy: {
+            updatedAt: 'desc',
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc',
       },
     });
 
-    return bots;
+    return bots.map((bot: any) => {
+      const draftFlow = (bot.flows || []).find((f: any) => !f.isActive);
+      const activeFlow = (bot.flows || []).find((f: any) => f.isActive);
+      return {
+        ...bot,
+        hasDraftFlow: !!draftFlow,
+        draftFlowUpdatedAt: draftFlow?.updatedAt || null,
+        activeFlowUpdatedAt: activeFlow?.updatedAt || null,
+      };
+    });
   }
 
   /**
@@ -2117,6 +2136,207 @@ export class BotService {
     });
 
     return flow;
+  }
+
+  /**
+   * Garante um fluxo de rascunho para edição sem impactar produção.
+   * Estratégia:
+   * - Se já existir rascunho (isActive=false), reutiliza o mais recente.
+   * - Senão, clona o fluxo ativo atual para um novo rascunho.
+   * - Se não houver fluxo ativo, cria rascunho vazio padrão.
+   */
+  async ensureDraftFlow(botId: string) {
+    const existingDraft = await prisma.flow.findFirst({
+      where: {
+        botId,
+        isActive: false,
+      },
+      include: {
+        steps: {
+          include: {
+            response: true,
+            conditions: true,
+            intent: true,
+          },
+          orderBy: { order: 'asc' },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (existingDraft) {
+      return existingDraft;
+    }
+
+    const activeFlow = await prisma.flow.findFirst({
+      where: {
+        botId,
+        isActive: true,
+      },
+      include: {
+        steps: {
+          include: {
+            response: true,
+            conditions: true,
+            intent: true,
+          },
+          orderBy: { order: 'asc' },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!activeFlow) {
+      return await prisma.flow.create({
+        data: {
+          botId,
+          name: 'Rascunho',
+          description: 'Fluxo de rascunho',
+          trigger: 'always',
+          triggerValue: null,
+          isActive: false,
+        },
+        include: {
+          steps: {
+            include: {
+              response: true,
+              conditions: true,
+              intent: true,
+            },
+            orderBy: { order: 'asc' },
+          },
+        },
+      });
+    }
+
+    const clonedDraft = await prisma.$transaction(async (tx) => {
+      const newFlow = await tx.flow.create({
+        data: {
+          botId: activeFlow.botId,
+          name: `${activeFlow.name} (Rascunho)`,
+          description: activeFlow.description,
+          trigger: activeFlow.trigger || 'always',
+          triggerValue: activeFlow.triggerValue || null,
+          isActive: false,
+        },
+      });
+
+      const oldToNewStepId = new Map<string, string>();
+
+      for (const oldStep of activeFlow.steps) {
+        const createdStep = await tx.flowStep.create({
+          data: {
+            flowId: newFlow.id,
+            intentId: oldStep.intentId,
+            type: oldStep.type,
+            order: oldStep.order,
+            config: oldStep.config || {},
+            nextStepId: null,
+          },
+        });
+        oldToNewStepId.set(oldStep.id, createdStep.id);
+      }
+
+      for (const oldStep of activeFlow.steps) {
+        const newStepId = oldToNewStepId.get(oldStep.id);
+        if (!newStepId) continue;
+
+        const mappedNextStepId =
+          oldStep.nextStepId && oldStep.nextStepId !== 'END'
+            ? oldToNewStepId.get(oldStep.nextStepId) || null
+            : oldStep.nextStepId || null;
+
+        await tx.flowStep.update({
+          where: { id: newStepId },
+          data: {
+            nextStepId: mappedNextStepId,
+          },
+        });
+
+        if (oldStep.response) {
+          await tx.response.create({
+            data: {
+              flowStepId: newStepId,
+              intentId: oldStep.response.intentId,
+              type: oldStep.response.type,
+              content: oldStep.response.content,
+              buttons: oldStep.response.buttons as any,
+              mediaUrl: oldStep.response.mediaUrl,
+              metadata: oldStep.response.metadata as any,
+              order: oldStep.response.order ?? 0,
+            },
+          });
+        }
+
+        for (const oldCondition of oldStep.conditions || []) {
+          const mappedTrue =
+            oldCondition.trueStepId && oldCondition.trueStepId !== 'END'
+              ? oldToNewStepId.get(oldCondition.trueStepId) || null
+              : oldCondition.trueStepId || null;
+          const mappedFalse =
+            oldCondition.falseStepId && oldCondition.falseStepId !== 'END'
+              ? oldToNewStepId.get(oldCondition.falseStepId) || null
+              : oldCondition.falseStepId || null;
+
+          await tx.flowCondition.create({
+            data: {
+              stepId: newStepId,
+              condition: oldCondition.condition,
+              operator: oldCondition.operator,
+              value: oldCondition.value,
+              trueStepId: mappedTrue,
+              falseStepId: mappedFalse,
+              order: oldCondition.order ?? 0,
+            },
+          });
+        }
+      }
+
+      return newFlow;
+    });
+
+    return await this.getFlowById(clonedDraft.id);
+  }
+
+  /**
+   * Publica o rascunho mais recente do bot:
+   * - desativa fluxos ativos atuais
+   * - ativa o rascunho
+   */
+  async publishLatestDraftFlow(botId: string) {
+    const draft = await prisma.flow.findFirst({
+      where: {
+        botId,
+        isActive: false,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!draft) {
+      throw new Error('Nenhum rascunho encontrado para publicar');
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.flow.updateMany({
+        where: {
+          botId,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+        },
+      });
+
+      await tx.flow.update({
+        where: { id: draft.id },
+        data: {
+          isActive: true,
+          name: draft.name.replace(/\s*\(Rascunho\)\s*$/i, ''),
+        },
+      });
+    });
+
+    return await this.getBotById(botId);
   }
 
   /**

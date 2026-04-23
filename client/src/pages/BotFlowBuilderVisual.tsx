@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import ReactFlow, {
   Node,
   Edge,
@@ -1785,6 +1785,8 @@ const nodeTypes: NodeTypes = {
 export default function BotFlowBuilderVisual() {
   const { botId } = useParams<{ botId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const draftMode = new URLSearchParams(location.search).get('draft') === '1';
   const [flows, setFlows] = useState<Flow[]>([]);
   const [selectedFlow, setSelectedFlow] = useState<Flow | null>(null);
   const [intents, setIntents] = useState<Intent[]>([]);
@@ -1900,6 +1902,14 @@ export default function BotFlowBuilderVisual() {
 
   const fetchFlows = async () => {
     try {
+      if (draftMode) {
+        try {
+          await api.post(`/api/bots/${botId}/draft-flow`);
+        } catch (draftError) {
+          console.error('Erro ao preparar rascunho do bot:', draftError);
+        }
+      }
+
       const response = await api.get(`/api/bots/${botId}/flows`);
       const flowList = response.data || [];
       setFlows(flowList);
@@ -1918,10 +1928,13 @@ export default function BotFlowBuilderVisual() {
           console.error('Erro ao criar fluxo padrão do bot:', createError);
         }
       } else {
-        // Como o bot só pode ter um fluxo, selecionar sempre o primeiro
-        const flowWithSteps =
-          flowList.find((f: any) => Array.isArray(f.steps) && f.steps.length > 0) || flowList[0];
-        setSelectedFlow(flowWithSteps);
+        const draftFlow = flowList.find((f: any) => f.isActive === false);
+        const publishedFlow = flowList.find((f: any) => f.isActive === true);
+        const preferred =
+          (draftMode ? draftFlow || publishedFlow : publishedFlow || draftFlow) ||
+          flowList.find((f: any) => Array.isArray(f.steps) && f.steps.length > 0) ||
+          flowList[0];
+        setSelectedFlow(preferred);
       }
     } catch (error) {
       console.error('Erro ao carregar fluxos:', error);
