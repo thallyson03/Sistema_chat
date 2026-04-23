@@ -4234,11 +4234,11 @@ export default function BotFlowBuilderVisual() {
                       });
                     }
                     
-                    // Recarregar o fluxo para atualizar as conexões
+                    // Recarregar o fluxo e aplicar no canvas imediatamente
                     const flowResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`);
                     const updatedFlow = flowResponse.data;
+                    loadFlowToCanvas(updatedFlow);
                     setSelectedFlow(updatedFlow);
-                    // loadFlowToCanvas será chamado automaticamente pelo useEffect
                   } catch (error) {
                     console.error('Erro ao remover conexão do backend:', error);
                     // Remover visualmente mesmo se falhar no backend
