@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import ReactFlow, {
   Node,
   Edge,
@@ -24,6 +24,13 @@ interface Flow {
   description?: string | null;
   isActive: boolean;
   steps: FlowStep[];
+}
+
+interface BotMeta {
+  id: string;
+  name: string;
+  publishedVersion?: string;
+  hasPendingChanges?: boolean;
 }
 
 interface FlowStep {
@@ -1785,8 +1792,7 @@ const nodeTypes: NodeTypes = {
 export default function BotFlowBuilderVisual() {
   const { botId } = useParams<{ botId: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
-  const draftMode = new URLSearchParams(location.search).get('draft') === '1';
+  const [botMeta, setBotMeta] = useState<BotMeta | null>(null);
   const [flows, setFlows] = useState<Flow[]>([]);
   const [selectedFlow, setSelectedFlow] = useState<Flow | null>(null);
   const [intents, setIntents] = useState<Intent[]>([]);
@@ -1902,12 +1908,18 @@ export default function BotFlowBuilderVisual() {
 
   const fetchFlows = async () => {
     try {
-      if (draftMode) {
-        try {
-          await api.post(`/api/bots/${botId}/draft-flow`);
-        } catch (draftError) {
-          console.error('Erro ao preparar rascunho do bot:', draftError);
-        }
+      try {
+        await api.post(`/api/bots/${botId}/draft-flow`);
+      } catch (draftError) {
+        console.error('Erro ao preparar rascunho do bot:', draftError);
+      }
+
+      try {
+        const botResponse = await api.get(`/api/bots/${botId}`);
+        setBotMeta(botResponse.data || null);
+      } catch (botError) {
+        console.error('Erro ao carregar metadados do bot:', botError);
+        setBotMeta(null);
       }
 
       const response = await api.get(`/api/bots/${botId}/flows`);
@@ -1931,7 +1943,8 @@ export default function BotFlowBuilderVisual() {
         const draftFlow = flowList.find((f: any) => f.isActive === false);
         const publishedFlow = flowList.find((f: any) => f.isActive === true);
         const preferred =
-          (draftMode ? draftFlow || publishedFlow : publishedFlow || draftFlow) ||
+          draftFlow ||
+          publishedFlow ||
           flowList.find((f: any) => Array.isArray(f.steps) && f.steps.length > 0) ||
           flowList[0];
         setSelectedFlow(preferred);
@@ -1940,6 +1953,18 @@ export default function BotFlowBuilderVisual() {
       console.error('Erro ao carregar fluxos:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePublishBot = async () => {
+    if (!botId) return;
+    try {
+      await api.post(`/api/bots/${botId}/publish-draft`);
+      alert('Publicação realizada com sucesso!');
+      await fetchFlows();
+    } catch (error: any) {
+      console.error('Erro ao publicar bot:', error);
+      alert(error.response?.data?.error || 'Erro ao publicar bot');
     }
   };
 
@@ -3402,83 +3427,8 @@ export default function BotFlowBuilderVisual() {
           >
             ← Voltar
           </button>
-          <div style={{ 
-            padding: '6px 12px', 
-            backgroundColor: '#3b82f6', 
-            color: 'white', 
-            borderRadius: '6px',
-            fontWeight: 'bold',
-            fontSize: '14px',
-          }}>
-            Bot Flow Builder
-          </div>
-          <div style={{ display: 'flex', gap: '5px' }}>
-            <button
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '500',
-              }}
-            >
-              Flow
-            </button>
-            <button
-              style={{
-                padding: '8px 16px',
-                backgroundColor: 'transparent',
-                color: '#6b7280',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-              }}
-            >
-              Theme
-            </button>
-            <button
-              style={{
-                padding: '8px 16px',
-                backgroundColor: 'transparent',
-                color: '#6b7280',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-              }}
-            >
-              Settings
-            </button>
-            <button
-              style={{
-                padding: '8px 16px',
-                backgroundColor: 'transparent',
-                color: '#6b7280',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-              }}
-            >
-              Share
-            </button>
-            <button
-              style={{
-                padding: '8px 16px',
-                backgroundColor: 'transparent',
-                color: '#6b7280',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-              }}
-            >
-              Results
-            </button>
+          <div style={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
+            Versão atual: {botMeta?.publishedVersion || '0.0'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -3520,6 +3470,29 @@ export default function BotFlowBuilderVisual() {
             }}
           >
             {showPreview ? '⏹️ Stop' : '▶️ Preview'}
+          </button>
+          <button
+            onClick={handlePublishBot}
+            disabled={!selectedFlow || !botMeta?.hasPendingChanges}
+            style={{
+              padding: '6px 12px',
+              backgroundColor:
+                !selectedFlow || !botMeta?.hasPendingChanges ? '#9ca3af' : '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor:
+                !selectedFlow || !botMeta?.hasPendingChanges ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+              fontWeight: '600',
+            }}
+            title={
+              botMeta?.hasPendingChanges
+                ? 'Publicar mudanças do rascunho em produção'
+                : 'Sem mudanças pendentes para publicar'
+            }
+          >
+            🚀 Publicar
           </button>
         </div>
       </div>

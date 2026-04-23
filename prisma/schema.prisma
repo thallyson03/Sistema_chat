@@ -609,6 +609,8 @@ model Bot {
   sectorId        String?
   language        String   @default("pt-BR")
   isActive        Boolean  @default(true)
+  publishedVersion String  @default("0.0")
+  hasPendingChanges Boolean @default(true)
   welcomeMessage  String?
   fallbackMessage String?  // Mensagem quando não entende
   // Configuração de encerramento automático por inatividade

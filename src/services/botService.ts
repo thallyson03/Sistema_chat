@@ -135,7 +135,10 @@ export class BotService {
         language: data.language || 'pt-BR',
         welcomeMessage: data.welcomeMessage,
         fallbackMessage: data.fallbackMessage || 'Desculpe, não entendi. Pode reformular sua pergunta?',
-        isActive: true,
+        // Novo bot nasce como rascunho (não entra em produção até publicar)
+        isActive: false,
+        publishedVersion: '0.0',
+        hasPendingChanges: true,
         autoCloseEnabled: data.autoCloseEnabled ?? false,
         autoCloseAfterMinutes: data.autoCloseAfterMinutes ?? null,
         autoCloseMessage: data.autoCloseMessage ?? null,
@@ -152,7 +155,8 @@ export class BotService {
         description: 'Fluxo padrão do bot',
         trigger: 'always',
         triggerValue: null,
-        isActive: true,
+        // Fluxo inicial é rascunho (não publicado)
+        isActive: false,
       },
     });
 
@@ -214,6 +218,8 @@ export class BotService {
         hasDraftFlow: !!draftFlow,
         draftFlowUpdatedAt: draftFlow?.updatedAt || null,
         activeFlowUpdatedAt: activeFlow?.updatedAt || null,
+        publishedVersion: bot.publishedVersion || '0.0',
+        hasPendingChanges: !!bot.hasPendingChanges,
       };
     });
   }
@@ -2095,6 +2101,10 @@ export class BotService {
       },
     });
 
+    if (data.flowStepId) {
+      await this.markBotPendingByStepId(data.flowStepId);
+    }
+
     return response;
   }
 
@@ -2136,6 +2146,44 @@ export class BotService {
     });
 
     return flow;
+  }
+
+  private incrementPublishedVersion(currentVersion?: string | null): string {
+    const current = String(currentVersion || '0.0').trim();
+    const [majorRaw, minorRaw] = current.split('.');
+    const major = Number.parseInt(majorRaw, 10);
+    const minor = Number.parseInt(minorRaw || '0', 10);
+
+    if (!Number.isFinite(major) || !Number.isFinite(minor)) {
+      return '1.0';
+    }
+
+    if (major <= 0) {
+      return '1.0';
+    }
+
+    return `${major}.${minor + 1}`;
+  }
+
+  private async markBotPendingByFlowId(flowId: string) {
+    const flow = await prisma.flow.findUnique({
+      where: { id: flowId },
+      select: { botId: true },
+    });
+    if (!flow?.botId) return;
+    await prisma.bot.update({
+      where: { id: flow.botId },
+      data: { hasPendingChanges: true },
+    });
+  }
+
+  private async markBotPendingByStepId(stepId: string) {
+    const step = await prisma.flowStep.findUnique({
+      where: { id: stepId },
+      select: { flowId: true },
+    });
+    if (!step?.flowId) return;
+    await this.markBotPendingByFlowId(step.flowId);
   }
 
   /**
@@ -2187,7 +2235,7 @@ export class BotService {
     });
 
     if (!activeFlow) {
-      return await prisma.flow.create({
+      const createdDraft = await prisma.flow.create({
         data: {
           botId,
           name: 'Rascunho',
@@ -2207,6 +2255,11 @@ export class BotService {
           },
         },
       });
+      await prisma.bot.update({
+        where: { id: botId },
+        data: { hasPendingChanges: true },
+      });
+      return createdDraft;
     }
 
     const clonedDraft = await prisma.$transaction(async (tx) => {
@@ -2292,6 +2345,11 @@ export class BotService {
         }
       }
 
+      await tx.bot.update({
+        where: { id: botId },
+        data: { hasPendingChanges: false },
+      });
+
       return newFlow;
     });
 
@@ -2304,6 +2362,17 @@ export class BotService {
    * - ativa o rascunho
    */
   async publishLatestDraftFlow(botId: string) {
+    const bot = await prisma.bot.findUnique({
+      where: { id: botId },
+      select: {
+        id: true,
+        publishedVersion: true,
+      },
+    });
+    if (!bot) {
+      throw new Error('Bot não encontrado');
+    }
+
     const draft = await prisma.flow.findFirst({
       where: {
         botId,
@@ -2332,6 +2401,15 @@ export class BotService {
         data: {
           isActive: true,
           name: draft.name.replace(/\s*\(Rascunho\)\s*$/i, ''),
+        },
+      });
+
+      await tx.bot.update({
+        where: { id: botId },
+        data: {
+          isActive: true,
+          hasPendingChanges: false,
+          publishedVersion: this.incrementPublishedVersion(bot.publishedVersion),
         },
       });
     });
@@ -2389,6 +2467,7 @@ export class BotService {
       },
     });
 
+    await this.markBotPendingByFlowId(flowId);
     return step;
   }
 
@@ -2421,6 +2500,7 @@ export class BotService {
       },
     });
 
+    await this.markBotPendingByStepId(stepId);
     return step;
   }
 
@@ -2428,6 +2508,7 @@ export class BotService {
    * Deleta um step
    */
   async deleteFlowStep(stepId: string) {
+    await this.markBotPendingByStepId(stepId);
     await prisma.flowStep.delete({
       where: { id: stepId },
     });
@@ -2444,7 +2525,7 @@ export class BotService {
     falseStepId?: string;
     order?: number;
   }) {
-    return await prisma.flowCondition.create({
+    const created = await prisma.flowCondition.create({
       data: {
         stepId,
         condition: data.condition,
@@ -2455,6 +2536,8 @@ export class BotService {
         order: data.order ?? 0,
       } as any,
     });
+    await this.markBotPendingByStepId(stepId);
+    return created;
   }
 
   /**
@@ -2476,19 +2559,35 @@ export class BotService {
     if (data.falseStepId !== undefined) updateData.falseStepId = data.falseStepId;
     if (data.order !== undefined) updateData.order = data.order;
 
-    return await prisma.flowCondition.update({
+    const existing = await prisma.flowCondition.findUnique({
+      where: { id: conditionId },
+      select: { stepId: true },
+    });
+    const updated = await prisma.flowCondition.update({
       where: { id: conditionId },
       data: updateData,
     });
+    if (existing?.stepId) {
+      await this.markBotPendingByStepId(existing.stepId);
+    }
+    return updated;
   }
 
   /**
    * Remove uma condição
    */
   async deleteFlowCondition(conditionId: string) {
-    return await prisma.flowCondition.delete({
+    const existing = await prisma.flowCondition.findUnique({
+      where: { id: conditionId },
+      select: { stepId: true },
+    });
+    const deleted = await prisma.flowCondition.delete({
       where: { id: conditionId },
     });
+    if (existing?.stepId) {
+      await this.markBotPendingByStepId(existing.stepId);
+    }
+    return deleted;
   }
 
   /**
@@ -2507,6 +2606,20 @@ export class BotService {
     autoCloseMessage?: string | null;
   }) {
     const updateData: any = {};
+    const fieldsThatCreateNewRevision = [
+      'name',
+      'description',
+      'avatar',
+      'language',
+      'welcomeMessage',
+      'fallbackMessage',
+      'autoCloseEnabled',
+      'autoCloseAfterMinutes',
+      'autoCloseMessage',
+    ];
+    const changedBusinessField = fieldsThatCreateNewRevision.some(
+      (field) => (data as any)[field] !== undefined,
+    );
     if (data.name) updateData.name = data.name;
     if (data.description !== undefined) updateData.description = data.description;
     if (data.avatar !== undefined) updateData.avatar = data.avatar;
@@ -2517,6 +2630,7 @@ export class BotService {
     if (data.autoCloseEnabled !== undefined) updateData.autoCloseEnabled = data.autoCloseEnabled;
     if (data.autoCloseAfterMinutes !== undefined) updateData.autoCloseAfterMinutes = data.autoCloseAfterMinutes;
     if (data.autoCloseMessage !== undefined) updateData.autoCloseMessage = data.autoCloseMessage;
+    if (changedBusinessField) updateData.hasPendingChanges = true;
 
     const bot = await prisma.bot.update({
       where: { id: botId },
