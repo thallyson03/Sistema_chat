@@ -1813,23 +1813,27 @@ export class BotService {
       return false;
     }
 
-    // Validações de comprimento
-    if (validation.minLength && userInput.length < validation.minLength) {
-      return false;
-    }
-    if (validation.maxLength && userInput.length > validation.maxLength) {
-      return false;
-    }
+    // Para NUMBER_INPUT, priorizar validação numérica (min/max) para evitar
+    // bloqueios indevidos por regras legadas de string (ex.: maxLength=1).
+    if (inputType !== 'NUMBER') {
+      // Validações de comprimento
+      if (validation.minLength && userInput.length < validation.minLength) {
+        return false;
+      }
+      if (validation.maxLength && userInput.length > validation.maxLength) {
+        return false;
+      }
 
-    // Validação de padrão (regex)
-    if (validation.pattern) {
-      try {
-        const regex = new RegExp(validation.pattern);
-        if (!regex.test(userInput)) {
-          return false;
+      // Validação de padrão (regex)
+      if (validation.pattern) {
+        try {
+          const regex = new RegExp(validation.pattern);
+          if (!regex.test(userInput)) {
+            return false;
+          }
+        } catch (error) {
+          console.error('[BotService] Erro ao validar pattern:', error);
         }
-      } catch (error) {
-        console.error('[BotService] Erro ao validar pattern:', error);
       }
     }
 

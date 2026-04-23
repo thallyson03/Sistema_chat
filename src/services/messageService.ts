@@ -10,6 +10,13 @@ import path from 'path';
 import { convertOggToMp3, convertWebmToOgg } from '../utils/audioConverter';
 import { resolvePublicAppBaseUrl } from '../utils/publicBaseUrl';
 
+// io será injetado via função (mensagens de bot/automação precisam refletir em tempo real no chat)
+let io: any = null;
+
+export function setMessageServiceSocketIO(socketIO: any) {
+  io = socketIO;
+}
+
 export interface SendMessageData {
   conversationId: string;
   userId: string;
@@ -721,6 +728,27 @@ export class MessageService {
       conversationId: data.conversationId,
       status: message.status,
     });
+
+    // Para mensagens disparadas pelo bot/automação, emitir evento em tempo real aqui.
+    // Esses envios não passam pelo MessageController, então sem este emit a UI pode
+    // demorar para refletir a bolha mesmo com entrega imediata ao destinatário.
+    if (io && data.fromBot) {
+      try {
+        io.to(`conversation_${data.conversationId}`).emit('new_message', {
+          conversationId: data.conversationId,
+          messageId: message.id,
+        });
+        io.emit('new_message', {
+          conversationId: data.conversationId,
+          messageId: message.id,
+        });
+        io.emit('conversation_updated', {
+          conversationId: data.conversationId,
+        });
+      } catch (socketError) {
+        console.error('[MessageService] Erro ao emitir Socket.IO para mensagem do bot:', socketError);
+      }
+    }
 
     return message;
   }

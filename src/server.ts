@@ -27,6 +27,7 @@ import journeyRoutes from './routes/journeyRoutes';
 import whatsappTemplateRoutes from './routes/whatsappTemplateRoutes';
 import contactListRoutes from './routes/contactListRoutes';
 import { setSocketIO as setMessageSocketIO } from './controllers/messageController';
+import { setMessageServiceSocketIO } from './services/messageService';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -109,6 +110,7 @@ io.on('connection', (socket) => {
 // Configurar io nos módulos que precisam
 setSocketIO(io);
 setMessageSocketIO(io);
+setMessageServiceSocketIO(io);
 
 // Rotas da API
 app.use('/api/auth', authRoutes);
