@@ -769,6 +769,18 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
 
     if (normalizedInput) {
       try {
+        // Autoativação: na primeira mensagem da conversa, se não houver humano atribuído
+        // e ainda não existir sessão ativa, habilita o bot do canal/setor automaticamente.
+        if (!conversation.assignedToId) {
+          const currentBotSession = await prisma.botSession.findUnique({
+            where: { conversationId: conversation.id },
+            select: { isActive: true },
+          });
+          if (!currentBotSession?.isActive) {
+            await conversationService.activateBotForConversation(conversation.id);
+          }
+        }
+
         await botService.processMessage(normalizedInput, conversation.id, {
           messageType,
           mediaUrl,
@@ -1473,12 +1485,18 @@ async function handleNewMessage(data: any) {
       if (!fromMe && messageContent) {
         try {
           // Se não existe deal (fora do pipeline) e ninguém humano está atribuído,
-          // ativar automaticamente o bot do setor atual.
+          // ativar automaticamente o bot do setor atual apenas quando ainda não há sessão ativa.
           const deal = conversation.id
             ? await prisma.deal.findUnique({ where: { conversationId: conversation.id } }).catch(() => null)
             : null;
           if (!deal && !conversation.assignedToId) {
-            await conversationService.activateBotForConversation(conversation.id);
+            const currentBotSession = await prisma.botSession.findUnique({
+              where: { conversationId: conversation.id },
+              select: { isActive: true },
+            });
+            if (!currentBotSession?.isActive) {
+              await conversationService.activateBotForConversation(conversation.id);
+            }
           }
 
           const botResult = await botService.processMessage(messageContent, conversation.id, {

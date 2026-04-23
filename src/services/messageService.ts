@@ -3,7 +3,9 @@ import { MessageType, MessageStatus } from '@prisma/client';
 import evolutionApi from '../config/evolutionApi';
 import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
 import { WhatsAppOfficialService } from './whatsappOfficialService';
+import axios from 'axios';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { convertOggToMp3, convertWebmToOgg } from '../utils/audioConverter';
 import { resolvePublicAppBaseUrl } from '../utils/publicBaseUrl';
@@ -204,113 +206,112 @@ export class MessageService {
           // converter para OGG/Opus e enviar como type: "audio" + voice: true.
           if (data.type === 'AUDIO') {
             console.log('[MessageService] 🎵 Áudio detectado, preparando OGG/Opus para WhatsApp Official...');
+            const tempFilesToCleanup: string[] = [];
             try {
-              // Extrair nome do arquivo a partir da URL local gerada pelo backend.
-              let audioFilename: string | undefined;
+              const uploadsDir = path.join(__dirname, '../../uploads');
+              let sourcePath: string | null = null;
+              let sourceFilename: string | undefined;
 
+              // Prioriza arquivo local quando mediaUrl aponta para /api/media/file
               if (data.mediaUrl && data.mediaUrl.includes('/api/media/file/')) {
                 const parts = data.mediaUrl.split('/api/media/file/');
                 if (parts.length > 1) {
-                  audioFilename = parts[1].split('?')[0];
-                }
-              }
-
-              if (!audioFilename) {
-                console.warn('[MessageService] ⚠️ Não foi possível determinar o nome do arquivo OGG a partir de mediaUrl:', {
-                  mediaUrl: data.mediaUrl,
-                });
-              }
-
-              if (audioFilename) {
-                const uploadsDir = path.join(__dirname, '../../uploads');
-                const inputPath = path.join(uploadsDir, audioFilename);
-
-                if (!fs.existsSync(inputPath)) {
-                  console.warn('[MessageService] ⚠️ Arquivo de áudio local não encontrado para envio como áudio:', {
-                    inputPath,
-                  });
-                } else {
-                  // Determinar extensão e garantir saída em OGG/Opus
-                  const ext = audioFilename.toLowerCase().split('.').pop() || '';
-                  let oggFilename = audioFilename;
-
-                  if (ext !== 'ogg' && ext !== 'oga') {
-                    // Converter para OGG/Opus com parâmetros adequados para voz
-                    oggFilename = audioFilename.replace(/\.[^/.]+$/i, '.ogg');
-                    const oggPath = path.join(uploadsDir, oggFilename);
-
-                    if (!fs.existsSync(oggPath)) {
-                      console.log('[MessageService] 🔄 Convertendo áudio para OGG/Opus antes do envio...', {
-                        inputPath,
-                        oggPath,
-                      });
-                      // Usar conversor WEBM->OGG (também funciona para outros formatos suportados pelo FFmpeg)
-                      try {
-                        await convertWebmToOgg(inputPath, oggPath);
-                      } catch (convError: any) {
-                        console.error('[MessageService] ❌ Erro ao converter áudio para OGG/Opus, tentando enviar arquivo original:', convError.message);
-                        // Se a conversão falhar, manter o caminho original (pode cair no fallback via URL abaixo)
-                      }
-                    }
+                  const localFilename = parts[1].split('?')[0];
+                  const localPath = path.join(uploadsDir, localFilename);
+                  if (fs.existsSync(localPath)) {
+                    sourcePath = localPath;
+                    sourceFilename = localFilename;
                   }
-
-                  const finalOggPath = path.join(uploadsDir, oggFilename);
-                  const hasValidOgg = fs.existsSync(finalOggPath);
-                  const pathToUpload = hasValidOgg ? finalOggPath : inputPath;
-                  const filenameToUpload = hasValidOgg ? oggFilename : audioFilename;
-
-                  // Subir arquivo OGG/Opus para obter media_id (type: "audio")
-                  const uploadResult = await whatsappService.uploadMedia(
-                    pathToUpload,
-                    'audio',
-                    filenameToUpload,
-                  );
-                  console.log('[MessageService] ✅ Upload de áudio concluído, media_id:', uploadResult.mediaId, {
-                    pathToUpload,
-                    filenameToUpload,
-                  });
-                  
-                  // Usar media_id no envio como voice message:
-                  // type: "audio" + audio.voice = true + arquivo OGG/Opus.
-                  result = await whatsappService.sendMediaMessage({
-                    to: formattedPhone,
-                    mediaId: uploadResult.mediaId,
-                    type: mediaType,
-                    caption: data.caption || data.content,
-                    // voice: true segue a documentação oficial para renderizar
-                    // com o layout de mensagem de voz (laranja).
-                    voice: hasValidOgg ? true : undefined,
-                  });
                 }
               }
 
-              // Se por algum motivo não conseguimos subir/enviar via media_id,
-              // caímos no fallback abaixo usando a URL pública (OGG).
-              if (!result) {
-                console.warn('[MessageService] ⚠️ Fallback: enviando áudio via URL pública (OGG) para WhatsApp Official');
-                result = await whatsappService.sendMediaMessage({
-                  to: formattedPhone,
-                  mediaUrl: fullMediaUrl,
-                  type: mediaType,
-                  caption: data.caption || data.content,
-                  filename: data.fileName,
+              // Se não houver arquivo local (ex.: MinIO URL), baixa para arquivo temporário
+              if (!sourcePath) {
+                const parsedUrl = new URL(fullMediaUrl);
+                const remoteName = parsedUrl.pathname.split('/').pop() || 'audio';
+                const extFromRemote = path.extname(remoteName) || '.bin';
+                const tempBase = path.join(
+                  os.tmpdir(),
+                  `wa-audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                );
+                const tempInputPath = `${tempBase}${extFromRemote}`;
+                const downloadResponse = await axios.get(fullMediaUrl, {
+                  responseType: 'arraybuffer',
+                  timeout: 20000,
                 });
+                fs.writeFileSync(tempInputPath, Buffer.from(downloadResponse.data));
+                tempFilesToCleanup.push(tempInputPath);
+                sourcePath = tempInputPath;
+                sourceFilename = data.fileName || path.basename(tempInputPath);
               }
+
+              if (!sourcePath) {
+                throw new Error('Não foi possível preparar arquivo de áudio para upload.');
+              }
+
+              let pathToUpload = sourcePath;
+              let filenameToUpload = sourceFilename || path.basename(sourcePath);
+
+              const ext = (path.extname(filenameToUpload).replace('.', '').toLowerCase() || '');
+              const acceptedDirectExt = ['ogg', 'oga', 'mp3', 'mpeg', 'amr', 'mp4', 'aac'];
+
+              // WAV/WebM e demais formatos não suportados pela Meta precisam ser convertidos para OGG/Opus.
+              if (!acceptedDirectExt.includes(ext) || ext === 'wav' || ext === 'webm') {
+                const tempOggPath = path.join(
+                  os.tmpdir(),
+                  `wa-audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ogg`,
+                );
+                console.log('[MessageService] 🔄 Convertendo áudio para OGG/Opus antes do envio...', {
+                  sourcePath,
+                  tempOggPath,
+                });
+                await convertWebmToOgg(sourcePath, tempOggPath);
+                tempFilesToCleanup.push(tempOggPath);
+                pathToUpload = tempOggPath;
+                filenameToUpload = `${path.basename(filenameToUpload, path.extname(filenameToUpload)) || 'audio'}.ogg`;
+              }
+
+              const uploadResult = await whatsappService.uploadMedia(
+                pathToUpload,
+                'audio',
+                filenameToUpload,
+              );
+              const isOggVoice =
+                filenameToUpload.toLowerCase().endsWith('.ogg') ||
+                filenameToUpload.toLowerCase().endsWith('.oga');
+
+              console.log('[MessageService] ✅ Upload de áudio concluído, media_id:', uploadResult.mediaId, {
+                pathToUpload,
+                filenameToUpload,
+              });
+
+              result = await whatsappService.sendMediaMessage({
+                to: formattedPhone,
+                mediaId: uploadResult.mediaId,
+                type: mediaType,
+                caption: data.caption || data.content,
+                voice: isOggVoice ? true : undefined,
+              });
             } catch (uploadError: any) {
-              console.error('[MessageService] ❌ Erro no fluxo de upload de áudio MP3, tentando com URL direta:', {
+              console.error('[MessageService] ❌ Erro no fluxo de upload de áudio para WhatsApp Official:', {
                 error: uploadError.message,
                 status: uploadError.response?.status,
                 data: uploadError.response?.data,
               });
-              
-              // Fallback: tentar com URL direta se upload falhar
-              result = await whatsappService.sendMediaMessage({
-                to: formattedPhone,
-                mediaUrl: fullMediaUrl,
-                type: mediaType,
-                caption: data.caption || data.content,
-                filename: data.fileName,
-              });
+              throw uploadError;
+            } finally {
+              for (const tempFile of tempFilesToCleanup) {
+                try {
+                  if (fs.existsSync(tempFile)) {
+                    fs.unlinkSync(tempFile);
+                  }
+                } catch (cleanupError: any) {
+                  console.warn('[MessageService] ⚠️ Não foi possível remover arquivo temporário de áudio:', {
+                    tempFile,
+                    error: cleanupError?.message || cleanupError,
+                  });
+                }
+              }
             }
           } else {
             // Para outros tipos de mídia (imagem, vídeo, documento), usar URL direta
