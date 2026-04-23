@@ -1259,25 +1259,32 @@ export class BotService {
       case 'FILE_UPLOAD':
         // Tratar como INPUT genérico com validação específica
         const inputType = currentStep.type.replace('_INPUT', '');
-        const isValidInput = await this.validateInput({ ...currentStep, config: { ...currentStep.config, inputType } }, input);
+        const normalizedInputValue = String(input ?? '').trim();
+        const isValidInput = await this.validateInput(
+          { ...currentStep, config: { ...currentStep.config, inputType } },
+          normalizedInputValue,
+        );
         const inputContext = (session.context as Record<string, any>) || {};
         
         if (isValidInput) {
           const inputVariableName = currentStep.config?.variableName;
+          let updatedInputContext = inputContext;
           if (inputVariableName) {
-            const updatedInputContext = this.variableService.setVariableValue(inputContext, inputVariableName, input);
+            updatedInputContext = this.variableService.setVariableValue(
+              inputContext,
+              inputVariableName,
+              normalizedInputValue,
+            );
             await prisma.botSession.update({
               where: { id: session.id },
               data: { context: updatedInputContext },
             });
           }
-          
-          if (currentStep.nextStepId) {
-            await prisma.botSession.update({
-              where: { id: session.id },
-              data: { currentStepId: currentStep.nextStepId },
-            });
-          }
+
+          // Mesmo comportamento do INPUT/TEXT_INPUT:
+          // avançar e executar próximo step automaticamente quando aplicável.
+          (session as any).context = updatedInputContext;
+          await advanceToNextStep(currentStep.nextStepId, `após ${currentStep.type}`);
         } else {
           const defaultErrorByType: Record<string, string> = {
             NUMBER_INPUT: 'Informe um numero valido',
@@ -1778,6 +1785,23 @@ export class BotService {
     if (inputType === 'NUMBER') {
       const trimmed = (userInput || '').trim();
       if (!trimmed) return false;
+      const digitsOnly = trimmed.replace(/\D/g, '');
+      const minDigits =
+        config.minDigits ??
+        config.minLength ??
+        validation?.minLength;
+      const maxDigits =
+        config.maxDigits ??
+        config.maxLength ??
+        validation?.maxLength;
+
+      if (minDigits !== undefined && minDigits !== null && digitsOnly.length < Number(minDigits)) {
+        return false;
+      }
+      if (maxDigits !== undefined && maxDigits !== null && digitsOnly.length > Number(maxDigits)) {
+        return false;
+      }
+
       const num = Number(trimmed);
       if (Number.isNaN(num) || !Number.isFinite(num)) {
         return false;
