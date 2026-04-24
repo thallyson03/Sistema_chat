@@ -2071,18 +2071,42 @@ export class BotService {
    * Cria uma resposta
    */
   async createResponse(data: CreateResponseData) {
-    const response = await prisma.response.create({
-      data: {
-        intentId: data.intentId,
-        flowStepId: data.flowStepId,
-        type: data.type,
-        content: data.content,
-        buttons: data.buttons,
-        mediaUrl: data.mediaUrl,
-        metadata: data.metadata,
-        order: data.order || 0,
-      },
-    });
+    const response =
+      data.flowStepId
+        ? await prisma.response.upsert({
+            where: { flowStepId: data.flowStepId },
+            update: {
+              intentId: data.intentId,
+              type: data.type,
+              content: data.content,
+              buttons: data.buttons,
+              mediaUrl: data.mediaUrl,
+              metadata: data.metadata,
+              order: data.order || 0,
+            },
+            create: {
+              intentId: data.intentId,
+              flowStepId: data.flowStepId,
+              type: data.type,
+              content: data.content,
+              buttons: data.buttons,
+              mediaUrl: data.mediaUrl,
+              metadata: data.metadata,
+              order: data.order || 0,
+            },
+          })
+        : await prisma.response.create({
+            data: {
+              intentId: data.intentId,
+              flowStepId: data.flowStepId,
+              type: data.type,
+              content: data.content,
+              buttons: data.buttons,
+              mediaUrl: data.mediaUrl,
+              metadata: data.metadata,
+              order: data.order || 0,
+            },
+          });
 
     if (data.flowStepId) {
       await this.markBotPendingByStepId(data.flowStepId);
