@@ -109,6 +109,8 @@ interface Message {
     fileName?: string;
     caption?: string;
     fromBot?: boolean;
+    buttons?: Array<{ text?: string; title?: string; description?: string }>;
+    interactiveType?: string;
     satisfactionSurveyPrompt?: boolean;
     satisfactionSurveyResponse?: boolean;
     score?: number;
@@ -2424,6 +2426,27 @@ export default function Conversations() {
                             ) : (
                               message.content
                             )}
+
+                            {Array.isArray(message.metadata?.buttons) &&
+                              message.metadata!.buttons!.length > 0 && (
+                                <div className="mt-2 space-y-1.5">
+                                  {message.metadata!.buttons!.map((btn, btnIndex) => (
+                                    <div
+                                      key={`${message.id}-btn-${btnIndex}`}
+                                      className={`rounded-lg border px-2.5 py-1.5 text-xs ${
+                                        isOwnMessage
+                                          ? 'border-emerald-300/35 bg-emerald-900/25 text-emerald-100'
+                                          : 'border-[rgba(63,73,69,0.45)] bg-surface-container text-on-surface-variant'
+                                      }`}
+                                    >
+                                      {btn?.text || btn?.title || `Opção ${btnIndex + 1}`}
+                                      {btn?.description ? (
+                                        <div className="mt-0.5 text-[10px] opacity-80">{btn.description}</div>
+                                      ) : null}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                           </div>
                         )}
 

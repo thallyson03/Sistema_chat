@@ -737,6 +737,20 @@ export class MessageService {
       metadata.fromBot = true;
     }
 
+    // Persistir payload interativo para renderização no chat interno (CRM).
+    // O envio externo (WhatsApp) já funciona, mas sem isso a UI não consegue
+    // reconstruir os botões/listas exibidos ao destinatário.
+    if (Array.isArray(data.buttons) && data.buttons.length > 0) {
+      metadata.buttons = data.buttons;
+    }
+    if (data.metadata && typeof data.metadata === 'object') {
+      metadata.interactiveType = data.metadata.interactiveType;
+      metadata.listButtonText = data.metadata.listButtonText;
+      metadata.listHeaderText = data.metadata.listHeaderText;
+      metadata.listFooterText = data.metadata.listFooterText;
+      metadata.listSectionTitle = data.metadata.listSectionTitle;
+    }
+
     // Se userId vier como string vazia (caso de mensagens de bot), converter para null
     const normalizedUserId = data.userId && data.userId.trim().length > 0 ? data.userId : null;
 
