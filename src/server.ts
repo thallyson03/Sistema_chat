@@ -47,6 +47,15 @@ import { ConversationDistributionService } from './services/conversationDistribu
 whatsappOfficial.init();
 
 const app = express();
+const trustProxyEnv = process.env.TRUST_PROXY;
+if (trustProxyEnv === 'true') {
+  app.set('trust proxy', true);
+} else if (trustProxyEnv && !Number.isNaN(Number(trustProxyEnv))) {
+  app.set('trust proxy', Number(trustProxyEnv));
+} else {
+  app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
+}
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
