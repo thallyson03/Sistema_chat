@@ -17,6 +17,7 @@ import api from '../utils/api';
 import { Button } from '../components/ui/Button';
 import JourneyNodeConfigModal from '../components/JourneyNodeConfigModal';
 import { JourneyCustomNode } from '../components/JourneyCustomNode';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 type JourneyStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
 type JourneyNodeType = 'TRIGGER' | 'ACTION' | 'CONDITION' | 'CONTROL';
@@ -68,6 +69,7 @@ interface JourneyStats {
 }
 
 export default function Journeys() {
+  const confirm = useConfirm();
   const [journeys, setJourneys] = useState<Journey[]>([]);
   const [selectedJourney, setSelectedJourney] = useState<JourneyWithGraph | null>(null);
   const [loading, setLoading] = useState(true);
@@ -261,7 +263,11 @@ export default function Journeys() {
   };
 
   const handleDeleteJourney = async (journeyId: string, journeyName: string) => {
-    if (!window.confirm(`Tem certeza que deseja excluir a jornada "${journeyName}"?\n\nEsta ação não pode ser desfeita e todos os blocos e configurações serão perdidos.`)) {
+    const confirmed = await confirm({
+      title: 'Excluir jornada',
+      message: `Tem certeza que deseja excluir a jornada "${journeyName}"?\n\nEsta ação não pode ser desfeita e todos os blocos e configurações serão perdidos.`,
+    });
+    if (!confirmed) {
       return;
     }
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import PipelineAutomationModal from '../components/PipelineAutomationModal';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface Pipeline {
   id: string;
@@ -61,6 +62,7 @@ interface PipelineCustomField {
 }
 
 export default function Pipelines() {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null);
@@ -157,11 +159,11 @@ export default function Pipelines() {
   const handleDeleteSelectedDeals = async () => {
     if (!selectedPipeline || selectedDealIds.length === 0) return;
 
-    if (
-      !window.confirm(
-        `Deseja realmente excluir ${selectedDealIds.length} negócio(s) selecionado(s)? Esta ação não pode ser desfeita.`
-      )
-    ) {
+    const confirmed = await confirm({
+      title: 'Excluir negócios',
+      message: `Deseja realmente excluir ${selectedDealIds.length} negócio(s) selecionado(s)? Esta ação não pode ser desfeita.`,
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -626,6 +628,7 @@ function EditPipelineModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const confirm = useConfirm();
   const [name, setName] = useState(pipeline.name);
   const [description, setDescription] = useState(pipeline.description || '');
   const [color, setColor] = useState(pipeline.color || '#3B82F6');
@@ -672,11 +675,11 @@ function EditPipelineModal({
   };
 
   const handleDeleteStage = async (stage: PipelineStage) => {
-    if (
-      !window.confirm(
-        `Deseja realmente excluir a etapa "${stage.name}"? Ela não pode ter negócios associados.`
-      )
-    ) {
+    const confirmed = await confirm({
+      title: 'Excluir etapa',
+      message: `Deseja realmente excluir a etapa "${stage.name}"? Ela não pode ter negócios associados.`,
+    });
+    if (!confirmed) {
       return;
     }
 

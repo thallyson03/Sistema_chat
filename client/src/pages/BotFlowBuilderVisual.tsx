@@ -17,6 +17,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import api from '../utils/api';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface Flow {
   id: string;
@@ -77,59 +78,115 @@ interface UserOption {
   email?: string;
 }
 
+const getNodeCardStyle = (
+  selected: boolean,
+  accent: string,
+  minWidth = '180px',
+  maxWidth = '210px',
+) => ({
+  background: 'linear-gradient(180deg, #1a2027 0%, #171c22 100%)',
+  color: '#e5e7eb',
+  borderRadius: '12px',
+  minWidth,
+  maxWidth,
+  boxShadow: selected
+    ? `0 0 0 1px ${accent}, 0 14px 28px rgba(0, 0, 0, 0.45)`
+    : '0 10px 22px rgba(0,0,0,0.34)',
+  border: selected ? `1px solid ${accent}` : '1px solid #2a3340',
+  position: 'relative' as const,
+  overflow: 'hidden' as const,
+});
+
+const nodeHeaderStyle = {
+  padding: '9px 10px',
+  borderBottom: '1px solid #2d3748',
+  fontWeight: 700,
+  fontSize: '11px',
+  letterSpacing: '0.6px',
+  textTransform: 'uppercase' as const,
+  color: '#d1d5db',
+};
+
+const nodeBodyBoxStyle = {
+  fontSize: '12px',
+  color: '#e5e7eb',
+  marginTop: '8px',
+  backgroundColor: '#0f1419',
+  border: '1px solid #293241',
+  borderRadius: '6px',
+  padding: '8px 9px',
+  minHeight: '16px',
+};
+
+const renderNodeHeader = (label: string, icon: string, iconColor: string) => (
+  <div style={{ ...nodeHeaderStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
+    <span className="material-symbols-rounded" style={{ fontSize: '13px', color: iconColor }}>
+      {icon}
+    </span>
+    <span>{label}</span>
+  </div>
+);
+
+const getDeleteButtonStyle = (bg = '#ef4444') => ({
+  position: 'absolute' as const,
+  top: '5px',
+  right: '5px',
+  width: '24px',
+  height: '24px',
+  borderRadius: '50%',
+  backgroundColor: bg,
+  color: 'white',
+  border: 'none',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '14px',
+  fontWeight: 'bold',
+  zIndex: 10,
+  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+});
+
+const getHandleStyle = (accent: string) => ({
+  background: accent,
+  width: '14px',
+  height: '14px',
+  border: '2px solid #0f172a',
+});
+
 // Componente de nó customizado para mensagem
 const MessageNode = ({ data, selected, id }: any) => {
+  const accent = '#22c55e';
   const buttons = data.buttons || [];
   
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#3b82f6',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(59, 130, 246, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #60a5fa' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent, '250px', '300px')}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
+            }
+            data.onDelete(id);
           }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#ef4444',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            zIndex: 10,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
+          style={getDeleteButtonStyle()}
           title="Excluir bloco"
         >
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#60a5fa', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>💬 Mensagem</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: buttons.length > 0 ? '10px' : '0' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Mensagem', 'chat', '#22c55e')}
+      <div style={{ padding: '12px' }}>
+      <div style={{ fontSize: '12px', lineHeight: 1.35, color: '#e5e7eb', marginBottom: buttons.length > 0 ? '10px' : '0', backgroundColor: '#0f1419', border: '1px solid #293241', borderRadius: '6px', padding: '8px 9px' }}>
         {data.content ? (data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content) : 'Nova mensagem'}
       </div>
       {buttons.length > 0 && (
@@ -138,12 +195,13 @@ const MessageNode = ({ data, selected, id }: any) => {
             <div
               key={idx}
               style={{
-                padding: '6px 10px',
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                borderRadius: '5px',
+                padding: '8px 10px',
+                backgroundColor: idx === 0 ? 'rgba(34, 197, 94, 0.15)' : '#0f1419',
+                borderRadius: '6px',
                 fontSize: '11px',
-                textAlign: 'center',
-                border: '1px solid rgba(255,255,255,0.3)',
+                textAlign: 'left',
+                border: idx === 0 ? '1px solid #22c55e' : '1px solid #2d3748',
+                color: idx === 0 ? '#86efac' : '#cbd5e1',
               }}
             >
               {btn.text || `Botão ${idx + 1}`}
@@ -151,62 +209,57 @@ const MessageNode = ({ data, selected, id }: any) => {
           ))}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#60a5fa', width: '16px', height: '16px', border: '2px solid white' }} />
+      </div>
+      {buttons.length > 0 ? (
+        buttons.map((btn: any, idx: number) => (
+          <Handle
+            key={`btn-handle-${idx}`}
+            type="source"
+            position={Position.Right}
+            id={`btn-${idx}`}
+            style={{
+              ...getHandleStyle(accent),
+              top: `${58 + idx * 16}%`,
+            }}
+          />
+        ))
+      ) : (
+        <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
+      )}
     </div>
   );
 };
 
 // Componente de nó customizado para condição
 const ConditionNode = ({ data, selected, id }: any) => {
+  const accent = '#f59e0b';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#f59e0b',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(245, 158, 11, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #fbbf24' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
+            }
+            data.onDelete(id);
           }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#ef4444',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            zIndex: 10,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
+          style={getDeleteButtonStyle()}
           title="Excluir bloco"
         >
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#fbbf24', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🔀 Condição</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '10px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Condição', 'alt_route', '#f59e0b')}
+      <div style={{ padding: '10px 10px', fontSize: '12px', color: '#cbd5e1', marginBottom: '8px' }}>
         {data.conditionsList?.length > 0
           ? data.conditionsList.length === 1
             ? `${data.condition || 'message.content'} ${data.operator || ''} ${data.value || '?'}`
@@ -219,132 +272,91 @@ const ConditionNode = ({ data, selected, id }: any) => {
         <div style={{
           flex: 1,
           padding: '6px',
-          backgroundColor: 'rgba(255,255,255,0.2)',
+          backgroundColor: '#0f1419',
           borderRadius: '5px',
           fontSize: '11px',
           textAlign: 'center',
-          border: '1px solid rgba(255,255,255,0.3)',
+          border: '1px solid #2d3748',
         }}>
           Sim
         </div>
         <div style={{
           flex: 1,
           padding: '6px',
-          backgroundColor: 'rgba(255,255,255,0.2)',
+          backgroundColor: '#0f1419',
           borderRadius: '5px',
           fontSize: '11px',
           textAlign: 'center',
-          border: '1px solid rgba(255,255,255,0.3)',
+          border: '1px solid #2d3748',
         }}>
           Não
         </div>
       </div>
-      <Handle type="source" position={Position.Bottom} id="true" style={{ background: '#10b981', left: '25%', width: '16px', height: '16px', border: '2px solid white' }} />
-      <Handle type="source" position={Position.Bottom} id="false" style={{ background: '#ef4444', left: '75%', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} id="true" style={{ ...getHandleStyle('#10b981'), top: '30%' }} />
+      <Handle type="source" position={Position.Right} id="false" style={{ ...getHandleStyle('#ef4444'), top: '70%' }} />
     </div>
   );
 };
 
 // Componente de nó customizado para handoff
 const HandoffNode = ({ data, selected, id }: any) => {
+  const accent = '#ef4444';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#ef4444',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '150px',
-        textAlign: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-        position: 'relative',
-      }}
+      style={{ ...getNodeCardStyle(selected, accent, '170px', '220px'), textAlign: 'center' }}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
+            }
+            data.onDelete(id);
           }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#dc2626',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            zIndex: 10,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
+          style={getDeleteButtonStyle('#dc2626')}
           title="Excluir bloco"
         >
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#f87171', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold' }}>👤 Transferir</div>
-      <div style={{ fontSize: '12px', opacity: 0.9 }}>Para humano</div>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Handoff', 'support_agent', '#ef4444')}
+      <div style={{ padding: '10px 10px', fontSize: '12px', color: '#cbd5e1', textTransform: 'uppercase', lineHeight: 1.35 }}>Transferir para humano</div>
     </div>
   );
 };
 
 // Componente de nó customizado para mover lead (deal) em pipelines
 const MoveDealNode = ({ data, selected, id }: any) => {
+  const accent = '#0f766e';
   const pipelineName = data.config?.pipelineName || 'Funil atual';
   const stageName = data.config?.stageName || 'Mesma etapa';
 
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#0f766e',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '260px',
-        boxShadow: selected ? '0 4px 12px rgba(15,118,110,0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #14b8a6' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent, '220px', '260px')}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
+            }
+            data.onDelete(id);
           }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#ef4444',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            zIndex: 10,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
+          style={getDeleteButtonStyle()}
           title="Excluir bloco"
         >
           ×
@@ -352,18 +364,18 @@ const MoveDealNode = ({ data, selected, id }: any) => {
       )}
       <Handle
         type="target"
-        position={Position.Top}
-        style={{ background: '#14b8a6', width: '16px', height: '16px', border: '2px solid white' }}
+        position={Position.Left}
+        style={getHandleStyle(accent)}
       />
-      <div style={{ fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>📦 Mover lead</div>
-      <div style={{ fontSize: '12px', opacity: 0.9 }}>
+      {renderNodeHeader('Mover Lead', 'move_up', '#0f766e')}
+      <div style={{ padding: '12px', fontSize: '12px', color: '#cbd5e1' }}>
         <div>Funil: {pipelineName}</div>
         <div>Coluna: {stageName}</div>
       </div>
       <Handle
         type="source"
-        position={Position.Bottom}
-        style={{ background: '#14b8a6', width: '16px', height: '16px', border: '2px solid white' }}
+        position={Position.Right}
+        style={getHandleStyle(accent)}
       />
     </div>
   );
@@ -371,63 +383,44 @@ const MoveDealNode = ({ data, selected, id }: any) => {
 
 // Componente de nó customizado para delay
 const DelayNode = ({ data, selected, id }: any) => {
+  const accent = '#6b7280';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#6b7280',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '150px',
-        textAlign: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-        position: 'relative',
-      }}
+      style={{ ...getNodeCardStyle(selected, accent, '170px', '230px'), textAlign: 'center' }}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
+            }
+            data.onDelete(id);
           }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#ef4444',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            zIndex: 10,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
+          style={getDeleteButtonStyle()}
           title="Excluir bloco"
         >
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#9ca3af', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>⏱️ Aguardar</div>
-      <div style={{ fontSize: '12px', opacity: 0.9 }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid #2d3748', fontWeight: 700, fontSize: '14px', color: '#d1d5db' }}>⏱️ Delay</div>
+      <div style={{ padding: '12px', fontSize: '12px', color: '#cbd5e1' }}>
         {data.delay ? `${data.delay}ms` : 'Tempo'}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#9ca3af', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para input
 const InputNode = ({ data, selected, id }: any) => {
+  const accent = '#10b981';
   const inputType = data.config?.inputType || 'TEXT';
   const icons: Record<string, string> = {
     TEXT: '📝',
@@ -440,55 +433,29 @@ const InputNode = ({ data, selected, id }: any) => {
   
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#10b981',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(16, 185, 129, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #34d399' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#ef4444',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            zIndex: 10,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
+          style={getDeleteButtonStyle()}
           title="Excluir bloco"
         >
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#34d399', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid #2d3748', fontWeight: 700, fontSize: '14px', color: '#d1d5db' }}>
         {icons[inputType] || '📝'} Input: {inputType}
       </div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <div style={{ padding: '12px', fontSize: '12px', color: '#cbd5e1', marginBottom: '5px' }}>
         {data.config?.placeholder || 'Aguardando resposta...'}
       </div>
       {data.config?.variableName && (
@@ -496,62 +463,37 @@ const InputNode = ({ data, selected, id }: any) => {
           → Salvar em: {data.config.variableName}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#34d399', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para set variable
 const SetVariableNode = ({ data, selected, id }: any) => {
+  const accent = '#8b5cf6';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#8b5cf6',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(139, 92, 246, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #a78bfa' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#ef4444',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            zIndex: 10,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
+          style={getDeleteButtonStyle()}
           title="Excluir bloco"
         >
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#a78bfa', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🔧 Definir Variável</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Definir Variável', 'tune', '#8b5cf6')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px' }}>
         {data.config?.variableName ? `{{${data.config.variableName}}}` : 'Nova variável'}
       </div>
       {data.config?.value && (
@@ -559,7 +501,7 @@ const SetVariableNode = ({ data, selected, id }: any) => {
           = {String(data.config.value).length > 30 ? String(data.config.value).substring(0, 30) + '...' : data.config.value}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#a78bfa', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
@@ -576,62 +518,36 @@ const HTTPRequestNode = ({ data, selected, id }: any) => {
     DELETE: '#ef4444',
     PATCH: '#8b5cf6',
   };
+  const accent = methodColors[method] || '#6b7280';
   
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: methodColors[method] || '#6b7280',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '350px',
-        boxShadow: selected ? `0 4px 12px ${methodColors[method] || '#6b7280'}40` : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid rgba(255,255,255,0.5)' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent, '220px', '350px')}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#ef4444',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            zIndex: 10,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
+          style={getDeleteButtonStyle()}
           title="Excluir bloco"
         >
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: 'rgba(255,255,255,0.8)', width: '16px', height: '16px', border: '2px solid #333' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
-        🌐 HTTP {method}
-      </div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px', wordBreak: 'break-word' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader(`HTTP ${method}`, 'language', accent)}
+      <div style={{ padding: '10px 10px' }}>
+      <div style={{ ...nodeBodyBoxStyle, wordBreak: 'break-word' as const }}>
         {url ? (url.length > 40 ? url.substring(0, 40) + '...' : url) : 'Nova requisição'}
       </div>
       {data.config?.variableName && (
-        <div style={{ fontSize: '11px', opacity: 0.8, fontStyle: 'italic', marginTop: '5px' }}>
+        <div style={{ fontSize: '10px', opacity: 0.8, fontStyle: 'italic', marginTop: '6px' }}>
           → Salvar em: {data.config.variableName}
         </div>
       )}
@@ -639,7 +555,7 @@ const HTTPRequestNode = ({ data, selected, id }: any) => {
         <div style={{ 
           marginTop: '10px', 
           padding: '8px', 
-          backgroundColor: 'rgba(0,0,0,0.2)', 
+          backgroundColor: '#0f1419', 
           borderRadius: '5px',
           fontSize: '11px',
           maxHeight: '100px',
@@ -664,34 +580,29 @@ const HTTPRequestNode = ({ data, selected, id }: any) => {
           {data.config.fieldMappings.length} campo(s) mapeado(s)
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: 'rgba(255,255,255,0.8)', width: '16px', height: '16px', border: '2px solid #333' }} />
+      </div>
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Image
 const ImageNode = ({ data, selected, id }: any) => {
+  const accent = '#ec4899';
+  const imageSrc = String(data.config?.imageUrl || data.mediaUrl || '').trim();
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#ec4899',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(236, 72, 153, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #f472b6' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -717,44 +628,45 @@ const ImageNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#f472b6', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🖼️ Imagem</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px', wordBreak: 'break-word' }}>
-        {data.config?.imageUrl ? (data.config.imageUrl.length > 40 ? data.config.imageUrl.substring(0, 40) + '...' : data.config.imageUrl) : 'Nova imagem'}
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Imagem', 'image', '#ec4899')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px', padding: '0', overflow: 'hidden' }}>
+        {imageSrc ? (
+          <img
+            src={imageSrc}
+            alt={data.config?.altText || 'Imagem do bloco'}
+            style={{ width: '100%', height: '72px', objectFit: 'cover', display: 'block' }}
+          />
+        ) : (
+          <div style={{ padding: '8px 9px', color: '#9ca3af' }}>Nova imagem</div>
+        )}
       </div>
       {data.config?.altText && (
         <div style={{ fontSize: '11px', opacity: 0.8, fontStyle: 'italic' }}>
           Alt: {data.config.altText}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#f472b6', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Video
 const VideoNode = ({ data, selected, id }: any) => {
+  const accent = '#dc2626';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#dc2626',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(220, 38, 38, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #f87171' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -780,9 +692,9 @@ const VideoNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#f87171', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🎥 Vídeo</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px', wordBreak: 'break-word' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Vídeo', 'videocam', '#dc2626')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px', wordBreak: 'break-word' as const }}>
         {data.config?.videoUrl ? (data.config.videoUrl.length > 40 ? data.config.videoUrl.substring(0, 40) + '...' : data.config.videoUrl) : 'Novo vídeo'}
       </div>
       {data.config?.platform && (
@@ -790,34 +702,27 @@ const VideoNode = ({ data, selected, id }: any) => {
           Plataforma: {data.config.platform}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#f87171', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Audio
 const AudioNode = ({ data, selected, id }: any) => {
+  const accent = '#7c3aed';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#7c3aed',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(124, 58, 237, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #a78bfa' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -843,39 +748,32 @@ const AudioNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#a78bfa', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🎵 Áudio</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px', wordBreak: 'break-word' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Áudio', 'graphic_eq', '#7c3aed')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px', wordBreak: 'break-word' as const }}>
         {data.config?.audioUrl ? (data.config.audioUrl.length > 40 ? data.config.audioUrl.substring(0, 40) + '...' : data.config.audioUrl) : 'Novo áudio'}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#a78bfa', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Embed
 const EmbedNode = ({ data, selected, id }: any) => {
+  const accent = '#059669';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#059669',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(5, 150, 105, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #34d399' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -901,39 +799,32 @@ const EmbedNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#34d399', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>📦 Embed</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px', wordBreak: 'break-word' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Embed', 'code', '#059669')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px', wordBreak: 'break-word' as const }}>
         {data.config?.embedUrl ? (data.config.embedUrl.length > 40 ? data.config.embedUrl.substring(0, 40) + '...' : data.config.embedUrl) : 'Novo embed'}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#34d399', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Email Input
 const EmailInputNode = ({ data, selected, id }: any) => {
+  const accent = '#f59e0b';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#f59e0b',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(245, 158, 11, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #fbbf24' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -959,44 +850,39 @@ const EmailInputNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#fbbf24', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>📧 Email</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Email', 'mail', '#f59e0b')}
+      <div style={{ padding: '10px 10px' }}>
+      <div style={nodeBodyBoxStyle}>
         {data.config?.placeholder || 'Digite seu email...'}
       </div>
       {data.config?.variableName && (
-        <div style={{ fontSize: '11px', opacity: 0.8, fontStyle: 'italic' }}>
+        <div style={{ fontSize: '10px', opacity: 0.8, fontStyle: 'italic', marginTop: '6px' }}>
           → Salvar em: {data.config.variableName}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#fbbf24', width: '16px', height: '16px', border: '2px solid white' }} />
+      </div>
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Number Input
 const NumberInputNode = ({ data, selected, id }: any) => {
+  const accent = '#06b6d4';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#06b6d4',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(6, 182, 212, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #22d3ee' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1022,49 +908,44 @@ const NumberInputNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#22d3ee', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🔢 Número</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Número', 'tag', '#06b6d4')}
+      <div style={{ padding: '10px 10px' }}>
+      <div style={nodeBodyBoxStyle}>
         {data.config?.placeholder || 'Digite um número...'}
       </div>
       {data.config?.min !== undefined && data.config?.max !== undefined && (
-        <div style={{ fontSize: '11px', opacity: 0.8 }}>
+        <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '6px' }}>
           Min: {data.config.min} | Max: {data.config.max}
         </div>
       )}
       {data.config?.variableName && (
-        <div style={{ fontSize: '11px', opacity: 0.8, fontStyle: 'italic' }}>
+        <div style={{ fontSize: '10px', opacity: 0.8, fontStyle: 'italic', marginTop: '6px' }}>
           → Salvar em: {data.config.variableName}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#22d3ee', width: '16px', height: '16px', border: '2px solid white' }} />
+      </div>
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Phone Input
 const PhoneInputNode = ({ data, selected, id }: any) => {
+  const accent = '#14b8a6';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#14b8a6',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(20, 184, 166, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #5eead4' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1090,44 +971,39 @@ const PhoneInputNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#5eead4', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>📱 Telefone</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Telefone', 'call', '#14b8a6')}
+      <div style={{ padding: '10px 10px' }}>
+      <div style={nodeBodyBoxStyle}>
         {data.config?.placeholder || 'Digite seu telefone...'}
       </div>
       {data.config?.variableName && (
-        <div style={{ fontSize: '11px', opacity: 0.8, fontStyle: 'italic' }}>
+        <div style={{ fontSize: '10px', opacity: 0.8, fontStyle: 'italic', marginTop: '6px' }}>
           → Salvar em: {data.config.variableName}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#5eead4', width: '16px', height: '16px', border: '2px solid white' }} />
+      </div>
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Date Input
 const DateInputNode = ({ data, selected, id }: any) => {
+  const accent = '#a855f7';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#a855f7',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(168, 85, 247, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #c084fc' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1153,44 +1029,39 @@ const DateInputNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#c084fc', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>📅 Data</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Data', 'calendar_month', '#a855f7')}
+      <div style={{ padding: '10px 10px' }}>
+      <div style={nodeBodyBoxStyle}>
         {data.config?.label || 'Selecione uma data...'}
       </div>
       {data.config?.variableName && (
-        <div style={{ fontSize: '11px', opacity: 0.8, fontStyle: 'italic' }}>
+        <div style={{ fontSize: '10px', opacity: 0.8, fontStyle: 'italic', marginTop: '6px' }}>
           → Salvar em: {data.config.variableName}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#c084fc', width: '16px', height: '16px', border: '2px solid white' }} />
+      </div>
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para File Upload
 const FileUploadNode = ({ data, selected, id }: any) => {
+  const accent = '#f97316';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#f97316',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(249, 115, 22, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #fb923c' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1216,49 +1087,44 @@ const FileUploadNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#fb923c', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>📎 Upload</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Upload', 'upload_file', '#f97316')}
+      <div style={{ padding: '10px 10px' }}>
+      <div style={nodeBodyBoxStyle}>
         {data.config?.accept ? `Tipos: ${data.config.accept}` : 'Enviar arquivo...'}
       </div>
       {data.config?.maxSize && (
-        <div style={{ fontSize: '11px', opacity: 0.8 }}>
+        <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '6px' }}>
           Tamanho máx: {data.config.maxSize}MB
         </div>
       )}
       {data.config?.variableName && (
-        <div style={{ fontSize: '11px', opacity: 0.8, fontStyle: 'italic' }}>
+        <div style={{ fontSize: '10px', opacity: 0.8, fontStyle: 'italic', marginTop: '6px' }}>
           → Salvar em: {data.config.variableName}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#fb923c', width: '16px', height: '16px', border: '2px solid white' }} />
+      </div>
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para Redirect
 const RedirectNode = ({ data, selected, id }: any) => {
+  const accent = '#6366f1';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#6366f1',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(99, 102, 241, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #818cf8' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1284,9 +1150,9 @@ const RedirectNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#818cf8', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🔀 Redirecionar</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px', wordBreak: 'break-word' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
+      {renderNodeHeader('Redirecionar', 'open_in_new', '#6366f1')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px', wordBreak: 'break-word' as const }}>
         {data.config?.url ? (data.config.url.length > 40 ? data.config.url.substring(0, 40) + '...' : data.config.url) : 'Nova URL'}
       </div>
       {data.config?.openInNewTab && (
@@ -1296,8 +1162,8 @@ const RedirectNode = ({ data, selected, id }: any) => {
       )}
       <Handle
         type="source"
-        position={Position.Bottom}
-        style={{ background: '#818cf8', width: '16px', height: '16px', border: '2px solid white' }}
+        position={Position.Right}
+        style={getHandleStyle(accent)}
       />
     </div>
   );
@@ -1305,27 +1171,20 @@ const RedirectNode = ({ data, selected, id }: any) => {
 
 // Componente de nó customizado para Script
 const ScriptNode = ({ data, selected, id }: any) => {
+  const accent = '#1e293b';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#1e293b',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(30, 41, 59, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #475569' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1351,39 +1210,32 @@ const ScriptNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#475569', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>⚙️ Script</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle('#475569')} />
+      {renderNodeHeader('Script', 'terminal', '#475569')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px' }}>
         {data.config?.code ? (data.config.code.length > 30 ? data.config.code.substring(0, 30) + '...' : data.config.code) : 'Código JavaScript'}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#475569', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle('#475569')} />
     </div>
   );
 };
 
 // Componente de nó customizado para Wait (diferente de Delay)
 const WaitNode = ({ data, selected, id }: any) => {
+  const accent = '#64748b';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#64748b',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(100, 116, 139, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #94a3b8' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1409,9 +1261,9 @@ const WaitNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#94a3b8', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>⏸️ Aguardar</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle('#94a3b8')} />
+      {renderNodeHeader('Aguardar', 'hourglass_top', '#94a3b8')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px' }}>
         {data.config?.waitFor ? data.config.waitFor : 'Aguardando evento...'}
       </div>
       {data.config?.message && (
@@ -1419,34 +1271,27 @@ const WaitNode = ({ data, selected, id }: any) => {
           {data.config.message}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#94a3b8', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle('#94a3b8')} />
     </div>
   );
 };
 
 // Componente de nó customizado para Typebot Link
 const TypebotLinkNode = ({ data, selected, id }: any) => {
+  const accent = '#0ea5e9';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#0ea5e9',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(14, 165, 233, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #38bdf8' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1472,39 +1317,32 @@ const TypebotLinkNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#38bdf8', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🔗 Link Bot</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle('#38bdf8')} />
+      {renderNodeHeader('Link Bot', 'link', '#38bdf8')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px' }}>
         {data.config?.botId ? `Bot: ${data.config.botId}` : 'Selecione um bot...'}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#38bdf8', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle('#38bdf8')} />
     </div>
   );
 };
 
 // Componente de nó customizado para AB Test
 const ABTestNode = ({ data, selected, id }: any) => {
+  const accent = '#9333ea';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#9333ea',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(147, 51, 234, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #a855f7' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1530,9 +1368,9 @@ const ABTestNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#a855f7', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🧪 Teste A/B</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle('#a855f7')} />
+      {renderNodeHeader('Teste A/B', 'science', '#a855f7')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px' }}>
         {data.config?.variants ? `${data.config.variants.length} variante(s)` : '2 variantes'}
       </div>
       {data.config?.splitPercent && (
@@ -1540,35 +1378,28 @@ const ABTestNode = ({ data, selected, id }: any) => {
           Split: {data.config.splitPercent}% / {100 - data.config.splitPercent}%
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} id="variantA" style={{ background: '#10b981', left: '25%', width: '16px', height: '16px', border: '2px solid white' }} />
-      <Handle type="source" position={Position.Bottom} id="variantB" style={{ background: '#3b82f6', left: '75%', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} id="variantA" style={{ ...getHandleStyle('#10b981'), top: '30%' }} />
+      <Handle type="source" position={Position.Right} id="variantB" style={{ ...getHandleStyle('#3b82f6'), top: '70%' }} />
     </div>
   );
 };
 
 // Componente de nó customizado para Jump
 const JumpNode = ({ data, selected, id }: any) => {
+  const accent = '#eab308';
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#eab308',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(234, 179, 8, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #facc15' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1594,9 +1425,9 @@ const JumpNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#facc15', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>↷ Pular</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle('#facc15')} />
+      {renderNodeHeader('Pular', 'redo', '#facc15')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px' }}>
         {data.config?.targetStepId ? `Para: ${data.config.targetStepId.substring(0, 20)}...` : 'Selecione destino...'}
       </div>
     </div>
@@ -1605,28 +1436,21 @@ const JumpNode = ({ data, selected, id }: any) => {
 
 // Componente de nó customizado para Picture Choice
 const PictureChoiceNode = ({ data, selected, id }: any) => {
+  const accent = '#be185d';
   const choices = data.config?.choices || [];
   return (
     <div
-      style={{
-        padding: '15px 20px',
-        backgroundColor: '#be185d',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '200px',
-        maxWidth: '300px',
-        boxShadow: selected ? '0 4px 12px rgba(190, 24, 93, 0.4)' : '0 2px 8px rgba(0,0,0,0.2)',
-        border: selected ? '2px solid #ec4899' : '2px solid transparent',
-        position: 'relative',
-      }}
+      style={getNodeCardStyle(selected, accent)}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-              data.onDelete(id);
+            if (data.onRequestDelete) {
+              data.onRequestDelete(id);
+              return;
             }
+            data.onDelete(id);
           }}
           style={{
             position: 'absolute',
@@ -1652,9 +1476,9 @@ const PictureChoiceNode = ({ data, selected, id }: any) => {
           ×
         </button>
       )}
-      <Handle type="target" position={Position.Top} style={{ background: '#ec4899', width: '16px', height: '16px', border: '2px solid white' }} />
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>🖼️ Escolha com Imagem</div>
-      <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '5px' }}>
+      <Handle type="target" position={Position.Left} style={getHandleStyle('#ec4899')} />
+      {renderNodeHeader('Escolha com Imagem', 'photo_library', '#ec4899')}
+      <div style={{ ...nodeBodyBoxStyle, margin: '10px' }}>
         {choices.length > 0 ? `${choices.length} opção(ões)` : 'Nenhuma opção'}
       </div>
       {data.config?.variableName && (
@@ -1662,63 +1486,56 @@ const PictureChoiceNode = ({ data, selected, id }: any) => {
           → Salvar em: {data.config.variableName}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#ec4899', width: '16px', height: '16px', border: '2px solid white' }} />
+      <Handle type="source" position={Position.Right} style={getHandleStyle('#ec4899')} />
     </div>
   );
 };
 
 // Componente de nó customizado para início
 const StartNode = ({ data }: any) => {
+  const accent = '#22c55e';
   return (
     <div
       style={{
-        padding: '15px 20px',
-        backgroundColor: '#10b981',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '150px',
-        textAlign: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-        fontWeight: 'bold',
+        ...getNodeCardStyle(false, accent, '250px', '300px'),
         position: 'relative',
       }}
     >
-      🚀 Início
-      <Handle type="source" position={Position.Bottom} style={{ background: '#34d399', width: '16px', height: '16px', border: '2px solid white' }} />
+      {renderNodeHeader('Início do Fluxo', 'flag', '#4ade80')}
+      <div style={{ padding: '10px 12px', fontSize: '12px', color: '#cbd5e1', lineHeight: 1.35 }}>
+        {data?.description || 'Quando o usuário inicia a conversa pela primeira vez.'}
+      </div>
+      <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
     </div>
   );
 };
 
 // Componente de nó customizado para fim
 const EndNode = ({ data }: any) => {
+  const accent = '#ef4444';
   return (
     <div
       style={{
-        padding: '15px 20px',
-        backgroundColor: '#ef4444',
-        color: 'white',
-        borderRadius: '8px',
-        minWidth: '150px',
+        ...getNodeCardStyle(false, accent, '170px', '220px'),
         textAlign: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         fontWeight: 'bold',
         position: 'relative',
       }}
     >
       <Handle 
         type="target" 
-        position={Position.Top} 
+        position={Position.Left} 
         isConnectable={true}
         style={{ 
-          background: '#f87171', 
-          width: '20px', 
-          height: '20px', 
-          border: '2px solid white',
+          ...getHandleStyle(accent),
           cursor: 'crosshair',
           zIndex: 1000
         }} 
       />
-      🏁 Fim
+      <div style={{ padding: '10px 12px', fontSize: '12px', letterSpacing: '0.6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+        <span className="material-symbols-rounded" style={{ fontSize: '14px', color: '#ef4444' }}>stop_circle</span>
+        <span>Fim</span>
+      </div>
     </div>
   );
 };
@@ -1790,6 +1607,7 @@ const nodeTypes: NodeTypes = {
 };
 
 export default function BotFlowBuilderVisual() {
+  const confirm = useConfirm();
   const { botId } = useParams<{ botId: string }>();
   const navigate = useNavigate();
   const [botMeta, setBotMeta] = useState<BotMeta | null>(null);
@@ -1805,6 +1623,7 @@ export default function BotFlowBuilderVisual() {
     order: 0,
     intentId: '',
     config: {} as any,
+    buttons: [] as any[],
   });
   const [showFlowModal, setShowFlowModal] = useState(false);
   const [flowFormData, setFlowFormData] = useState({
@@ -1822,6 +1641,8 @@ export default function BotFlowBuilderVisual() {
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [pipelines, setPipelines] = useState<any[]>([]);
+  const [selectedBlockType, setSelectedBlockType] = useState<string>('condition');
+
 
   // Função para substituir variáveis no preview
   const parsePreviewVariables = useCallback((text: string, context?: Record<string, any>): string => {
@@ -2029,6 +1850,17 @@ export default function BotFlowBuilderVisual() {
     setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
   }, []);
 
+  const requestNodeDelete = useCallback((nodeId: string) => {
+    (async () => {
+      const confirmed = await confirm({
+        title: 'Excluir bloco',
+        message: 'Tem certeza que deseja excluir este bloco?',
+      });
+      if (!confirmed) return;
+      handleDeleteNode(nodeId);
+    })();
+  }, [confirm, handleDeleteNode]);
+
   // Adicionar suporte à tecla Delete para deletar nós selecionados
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2042,9 +1874,7 @@ export default function BotFlowBuilderVisual() {
             event.preventDefault();
             const nodeToDelete = selectedNodes[0];
             if (nodeToDelete.id !== 'start' && nodeToDelete.id !== 'end') {
-              if (window.confirm('Tem certeza que deseja excluir este bloco?')) {
-                handleDeleteNode(nodeToDelete.id);
-              }
+              requestNodeDelete(nodeToDelete.id);
             }
           }
         }
@@ -2055,7 +1885,7 @@ export default function BotFlowBuilderVisual() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showStepModal, handleDeleteNode]);
+  }, [showStepModal, requestNodeDelete]);
 
   const loadFlowToCanvas = useCallback((flow: Flow) => {
     const newNodes: Node[] = [];
@@ -2109,6 +1939,7 @@ export default function BotFlowBuilderVisual() {
           data: {
             label: step.type,
             content: step.response?.content || '',
+            mediaUrl: step.response?.mediaUrl || '',
             condition: step.conditions?.[0]?.condition || '',
             operator: step.conditions?.[0]?.operator || '',
             value: step.conditions?.[0]?.value || '',
@@ -2120,6 +1951,7 @@ export default function BotFlowBuilderVisual() {
             config: step.config || {},
             order: step.order,
             onDelete: handleDeleteNode,
+            onRequestDelete: requestNodeDelete,
           },
         });
 
@@ -2139,6 +1971,26 @@ export default function BotFlowBuilderVisual() {
               target: nextId,
             });
           }
+        }
+
+        // Conexões por botão (MESSAGE com botões)
+        if (step.type === 'MESSAGE' && Array.isArray(step.config?.buttons)) {
+          step.config.buttons.forEach((btn: any, btnIndex: number) => {
+            const buttonTarget = btn?.nextStepId != null ? String(btn.nextStepId).trim() : '';
+            if (!buttonTarget) return;
+
+            const target = buttonTarget === 'END' ? 'end' : buttonTarget;
+            newEdges.push({
+              id: `${step.id}-btn-${btnIndex}-${target}`,
+              source: step.id,
+              sourceHandle: `btn-${btnIndex}`,
+              target,
+              label: btn?.text || `Botão ${btnIndex + 1}`,
+              style: { stroke: '#22c55e', strokeWidth: 2 },
+              labelStyle: { fill: '#22c55e', fontWeight: 600 },
+              labelBgStyle: { fill: 'white', fillOpacity: 0.8 },
+            } as any);
+          });
         }
         if (step.conditions && step.conditions.length > 0) {
           const condition = step.conditions[0];
@@ -2219,7 +2071,7 @@ export default function BotFlowBuilderVisual() {
 
     setNodes(newNodes);
     setEdges(edgesToSet);
-  }, [handleDeleteNode]);
+  }, [handleDeleteNode, requestNodeDelete]);
 
   useEffect(() => {
     if (selectedFlow) {
@@ -2358,6 +2210,44 @@ export default function BotFlowBuilderVisual() {
           }
         }
       } else {
+        const isMessageButtonHandle =
+          sourceNode?.type === 'message' &&
+          typeof params.sourceHandle === 'string' &&
+          params.sourceHandle.startsWith('btn-');
+
+        if (isMessageButtonHandle) {
+          const buttonIndex = Number(params.sourceHandle?.replace('btn-', ''));
+          const currentButtons = Array.isArray(sourceNode?.data?.buttons)
+            ? [...sourceNode.data.buttons]
+            : [];
+
+          if (!Number.isNaN(buttonIndex) && currentButtons[buttonIndex]) {
+            const nextStepIdValue = params.target === 'end' ? 'END' : targetStepId;
+            currentButtons[buttonIndex] = {
+              ...currentButtons[buttonIndex],
+              nextStepId: nextStepIdValue,
+            };
+
+            try {
+              await api.put(`/api/bots/steps/${sourceStepId}`, {
+                config: {
+                  ...(sourceNode?.data?.config || {}),
+                  buttons: currentButtons,
+                },
+              });
+            } catch (error: any) {
+              console.error('❌ Erro ao salvar conexão do botão:', error);
+              const msg =
+                error?.response?.data?.error || error?.message || 'Falha ao salvar conexão do botão';
+              alert(`Conexão não salva: ${msg}. Verifique permissões ou tente novamente.`);
+              return;
+            }
+
+            label = currentButtons[buttonIndex].text || `Botão ${buttonIndex + 1}`;
+            edgeStyle = { stroke: '#22c55e', strokeWidth: 2 };
+            labelColor = '#22c55e';
+          }
+        } else {
         // Para outros tipos, salvar nextStepId
         // Se o destino for "end", salvar "END" como valor especial
         try {
@@ -2380,6 +2270,7 @@ export default function BotFlowBuilderVisual() {
           if (sourceNode.data.buttons[buttonIndex]) {
             label = sourceNode.data.buttons[buttonIndex].text;
           }
+        }
         }
       }
       
@@ -2506,6 +2397,7 @@ export default function BotFlowBuilderVisual() {
         stepId: `step-${Date.now()}`,
         config: getDefaultConfig(type),
         onDelete: handleDeleteNode,
+        onRequestDelete: requestNodeDelete,
       },
     };
 
@@ -2644,12 +2536,24 @@ export default function BotFlowBuilderVisual() {
       config.logicOperator = config.logicOperator || 'AND';
     }
 
+    const normalizedMessageConfig =
+      stepType === 'MESSAGE'
+        ? {
+            ...config,
+            interactiveType: config?.interactiveType || 'buttons',
+            listButtonText: config?.listButtonText || 'Ver opções',
+            listHeaderText: config?.listHeaderText || '',
+            listFooterText: config?.listFooterText || '',
+            listSectionTitle: config?.listSectionTitle || 'Opções',
+          }
+        : config;
+
     setStepFormData({
       type: stepType,
       content: node.data.content || '',
       order: stepOrder,
       intentId: '',
-      config: config,
+      config: normalizedMessageConfig,
       buttons: node.data.buttons || [],
     });
     setShowStepModal(true);
@@ -2782,9 +2686,19 @@ export default function BotFlowBuilderVisual() {
       let responseId = null;
       if (stepFormData.type === 'MESSAGE' && stepFormData.content) {
         try {
+          const interactiveType = String(stepFormData.config?.interactiveType || 'buttons');
+          const messageButtons = Array.isArray(stepFormData.buttons) ? stepFormData.buttons : [];
           const response = await api.post('/api/bots/responses', {
             type: 'TEXT',
             content: stepFormData.content,
+            buttons: messageButtons,
+            metadata: {
+              interactiveType,
+              listButtonText: stepFormData.config?.listButtonText || undefined,
+              listHeaderText: stepFormData.config?.listHeaderText || undefined,
+              listFooterText: stepFormData.config?.listFooterText || undefined,
+              listSectionTitle: stepFormData.config?.listSectionTitle || undefined,
+            },
             flowStepId: stepId,
             intentId: null,
           });
@@ -2869,6 +2783,7 @@ export default function BotFlowBuilderVisual() {
                   stepId: stepId,
                   config: { ...stepFormData.config, position: positionToSave },
                   onDelete: node.data.onDelete || handleDeleteNode,
+                  onRequestDelete: node.data.onRequestDelete || requestNodeDelete,
                 },
               }
             : node
@@ -3387,18 +3302,61 @@ export default function BotFlowBuilderVisual() {
     setPreviewInputValue('');
   };
 
+  const sidebarSections = [
+    {
+      title: 'BUBBLES',
+      items: [
+        { key: 'message', label: 'Texto', icon: 'chat' },
+        { key: 'image', label: 'Imagem', icon: 'image' },
+        { key: 'video', label: 'Video', icon: 'videocam' },
+        { key: 'embed', label: 'Embed', icon: 'code' },
+        { key: 'audio', label: 'Audio', icon: 'graphic_eq' },
+      ],
+    },
+    {
+      title: 'ENTRADAS',
+      items: [
+        { key: 'input', label: 'Texto Livre', icon: 'edit_note' },
+        { key: 'emailInput', label: 'E-mail', icon: 'mail' },
+        { key: 'numberInput', label: 'Numero', icon: 'tag' },
+        { key: 'phoneInput', label: 'Telefone', icon: 'call' },
+        { key: 'dateInput', label: 'Data', icon: 'calendar_month' },
+        { key: 'fileUpload', label: 'Arquivo', icon: 'upload_file' },
+        { key: 'pictureChoice', label: 'Escolha com Imagem', icon: 'photo_library' },
+      ],
+    },
+    {
+      title: 'LOGICA',
+      items: [
+        { key: 'condition', label: 'Condição', icon: 'alt_route' },
+        { key: 'httpRequest', label: 'Webhook', icon: 'language' },
+        { key: 'handoff', label: 'Handoff', icon: 'support_agent' },
+        { key: 'setVariable', label: 'Variável', icon: 'tune' },
+        { key: 'redirect', label: 'Redirect', icon: 'open_in_new' },
+        { key: 'script', label: 'Code', icon: 'terminal' },
+        { key: 'typebotLink', label: 'Typebot', icon: 'link' },
+        { key: 'jump', label: 'Jump', icon: 'redo' },
+        { key: 'wait', label: 'Wait', icon: 'hourglass_top' },
+        { key: 'delay', label: 'Delay', icon: 'timer' },
+        { key: 'moveDeal', label: 'Mover lead', icon: 'move_up' },
+      ],
+    },
+  ];
+
   if (loading) {
     return <div style={{ padding: '20px' }}>Carregando...</div>;
   }
+
+  const isMessageStepModal = true;
 
   return (
     <div style={{ 
       display: 'flex', 
       flexDirection: 'column', 
       height: '100vh',
-      backgroundColor: '#ff6b35', // Fundo laranja similar ao Typebot
-      backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(59, 130, 246, 0.15) 1px, transparent 0)',
-      backgroundSize: '20px 20px',
+      backgroundColor: '#0a1016',
+      backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(34, 197, 94, 0.14) 1px, transparent 0)',
+      backgroundSize: '24px 24px',
     }}>
       {/* Top Navigation Bar */}
       <div style={{ 
@@ -3499,680 +3457,108 @@ export default function BotFlowBuilderVisual() {
 
       {/* Main Content Area */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left Sidebar - Element Palette */}
-        <div style={{
-          width: '280px',
-          backgroundColor: '#f9fafb',
-          borderRight: '1px solid #e5e7eb',
-          overflowY: 'auto',
-          padding: '15px',
-        }}>
-          {/* Header da Sidebar */}
-          <div style={{ marginBottom: '20px' }}>
-            <button
-              onClick={() => navigate('/bots')}
-              style={{
-                padding: '6px',
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                marginBottom: '10px',
-              }}
-            >
-              ←
-            </button>
-            <div style={{ fontSize: '14px', fontWeight: '600', color: '#1f2937', marginBottom: '5px' }}>
-              {selectedFlow?.name || 'Selecione um fluxo'}
+        {/* Left Sidebar - Blocos (novo layout) */}
+        <div
+          style={{
+            width: '250px',
+            backgroundColor: '#111315',
+            borderRight: '1px solid #1f2937',
+            overflowY: 'auto',
+            padding: '12px 10px',
+            color: '#e5e7eb',
+          }}
+        >
+          <div
+            style={{
+              border: '1px solid #1f2937',
+              borderRadius: '8px',
+              padding: '10px',
+              marginBottom: '10px',
+              backgroundColor: '#17191c',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#22c55e', fontSize: '14px' }}>✚</span>
+              <div style={{ fontSize: '14px', fontWeight: 700 }}>Flow Builder</div>
             </div>
-            {/* Apenas um fluxo por bot: não exibir botão de criar novo fluxo */}
+            <div style={{ marginTop: '2px', fontSize: '11px', color: '#9ca3af' }}>v2.4 ACTIVE</div>
           </div>
 
-          {/* Bubbles Section */}
-          <div style={{ marginBottom: '25px' }}>
-            <div style={{ 
-              fontSize: '11px', 
-              fontWeight: '600', 
-              color: '#6b7280', 
+          <button
+            onClick={() => {
+              const firstBlock = sidebarSections[0]?.items?.[0];
+              if (firstBlock) {
+                setSelectedBlockType(firstBlock.key);
+                handleAddNode(firstBlock.key);
+              }
+            }}
+            style={{
+              width: '100%',
+              border: '1px solid #374151',
+              backgroundColor: '#202327',
+              color: '#86efac',
+              borderRadius: '8px',
+              padding: '10px 12px',
+              fontSize: '12px',
+              fontWeight: 700,
+              letterSpacing: '0.3px',
               textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              marginBottom: '12px',
-            }}>
-              Bubbles
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <button
-                onClick={() => handleAddNode('message')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#3b82f6';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>💬</span>
-                <span>Text</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('image')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#ec4899';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🖼️</span>
-                <span>Image</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('video')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#dc2626';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🎥</span>
-                <span>Video</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('embed')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#059669';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>📦</span>
-                <span>Embed</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('audio')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#7c3aed';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🎵</span>
-                <span>Audio</span>
-              </button>
-            </div>
-          </div>
+              cursor: 'pointer',
+              marginBottom: '14px',
+            }}
+          >
+            + Add Block
+          </button>
 
-          {/* Inputs Section */}
-          <div style={{ marginBottom: '25px' }}>
-            <div style={{ 
-              fontSize: '11px', 
-              fontWeight: '600', 
-              color: '#6b7280', 
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              marginBottom: '12px',
-            }}>
-              Inputs
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <button
-                onClick={() => handleAddNode('input')}
+          {sidebarSections.map((section) => (
+            <div key={section.title} style={{ marginBottom: '14px' }}>
+              <div
                 style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#10b981';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
+                  fontSize: '11px',
+                  color: '#6b7280',
+                  fontWeight: 700,
+                  letterSpacing: '0.8px',
+                  textTransform: 'uppercase',
+                  marginBottom: '6px',
+                  padding: '0 6px',
                 }}
               >
-                <span style={{ fontSize: '18px' }}>📝</span>
-                <span>Text</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('numberInput')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#06b6d4';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🔢</span>
-                <span>Number</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('emailInput')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#f59e0b';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>📧</span>
-                <span>Email</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('phoneInput')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#14b8a6';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>📱</span>
-                <span>Phone</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('dateInput')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#a855f7';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>📅</span>
-                <span>Date</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('fileUpload')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#f97316';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>📎</span>
-                <span>File</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('pictureChoice')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#be185d';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🖼️</span>
-                <span>Picture Choice</span>
-              </button>
-            </div>
-          </div>
+                {section.title}
+              </div>
 
-          {/* Logic Section */}
-          <div style={{ marginBottom: '25px' }}>
-            <div style={{ 
-              fontSize: '11px', 
-              fontWeight: '600', 
-              color: '#6b7280', 
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              marginBottom: '12px',
-            }}>
-              Logic
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {section.items.map((item) => {
+                  const isActive = selectedBlockType === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => {
+                        setSelectedBlockType(item.key);
+                        handleAddNode(item.key);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        width: '100%',
+                        padding: '9px 8px',
+                        borderRadius: '6px',
+                        border: isActive ? '1px solid #14532d' : '1px solid transparent',
+                        backgroundColor: isActive ? 'rgba(34, 197, 94, 0.14)' : 'transparent',
+                        color: isActive ? '#86efac' : '#cbd5e1',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span className="material-symbols-rounded" style={{ width: '16px', textAlign: 'center', opacity: 0.95, fontSize: '14px' }}>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <button
-                onClick={() => handleAddNode('setVariable')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#8b5cf6';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>✏️</span>
-                <span>Set variable</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('condition')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#f59e0b';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🔀</span>
-                <span>Condition</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('redirect')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#6366f1';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🔀</span>
-                <span>Redirect</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('script')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#1e293b';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>&lt;/&gt;</span>
-                <span>Code</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('httpRequest')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#06b6d4';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🌐</span>
-                <span>Webhook</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('typebotLink')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#0ea5e9';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>🔗</span>
-                <span>Typebot</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('jump')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#eab308';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>↷</span>
-                <span>Jump</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('wait')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#64748b';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>⏸️</span>
-                <span>Wait</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('delay')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#6b7280';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>⏱️</span>
-                <span>Delay</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('handoff')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#ef4444';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>👤</span>
-                <span>Handoff</span>
-              </button>
-              <button
-                onClick={() => handleAddNode('moveDeal')}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#0f766e';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>📦</span>
-                <span>Mover lead</span>
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Canvas Area */}
@@ -4181,7 +3567,7 @@ export default function BotFlowBuilderVisual() {
           position: 'relative', 
           marginRight: showPreview ? '400px' : '0', 
           transition: 'margin-right 0.3s ease',
-          backgroundColor: 'white',
+          backgroundColor: 'transparent',
         }}>
         {!selectedFlow ? (
           <div style={{
@@ -4204,7 +3590,11 @@ export default function BotFlowBuilderVisual() {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onEdgeDoubleClick={async (event, edge) => {
-              if (window.confirm('Deseja excluir esta conexão?')) {
+              const confirmed = await confirm({
+                title: 'Excluir conexão',
+                message: 'Deseja excluir esta conexão?',
+              });
+              if (!confirmed) return;
                 // Remover do backend primeiro
                 const sourceNode = nodes.find(n => n.id === edge.source);
                 const sourceStepId = sourceNode?.data?.stepId;
@@ -4225,6 +3615,32 @@ export default function BotFlowBuilderVisual() {
                           order: firstCondition.order,
                           trueStepId: edge.sourceHandle === 'true' ? null : firstCondition.trueStepId,
                           falseStepId: edge.sourceHandle === 'false' ? null : firstCondition.falseStepId,
+                        });
+                      }
+                    } else if (
+                      sourceNode?.type === 'message' &&
+                      typeof edge.sourceHandle === 'string' &&
+                      edge.sourceHandle.startsWith('btn-')
+                    ) {
+                      const btnIndex = Number(edge.sourceHandle.replace('btn-', ''));
+                      const stepResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`);
+                      const flow = stepResponse.data;
+                      const step = flow?.steps?.find((s: any) => s.id === sourceStepId);
+                      const currentButtons = Array.isArray(step?.config?.buttons)
+                        ? [...step.config.buttons]
+                        : [];
+
+                      if (!Number.isNaN(btnIndex) && currentButtons[btnIndex]) {
+                        currentButtons[btnIndex] = {
+                          ...currentButtons[btnIndex],
+                          nextStepId: null,
+                        };
+
+                        await api.put(`/api/bots/steps/${sourceStepId}`, {
+                          config: {
+                            ...(step?.config || {}),
+                            buttons: currentButtons,
+                          },
                         });
                       }
                     } else {
@@ -4248,7 +3664,6 @@ export default function BotFlowBuilderVisual() {
                   // Remover visualmente se não tiver stepId válido
                   setEdges((eds) => eds.filter((e) => e.id !== edge.id));
                 }
-              }
             }}
             nodeTypes={nodeTypes}
             onNodeDoubleClick={handleNodeDoubleClick}
@@ -4265,10 +3680,10 @@ export default function BotFlowBuilderVisual() {
               }
             }}
             fitView
-            style={{ backgroundColor: 'transparent' }}
+            style={{ background: 'linear-gradient(180deg, rgba(11,18,24,0.88) 0%, rgba(8,14,20,0.92) 100%)' }}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="rgba(34, 197, 94, 0.24)" />
             <Controls />
             <MiniMap 
               nodeColor={(node) => {
@@ -4412,18 +3827,55 @@ export default function BotFlowBuilderVisual() {
           }}
         >
           <div
+            className="step-config-modal"
             style={{
-              backgroundColor: 'white',
+              backgroundColor: '#1b2128',
               padding: '30px',
-              borderRadius: '8px',
+              borderRadius: '12px',
               maxWidth: '600px',
               width: '90%',
               maxHeight: '90vh',
               overflowY: 'auto',
+              border: '1px solid #2a3340',
+              boxShadow: '0 18px 40px rgba(0,0,0,0.5)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px' }}>
+            <style>{`
+              .step-config-modal h2,
+              .step-config-modal label,
+              .step-config-modal p,
+              .step-config-modal span,
+              .step-config-modal small {
+                color: #d1d5db !important;
+              }
+              .step-config-modal input[type="text"],
+              .step-config-modal input[type="number"],
+              .step-config-modal input[type="url"],
+              .step-config-modal input[type="email"],
+              .step-config-modal input[type="date"],
+              .step-config-modal select,
+              .step-config-modal textarea {
+                background-color: #0f1419 !important;
+                color: #e5e7eb !important;
+                border: 1px solid #2a3340 !important;
+                border-radius: 6px !important;
+              }
+              .step-config-modal input::placeholder,
+              .step-config-modal textarea::placeholder {
+                color: #6b7280 !important;
+              }
+              .step-config-modal input[type="checkbox"] {
+                accent-color: #22c55e;
+              }
+              .step-config-modal-content > div {
+                background-color: #1f252d;
+                border: 1px solid #2a3340;
+                border-radius: 8px;
+                padding: 12px;
+              }
+            `}</style>
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#e5e7eb' }}>
               Editar {stepFormData.type || 'Step'}
             </h2>
 
@@ -4433,18 +3885,17 @@ export default function BotFlowBuilderVisual() {
               </div>
             )}
 
+            <div className="step-config-modal-content" style={{ display: 'grid', gap: '12px' }}>
             {stepFormData.type === 'MESSAGE' && (
               <>
-                <div style={{ marginBottom: '15px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                    <label style={{ fontWeight: 'bold', fontSize: '14px' }}>
-                      Mensagem *
-                    </label>
-                    {availableVariables.length > 0 && (
-                      <div style={{ fontSize: '11px', color: '#6b7280' }}>
-                        💡 Use {'{{variável}}'} para inserir variáveis
-                      </div>
-                    )}
+                <div style={{ marginBottom: '18px', color: '#e5e7eb' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ color: '#4ade80', fontSize: '11px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                      Conteúdo da Mensagem
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>
+                      {String(stepFormData.content || '').length} / 500
+                    </div>
                   </div>
                   <textarea
                     value={stepFormData.content}
@@ -4454,17 +3905,24 @@ export default function BotFlowBuilderVisual() {
                     required
                     style={{
                       width: '100%',
-                      padding: '10px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '5px',
+                      padding: '12px',
+                      border: '1px solid #2a3340',
+                      borderRadius: '8px',
                       fontSize: '14px',
                       resize: 'vertical',
+                      backgroundColor: '#0f1419',
+                      color: '#e5e7eb',
                     }}
                   />
-                  <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f0f9ff', borderRadius: '5px', border: '1px solid #bae6fd' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#0369a1' }}>
-                      📋 Variáveis Disponíveis:
+                </div>
+
+                <div style={{ marginBottom: '18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ color: '#4ade80', fontSize: '11px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                      Variáveis Dinâmicas
                     </div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#1f252d', borderRadius: '8px', border: '1px solid #2a3340' }}>
                     {availableVariables.length > 0 ? (
                       <>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -4490,72 +3948,196 @@ export default function BotFlowBuilderVisual() {
                                 }
                               }}
                               style={{
-                                padding: '4px 8px',
-                                backgroundColor: '#3b82f6',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
+                                padding: '4px 10px',
+                                backgroundColor: 'rgba(34, 197, 94, 0.14)',
+                                color: '#86efac',
+                                border: '1px solid #1f6d46',
+                                borderRadius: '999px',
                                 cursor: 'pointer',
                                 fontSize: '11px',
                                 fontWeight: '500',
                               }}
                               title={`Inserir {{${varName}}}`}
                             >
-                              {varName}
+                              {'{{'}{varName}{'}}'}
                             </button>
                           ))}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '8px', fontStyle: 'italic' }}>
-                          Clique em uma variável para inserir na mensagem
+                          <button
+                            type="button"
+                            style={{
+                              padding: '4px 10px',
+                              backgroundColor: '#2a2f37',
+                              color: '#cbd5e1',
+                              border: '1px solid #3b4452',
+                              borderRadius: '999px',
+                              fontSize: '11px',
+                            }}
+                          >
+                            + Customizada
+                          </button>
                         </div>
                       </>
                     ) : (
-                      <div style={{ fontSize: '11px', color: '#6b7280', padding: '8px', backgroundColor: '#fef3c7', borderRadius: '4px', border: '1px solid #fde68a' }}>
-                        💡 <strong>Nenhuma variável disponível ainda.</strong> Para criar variáveis:
-                        <ul style={{ margin: '5px 0 0 20px', padding: 0 }}>
-                          <li>Crie blocos de Input (Texto, Email, Número, etc.) e configure o nome da variável</li>
-                          <li>Ou crie variáveis globais do bot na página de gerenciamento de variáveis</li>
-                        </ul>
-                        <div style={{ marginTop: '8px', fontSize: '10px' }}>
-                          Você também pode digitar manualmente: {'{{nome_da_variavel}}'}
-                        </div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                        Nenhuma variável disponível
                       </div>
                     )}
                   </div>
                 </div>
 
                 <div style={{ marginBottom: '15px' }}>
+                  <div style={{
+                    marginBottom: '12px',
+                    padding: '10px',
+                    backgroundColor: '#1f252d',
+                    borderRadius: '8px',
+                    border: '1px solid #2a3340',
+                  }}>
+                    <div style={{ color: '#4ade80', fontSize: '11px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '8px' }}>
+                      Tipo de Interação
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {[
+                        { id: 'buttons', label: 'Botões' },
+                        { id: 'list', label: 'Lista' },
+                      ].map((option) => {
+                        const selected = (stepFormData.config?.interactiveType || 'buttons') === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() =>
+                              setStepFormData({
+                                ...stepFormData,
+                                config: { ...stepFormData.config, interactiveType: option.id },
+                              })
+                            }
+                            style={{
+                              padding: '6px 10px',
+                              backgroundColor: selected ? 'rgba(34, 197, 94, 0.16)' : '#0f1419',
+                              color: selected ? '#86efac' : '#cbd5e1',
+                              border: selected ? '1px solid #1f6d46' : '1px solid #2a3340',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {(stepFormData.config?.interactiveType || 'buttons') === 'list' && (
+                    <div style={{
+                      marginBottom: '12px',
+                      padding: '10px',
+                      backgroundColor: '#1f252d',
+                      borderRadius: '8px',
+                      border: '1px solid #2a3340',
+                      display: 'grid',
+                      gap: '8px',
+                    }}>
+                      <div style={{ color: '#4ade80', fontSize: '11px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                        Configuração da Lista
+                      </div>
+                      <input
+                        type="text"
+                        value={stepFormData.config?.listButtonText || ''}
+                        onChange={(e) =>
+                          setStepFormData({
+                            ...stepFormData,
+                            config: { ...stepFormData.config, listButtonText: e.target.value },
+                          })
+                        }
+                        placeholder="Texto do botão da lista (ex: Ver opções)"
+                        style={{ padding: '8px', border: '1px solid #2a3340', borderRadius: '6px', fontSize: '13px', backgroundColor: '#0f1419', color: '#e5e7eb' }}
+                      />
+                      <input
+                        type="text"
+                        value={stepFormData.config?.listSectionTitle || ''}
+                        onChange={(e) =>
+                          setStepFormData({
+                            ...stepFormData,
+                            config: { ...stepFormData.config, listSectionTitle: e.target.value },
+                          })
+                        }
+                        placeholder="Título da seção (ex: Opções)"
+                        style={{ padding: '8px', border: '1px solid #2a3340', borderRadius: '6px', fontSize: '13px', backgroundColor: '#0f1419', color: '#e5e7eb' }}
+                      />
+                      <input
+                        type="text"
+                        value={stepFormData.config?.listHeaderText || ''}
+                        onChange={(e) =>
+                          setStepFormData({
+                            ...stepFormData,
+                            config: { ...stepFormData.config, listHeaderText: e.target.value },
+                          })
+                        }
+                        placeholder="Cabeçalho (opcional)"
+                        style={{ padding: '8px', border: '1px solid #2a3340', borderRadius: '6px', fontSize: '13px', backgroundColor: '#0f1419', color: '#e5e7eb' }}
+                      />
+                      <input
+                        type="text"
+                        value={stepFormData.config?.listFooterText || ''}
+                        onChange={(e) =>
+                          setStepFormData({
+                            ...stepFormData,
+                            config: { ...stepFormData.config, listFooterText: e.target.value },
+                          })
+                        }
+                        placeholder="Rodapé (opcional)"
+                        style={{ padding: '8px', border: '1px solid #2a3340', borderRadius: '6px', fontSize: '13px', backgroundColor: '#0f1419', color: '#e5e7eb' }}
+                      />
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <label style={{ fontWeight: 'bold', fontSize: '14px' }}>Botões de Ação</label>
+                    <label style={{ color: '#4ade80', fontSize: '11px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                      {(stepFormData.config?.interactiveType || 'buttons') === 'list' ? 'Opções da Lista' : 'Botões de Resposta'}
+                    </label>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>
+                      {stepFormData.buttons.length} de {(stepFormData.config?.interactiveType || 'buttons') === 'list' ? '10 opções' : '3 botões'}
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
+                        const isListMode = (stepFormData.config?.interactiveType || 'buttons') === 'list';
+                        const maxItems = isListMode ? 10 : 3;
+                        if (stepFormData.buttons.length >= maxItems) return;
                         setStepFormData({
                           ...stepFormData,
-                          buttons: [...stepFormData.buttons, { text: '', action: '', nextStepId: '' }],
+                          buttons: [
+                            ...stepFormData.buttons,
+                            isListMode
+                              ? { text: '', description: '', section: stepFormData.config?.listSectionTitle || 'Opções', action: '', nextStepId: '' }
+                              : { text: '', action: '', nextStepId: '' },
+                          ],
                         });
                       }}
                       style={{
                         padding: '6px 12px',
-                        backgroundColor: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
+                        backgroundColor: 'transparent',
+                        color: '#4ade80',
+                        border: '1px dashed #2f855a',
+                        borderRadius: '6px',
                         cursor: 'pointer',
                         fontSize: '12px',
                       }}
                     >
-                      + Adicionar Botão
+                      + {(stepFormData.config?.interactiveType || 'buttons') === 'list' ? 'Adicionar Opção' : 'Adicionar Botão'}
                     </button>
                   </div>
                   
                   {stepFormData.buttons.map((button, index) => (
                     <div key={index} style={{ 
-                      marginBottom: '10px', 
-                      padding: '10px', 
-                      backgroundColor: '#f9fafb', 
-                      borderRadius: '5px',
-                      border: '1px solid #e5e7eb',
+                      marginBottom: '8px',
+                      padding: '10px',
+                      backgroundColor: '#1f252d',
+                      borderRadius: '8px',
+                      border: '1px solid #2a3340',
                     }}>
                       <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
                         <input
@@ -4570,11 +4152,34 @@ export default function BotFlowBuilderVisual() {
                           style={{
                             flex: 1,
                             padding: '8px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '5px',
+                            border: '1px solid #2a3340',
+                            borderRadius: '6px',
                             fontSize: '13px',
+                            backgroundColor: '#0f1419',
+                            color: '#e5e7eb',
                           }}
                         />
+                        {(stepFormData.config?.interactiveType || 'buttons') === 'list' && (
+                          <input
+                            type="text"
+                            value={button.description || ''}
+                            onChange={(e) => {
+                              const newButtons = [...stepFormData.buttons];
+                              newButtons[index].description = e.target.value;
+                              setStepFormData({ ...stepFormData, buttons: newButtons });
+                            }}
+                            placeholder="Descrição (opcional)"
+                            style={{
+                              flex: 1,
+                              padding: '8px',
+                              border: '1px solid #2a3340',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              backgroundColor: '#0f1419',
+                              color: '#e5e7eb',
+                            }}
+                          />
+                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -4594,24 +4199,46 @@ export default function BotFlowBuilderVisual() {
                           ✕
                         </button>
                       </div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '5px' }}>
-                        💡 <strong>Como conectar:</strong> Após salvar, arraste uma linha do ponto de conexão (handle) deste nó para o nó destino. 
-                        A conexão será rotulada com o texto do botão.
+                      {(stepFormData.config?.interactiveType || 'buttons') === 'list' && (
+                        <input
+                          type="text"
+                          value={button.section || ''}
+                          onChange={(e) => {
+                            const newButtons = [...stepFormData.buttons];
+                            newButtons[index].section = e.target.value;
+                            setStepFormData({ ...stepFormData, buttons: newButtons });
+                          }}
+                          placeholder="Seção (opcional, ex: Financeiro)"
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            border: '1px solid #2a3340',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            backgroundColor: '#0f1419',
+                            color: '#e5e7eb',
+                            marginBottom: '6px',
+                          }}
+                        />
+                      )}
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '5px' }}>
+                        Conecte o bloco destino pelo handle lateral.
                       </div>
                     </div>
                   ))}
                   
                   {stepFormData.buttons.length === 0 && (
                     <div style={{ 
-                      padding: '15px', 
-                      backgroundColor: '#fef3c7', 
-                      borderRadius: '5px',
+                      padding: '12px',
+                      backgroundColor: '#1f252d',
+                      borderRadius: '8px',
                       fontSize: '12px',
-                      color: '#92400e',
+                      color: '#9ca3af',
+                      border: '1px solid #2a3340',
                     }}>
-                      💡 <strong>Dica:</strong> Adicione botões para criar caminhos diferentes. Cada botão pode levar para um nó diferente.
-                      <br />
-                      <strong>Exemplo:</strong> Botão "Sim" → vai para um nó, Botão "Não" → vai para outro nó.
+                      {(stepFormData.config?.interactiveType || 'buttons') === 'list'
+                        ? 'Adicione opções para criar uma lista interativa no WhatsApp Oficial.'
+                        : 'Adicione botões para criar caminhos diferentes no fluxo.'}
                     </div>
                   )}
                 </div>
@@ -5432,6 +5059,7 @@ export default function BotFlowBuilderVisual() {
                                         availableFields: availableFields,
                                       },
                                       onDelete: node.data.onDelete || handleDeleteNode,
+                                      onRequestDelete: node.data.onRequestDelete || requestNodeDelete,
                                     },
                                   }
                                 : node
@@ -6620,6 +6248,7 @@ export default function BotFlowBuilderVisual() {
                 </div>
               </>
             )}
+            </div>
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
               <button
@@ -6630,10 +6259,10 @@ export default function BotFlowBuilderVisual() {
                 }}
                 style={{
                   padding: '10px 20px',
-                  backgroundColor: '#6b7280',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
+                  backgroundColor: isMessageStepModal ? '#111827' : '#6b7280',
+                  color: isMessageStepModal ? '#d1d5db' : 'white',
+                  border: isMessageStepModal ? '1px solid #2a3340' : 'none',
+                  borderRadius: '6px',
                   cursor: 'pointer',
                   fontSize: '14px',
                 }}
@@ -6645,10 +6274,10 @@ export default function BotFlowBuilderVisual() {
                 onClick={handleSaveStep}
                 style={{
                   padding: '10px 20px',
-                  backgroundColor: '#3b82f6',
-                  color: 'white',
+                  background: isMessageStepModal ? 'linear-gradient(90deg,#22c55e,#16a34a)' : '#3b82f6',
+                  color: '#0b1f12',
                   border: 'none',
-                  borderRadius: '5px',
+                  borderRadius: '6px',
                   cursor: 'pointer',
                   fontSize: '14px',
                   fontWeight: 'bold',

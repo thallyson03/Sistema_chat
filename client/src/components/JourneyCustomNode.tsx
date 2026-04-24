@@ -1,5 +1,6 @@
 import React from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
+import { useConfirm } from './ui/ConfirmProvider';
 
 interface CustomNodeProps {
   data: {
@@ -13,12 +14,16 @@ interface CustomNodeProps {
 export function JourneyCustomNode({ data, id }: CustomNodeProps) {
   const { label, type, config = {} } = data;
   const { deleteElements } = useReactFlow();
+  const confirm = useConfirm();
 
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (window.confirm(`Tem certeza que deseja excluir o bloco "${label}"?`)) {
-      deleteElements({ nodes: [{ id }] });
-    }
+    const confirmed = await confirm({
+      title: 'Excluir bloco',
+      message: `Tem certeza que deseja excluir o bloco "${label}"?`,
+    });
+    if (!confirmed) return;
+    deleteElements({ nodes: [{ id }] });
   };
 
   // Verificar se o nó está configurado

@@ -502,8 +502,8 @@ export default function Dashboard() {
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[1, 2, 3, 4].map((i) => (
                   <div key={i} className={`h-[120px] animate-pulse rounded-xl border ${neon.card}`} />
-                ))}
-              </div>
+          ))}
+        </div>
             ) : !ceapdeskEnabled ? (
               <p className="mt-4 text-sm text-[#6b7280]">
                 Ative o CEAPDesk para visualizar métricas externas de tickets neste bloco.
@@ -882,22 +882,22 @@ function RefStatCard({
       className={`rounded-xl border p-4 sm:p-5 ${neon.card}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div>
+            <div>
           <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#8b9490]">
-            {title}
-          </h3>
+                {title}
+              </h3>
           <p className="mt-2 font-headline text-3xl font-bold tabular-nums text-white">{value}</p>
           {trend ? (
             <p className={`mt-1 text-[11px] font-semibold ${neon.text}`}>{trend}</p>
           ) : null}
-        </div>
+            </div>
         <div
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-lg"
           style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(74, 222, 128, 0.2)' }}
-        >
-          {icon}
-        </div>
-      </div>
+              >
+                {icon}
+            </div>
+          </div>
       <div
         className={`mt-4 h-1 rounded-full ${barActive ? neon.bar : 'bg-[#252b28]'}`}
         title={barActive ? undefined : 'Sem movimento no indicador'}

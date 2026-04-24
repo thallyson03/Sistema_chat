@@ -868,6 +868,7 @@ export class BotService {
 
         if (!targetPipelineId && !targetStageId) {
           console.warn('[BotService] MOVE_DEAL sem pipelineId ou stageId configurados');
+          await advanceToNextStep(currentStep.nextStepId, 'após MOVE_DEAL sem destino configurado');
           break;
         }
 
@@ -880,6 +881,7 @@ export class BotService {
           console.warn(
             `[BotService] MOVE_DEAL: nenhum negócio encontrado para conversationId=${session.conversationId}`,
           );
+          await advanceToNextStep(currentStep.nextStepId, 'após MOVE_DEAL sem deal vinculado');
           break;
         }
 
@@ -892,6 +894,7 @@ export class BotService {
           });
           if (!stage) {
             console.warn(`[BotService] MOVE_DEAL: etapa destino não encontrada (${targetStageId})`);
+            await advanceToNextStep(currentStep.nextStepId, 'após MOVE_DEAL com stage inválida');
             break;
           }
           finalStageId = stage.id;
@@ -906,6 +909,7 @@ export class BotService {
             console.warn(
               `[BotService] MOVE_DEAL: nenhum stage ativo encontrado para pipeline ${targetPipelineId}`,
             );
+            await advanceToNextStep(currentStep.nextStepId, 'após MOVE_DEAL sem stage ativa');
             break;
           }
           finalStageId = firstStage.id;
@@ -923,6 +927,7 @@ export class BotService {
         console.log(
           `[BotService] MOVE_DEAL: negócio ${deal.id} movido para pipeline=${finalPipelineId} stage=${finalStageId}`,
         );
+        await advanceToNextStep(currentStep.nextStepId, 'após MOVE_DEAL');
         break;
       }
 
@@ -981,14 +986,7 @@ export class BotService {
         // Aguardar tempo especificado
         const delay = currentStep.config?.delay || 1000;
         await new Promise((resolve) => setTimeout(resolve, delay));
-        if (currentStep.nextStepId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: {
-              currentStepId: currentStep.nextStepId,
-            },
-          });
-        }
+        await advanceToNextStep(currentStep.nextStepId, 'após DELAY');
         break;
 
       case 'INPUT':
@@ -1422,12 +1420,7 @@ export class BotService {
         }
 
         // Avançar o fluxo normalmente após o redirect
-        if (currentStep.nextStepId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: { currentStepId: currentStep.nextStepId },
-          });
-        }
+        await advanceToNextStep(currentStep.nextStepId, 'após REDIRECT');
         break;
 
       case 'SCRIPT':
@@ -1609,12 +1602,7 @@ export class BotService {
         // Link para outro bot (sub-bot)
         // Por enquanto, apenas avançamos o fluxo
         // Implementação completa requereria gerenciamento de múltiplos bots
-        if (currentStep.nextStepId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: { currentStepId: currentStep.nextStepId },
-          });
-        }
+        await advanceToNextStep(currentStep.nextStepId, 'após TYPEBOT_LINK');
         break;
 
       case 'AB_TEST':
@@ -1623,18 +1611,11 @@ export class BotService {
         const variants = currentStep.config?.variants || [];
         const random = Math.random() * 100;
         const selectedVariant = random < splitPercent ? variants[0] : variants[1];
-        
-        if (selectedVariant?.blockId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: { currentStepId: selectedVariant.blockId },
-          });
-        } else if (currentStep.nextStepId) {
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: { currentStepId: currentStep.nextStepId },
-          });
-        }
+
+        await advanceToNextStep(
+          selectedVariant?.blockId || currentStep.nextStepId,
+          'após AB_TEST',
+        );
         break;
 
       case 'JUMP': {
@@ -2023,6 +2004,8 @@ export class BotService {
         mediaUrl: finalMediaUrl,
         fileName: response.metadata?.fileName || undefined,
         caption: content || '',
+        buttons: Array.isArray(response.buttons) ? response.buttons : undefined,
+        metadata: response.metadata || undefined,
         fromBot: true,
       });
 

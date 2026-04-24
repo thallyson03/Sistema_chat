@@ -28,6 +28,8 @@ export interface SendMessageData {
   mimetype?: string; // Mimetype do arquivo (ex: audio/webm, audio/ogg)
   fromBot?: boolean; // Flag opcional para identificar mensagens enviadas pelo bot
   internalOnly?: boolean; // Se true, NÃO envia para canais externos (somente CRM)
+  buttons?: Array<any>; // Botões interativos (especialmente para WhatsApp Official)
+  metadata?: Record<string, any>; // Metadados auxiliares (interactiveType, list config, etc)
 }
 
 export class MessageService {
@@ -331,11 +333,62 @@ export class MessageService {
             });
           }
         } else {
-          // Enviar texto
-          result = await whatsappService.sendTextMessage({
-            to: formattedPhone,
-            text: data.content,
-          });
+          const messageType = String(data.type || 'TEXT').toUpperCase();
+          const buttons = Array.isArray(data.buttons) ? data.buttons : [];
+          const interactiveType = String(data.metadata?.interactiveType || '').toLowerCase();
+
+          // Somente mensagens de texto podem ser interativas (button/list)
+          if (messageType === 'TEXT' && buttons.length > 0) {
+            const shouldSendList =
+              interactiveType === 'list' ||
+              buttons.length > 3 ||
+              buttons.some((btn: any) => typeof btn?.description === 'string' || typeof btn?.section === 'string');
+
+            if (shouldSendList) {
+              const maxRows = buttons.slice(0, 10);
+              const groupedBySection = new Map<string, Array<any>>();
+              maxRows.forEach((btn: any, index: number) => {
+                const section = String(btn?.section || data.metadata?.listSectionTitle || 'Opções');
+                const row = {
+                  id: String(btn?.id || btn?.value || btn?.text || `list_${index + 1}`),
+                  title: String(btn?.text || btn?.title || `Opção ${index + 1}`),
+                  description: btn?.description ? String(btn.description) : undefined,
+                };
+                const current = groupedBySection.get(section) || [];
+                current.push(row);
+                groupedBySection.set(section, current);
+              });
+
+              const sections = Array.from(groupedBySection.entries()).map(([title, rows]) => ({
+                title,
+                rows,
+              }));
+
+              result = await whatsappService.sendInteractiveListMessage({
+                to: formattedPhone,
+                bodyText: data.content || 'Selecione uma opção:',
+                buttonText: data.metadata?.listButtonText || 'Ver opções',
+                headerText: data.metadata?.listHeaderText,
+                footerText: data.metadata?.listFooterText,
+                sections,
+              });
+            } else {
+              result = await whatsappService.sendInteractiveButtonsMessage({
+                to: formattedPhone,
+                bodyText: data.content || 'Escolha uma opção:',
+                buttons: buttons.slice(0, 3).map((btn: any, index: number) => ({
+                  id: String(btn?.id || btn?.value || btn?.text || `btn_${index + 1}`),
+                  title: String(btn?.text || btn?.title || `Opção ${index + 1}`),
+                })),
+              });
+            }
+          } else {
+            // Enviar texto padrão
+            result = await whatsappService.sendTextMessage({
+              to: formattedPhone,
+              text: data.content,
+            });
+          }
         }
 
         externalId = result.messageId;

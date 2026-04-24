@@ -14,6 +14,24 @@ interface SendTextMessageParams {
   text: string;
 }
 
+interface SendInteractiveButtonsParams {
+  to: string;
+  bodyText: string;
+  buttons: Array<{ id: string; title: string }>;
+}
+
+interface SendInteractiveListParams {
+  to: string;
+  bodyText: string;
+  buttonText?: string;
+  headerText?: string;
+  footerText?: string;
+  sections: Array<{
+    title: string;
+    rows: Array<{ id: string; title: string; description?: string }>;
+  }>;
+}
+
 interface SendTemplateMessageParams {
   to: string;
   templateName: string;
@@ -107,6 +125,116 @@ export class WhatsAppOfficialService {
         error.response?.data?.error?.message ||
         error.message ||
         'Erro ao enviar mensagem via WhatsApp Official'
+      );
+    }
+  }
+
+  /**
+   * Envia mensagem interativa com botões de resposta (até 3).
+   */
+  async sendInteractiveButtonsMessage(params: SendInteractiveButtonsParams) {
+    try {
+      const to = this.formatPhoneNumber(params.to);
+      const buttons = (params.buttons || []).slice(0, 3).map((btn) => ({
+        type: 'reply',
+        reply: {
+          id: String(btn.id).slice(0, 256),
+          title: String(btn.title).slice(0, 20),
+        },
+      }));
+
+      if (!buttons.length) {
+        throw new Error('Nenhum botão válido para envio interativo');
+      }
+
+      const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text: params.bodyText || '' },
+          action: { buttons },
+        },
+      });
+
+      return {
+        success: true,
+        messageId: response.data.messages?.[0]?.id,
+        data: response.data,
+      };
+    } catch (error: any) {
+      console.error('[WhatsAppOfficial] ❌ Erro ao enviar botões interativos:', {
+        to: params.to,
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(
+        error.response?.data?.error?.message ||
+          error.message ||
+          'Erro ao enviar botões interativos via WhatsApp Official',
+      );
+    }
+  }
+
+  /**
+   * Envia mensagem interativa de lista (até 10 linhas no total).
+   */
+  async sendInteractiveListMessage(params: SendInteractiveListParams) {
+    try {
+      const to = this.formatPhoneNumber(params.to);
+
+      const normalizedSections = (params.sections || [])
+        .map((section) => ({
+          title: String(section.title || '').slice(0, 24) || 'Opções',
+          rows: (section.rows || []).map((row) => ({
+            id: String(row.id || '').slice(0, 256),
+            title: String(row.title || '').slice(0, 24),
+            description: row.description ? String(row.description).slice(0, 72) : undefined,
+          })),
+        }))
+        .filter((section) => section.rows.length > 0);
+
+      const totalRows = normalizedSections.reduce((acc, section) => acc + section.rows.length, 0);
+      if (!normalizedSections.length || totalRows === 0) {
+        throw new Error('Lista interativa sem opções válidas');
+      }
+
+      const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          ...(params.headerText ? { header: { type: 'text', text: params.headerText.slice(0, 60) } } : {}),
+          body: { text: params.bodyText || '' },
+          ...(params.footerText ? { footer: { text: params.footerText.slice(0, 60) } } : {}),
+          action: {
+            button: (params.buttonText || 'Ver opções').slice(0, 20),
+            sections: normalizedSections,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        messageId: response.data.messages?.[0]?.id,
+        data: response.data,
+      };
+    } catch (error: any) {
+      console.error('[WhatsAppOfficial] ❌ Erro ao enviar lista interativa:', {
+        to: params.to,
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(
+        error.response?.data?.error?.message ||
+          error.message ||
+          'Erro ao enviar lista interativa via WhatsApp Official',
       );
     }
   }

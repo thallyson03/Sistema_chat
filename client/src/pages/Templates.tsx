@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../utils/api';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface WhatsappTemplate {
   id?: string;
@@ -31,6 +32,7 @@ function statusClasses(status?: string) {
 }
 
 export default function Templates() {
+  const confirm = useConfirm();
   const [templates, setTemplates] = useState<WhatsappTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -162,9 +164,10 @@ export default function Templates() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Tem certeza que deseja remover o template "${tpl.name}" (${tpl.language})?`,
-    );
+    const confirmed = await confirm({
+      title: 'Excluir template',
+      message: `Tem certeza que deseja remover o template "${tpl.name}" (${tpl.language})?`,
+    });
     if (!confirmed) return;
 
     try {
