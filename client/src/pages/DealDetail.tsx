@@ -6,6 +6,7 @@ import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl } from 
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import CustomFieldsManager from '../components/CustomFieldsManager';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface Deal {
   id: string;
@@ -76,6 +77,7 @@ interface Message {
 }
 
 export default function DealDetail() {
+  const confirmModal = useConfirm();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [deal, setDeal] = useState<Deal | null>(null);
@@ -1736,7 +1738,13 @@ export default function DealDetail() {
                 ) : (
                   <button
                     onClick={async () => {
-                      if (!confirm('Tem certeza que deseja fechar esta conversa?')) return;
+                      const confirmed = await confirmModal({
+                        title: 'Fechar conversa',
+                        message: 'Tem certeza que deseja fechar esta conversa?',
+                        confirmText: 'Fechar',
+                        cancelText: 'Cancelar',
+                      });
+                      if (!confirmed) return;
                       try {
                         await api.put(`/api/conversations/${conversation.id}`, { status: 'CLOSED' });
                         setConversation((prev: any) =>
@@ -1795,11 +1803,14 @@ export default function DealDetail() {
                 <button
                   onClick={async () => {
                     if (!conversation) return;
-                    if (
-                      !confirm(
+                    const confirmed = await confirmModal({
+                      title: 'Excluir conversa',
+                      message:
                         'Tem certeza que deseja excluir definitivamente esta conversa? Esta ação não pode ser desfeita.',
-                      )
-                    ) {
+                      confirmText: 'Excluir',
+                      cancelText: 'Cancelar',
+                    });
+                    if (!confirmed) {
                       return;
                     }
                     try {

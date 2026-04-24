@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
 import { Button } from '../components/ui/Button';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface ContactList {
   id: string;
@@ -29,6 +30,7 @@ interface Contact {
 }
 
 export default function ContactLists() {
+  const confirmModal = useConfirm();
   const [lists, setLists] = useState<ContactList[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,7 +111,13 @@ export default function ContactLists() {
   };
 
   const handleDeleteList = async (listId: string) => {
-    if (!confirm('Deseja realmente deletar esta lista? Todos os contatos serão removidos.')) {
+    const confirmed = await confirmModal({
+      title: 'Excluir lista',
+      message: 'Deseja realmente deletar esta lista? Todos os contatos serão removidos.',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -151,7 +159,13 @@ export default function ContactLists() {
   const handleRemoveContact = async (contactId: string) => {
     if (!selectedList) return;
 
-    if (!confirm('Deseja remover este contato da lista?')) {
+    const confirmed = await confirmModal({
+      title: 'Remover contato',
+      message: 'Deseja remover este contato da lista?',
+      confirmText: 'Remover',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 

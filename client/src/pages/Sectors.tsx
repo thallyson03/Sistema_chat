@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../utils/api';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface Sector {
   id: string;
@@ -16,6 +17,7 @@ interface Sector {
 }
 
 export default function Sectors() {
+  const confirmModal = useConfirm();
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -68,7 +70,13 @@ export default function Sectors() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja deletar este setor?')) {
+    const confirmed = await confirmModal({
+      title: 'Excluir setor',
+      message: 'Tem certeza que deseja deletar este setor?',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 

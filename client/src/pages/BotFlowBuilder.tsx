@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface Flow {
   id: string;
@@ -48,6 +49,7 @@ interface Intent {
 }
 
 export default function BotFlowBuilder() {
+  const confirmModal = useConfirm();
   const { botId } = useParams<{ botId: string }>();
   const navigate = useNavigate();
   const [bot, setBot] = useState<any>(null);
@@ -418,7 +420,13 @@ export default function BotFlowBuilder() {
                     </button>
                     <button
                       onClick={async () => {
-                        if (!confirm('Tem certeza que deseja deletar este step?')) {
+                        const confirmed = await confirmModal({
+                          title: 'Excluir step',
+                          message: 'Tem certeza que deseja deletar este step?',
+                          confirmText: 'Excluir',
+                          cancelText: 'Cancelar',
+                        });
+                        if (!confirmed) {
                           return;
                         }
                         try {

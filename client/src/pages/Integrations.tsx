@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../utils/api';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface Webhook {
   id: string;
@@ -31,6 +32,7 @@ interface Channel {
 }
 
 export default function Integrations() {
+  const confirmModal = useConfirm();
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,7 +189,13 @@ export default function Integrations() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Tem certeza que deseja deletar o webhook "${name}"?`)) {
+    const confirmed = await confirmModal({
+      title: 'Excluir webhook',
+      message: `Tem certeza que deseja deletar o webhook "${name}"?`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 

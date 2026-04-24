@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../utils/api';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface User {
   id: string;
@@ -99,6 +100,7 @@ function getPresenceDisplay(user: User) {
 }
 
 export default function Users() {
+  const confirmModal = useConfirm();
   const [users, setUsers] = useState<User[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
@@ -203,7 +205,13 @@ export default function Users() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja deletar este usuário?')) {
+    const confirmed = await confirmModal({
+      title: 'Excluir usuário',
+      message: 'Tem certeza que deseja deletar este usuário?',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 

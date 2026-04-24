@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface Bot {
   id: string;
@@ -51,6 +52,7 @@ interface BotVariable {
 
 export default function Bots() {
   const navigate = useNavigate();
+  const confirmModal = useConfirm();
   const [bots, setBots] = useState<Bot[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
@@ -170,7 +172,13 @@ export default function Bots() {
   };
 
   const handleDeleteBot = async (id: string, name: string) => {
-    if (!confirm(`Tem certeza que deseja deletar o bot "${name}"?`)) {
+    const confirmed = await confirmModal({
+      title: 'Excluir bot',
+      message: `Tem certeza que deseja deletar o bot "${name}"?`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -669,13 +677,18 @@ export default function Bots() {
                           </button>
                           <button
                             onClick={async () => {
-                              if (confirm(`Deletar variável "${variable.name}"?`)) {
-                                try {
-                                  await api.delete(`/api/bots/variables/${variable.id}`);
-                                  fetchVariables(selectedBotId);
-                                } catch (error: any) {
-                                  alert(error.response?.data?.error || 'Erro ao deletar variável');
-                                }
+                              const confirmed = await confirmModal({
+                                title: 'Excluir variável',
+                                message: `Deletar variável "${variable.name}"?`,
+                                confirmText: 'Excluir',
+                                cancelText: 'Cancelar',
+                              });
+                              if (!confirmed) return;
+                              try {
+                                await api.delete(`/api/bots/variables/${variable.id}`);
+                                fetchVariables(selectedBotId);
+                              } catch (error: any) {
+                                alert(error.response?.data?.error || 'Erro ao deletar variável');
                               }
                             }}
                             style={{

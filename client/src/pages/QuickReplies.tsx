@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../utils/api';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface QuickReply {
   id: string;
@@ -20,6 +21,7 @@ interface QuickReply {
 }
 
 export default function QuickReplies() {
+  const confirmModal = useConfirm();
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,7 +100,13 @@ export default function QuickReplies() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja deletar esta resposta rápida?')) {
+    const confirmed = await confirmModal({
+      title: 'Excluir resposta rápida',
+      message: 'Tem certeza que deseja deletar esta resposta rápida?',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 

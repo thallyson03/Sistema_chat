@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { useConfirm } from './ui/ConfirmProvider';
 
 interface Pipeline {
   id: string;
@@ -40,6 +41,7 @@ function getBlockName(type: string): string {
 }
 
 export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
+  const confirmModal = useConfirm();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [duplicateControlEnabled, setDuplicateControlEnabled] = useState(false);
@@ -164,8 +166,14 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
     setShowConfigModal(false);
   };
 
-  const handleDeleteBlock = (blockId: string) => {
-    if (confirm('Deseja realmente excluir esta automação?')) {
+  const handleDeleteBlock = async (blockId: string) => {
+    const confirmed = await confirmModal({
+      title: 'Excluir automação',
+      message: 'Deseja realmente excluir esta automação?',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (confirmed) {
       setAutomationBlocks(automationBlocks.filter((b) => b.id !== blockId));
       if (selectedBlock?.id === blockId) {
         setSelectedBlock(null);

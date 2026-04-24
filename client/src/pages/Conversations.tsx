@@ -9,6 +9,7 @@ import QuickRepliesModal from '../components/QuickRepliesModal';
 import { getTimeAgo } from '../utils/timeUtils';
 import { ConversationCard } from '../components/ui/ConversationCard';
 import { IconButton } from '../components/ui/IconButton';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 // Função para gerar avatar com iniciais
 const getAvatarUrl = (name: string, size: number = 40): string => {
@@ -158,6 +159,7 @@ const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
 export default function Conversations() {
   // Base da API (mesma usada pelo axios)
   const apiBase = (api.defaults.baseURL || '').replace(/\/$/, '') || getPublicApiOrigin();
+  const confirm = useConfirm();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkOpenedRef = useRef<string | null>(null);
@@ -1550,7 +1552,13 @@ export default function Conversations() {
                   <button
                     type="button"
                     onClick={async () => {
-                      if (!confirm('Tem certeza que deseja fechar esta conversa?')) return;
+                      const confirmed = await confirm({
+                        title: 'Fechar conversa',
+                        message: 'Tem certeza que deseja fechar esta conversa?',
+                        confirmText: 'Fechar',
+                        cancelText: 'Cancelar',
+                      });
+                      if (!confirmed) return;
                       try {
                         await api.put(`/api/conversations/${selectedConversation.id}`, { status: 'CLOSED' });
                         await fetchConversations();
@@ -1614,11 +1622,14 @@ export default function Conversations() {
                   type="button"
                   onClick={async () => {
                     if (!selectedConversation) return;
-                    if (
-                      !confirm(
+                    const confirmed = await confirm({
+                      title: 'Excluir conversa',
+                      message:
                         'Tem certeza que deseja excluir definitivamente esta conversa? Esta ação não pode ser desfeita.',
-                      )
-                    ) {
+                      confirmText: 'Excluir',
+                      cancelText: 'Cancelar',
+                    });
+                    if (!confirmed) {
                       return;
                     }
                     try {

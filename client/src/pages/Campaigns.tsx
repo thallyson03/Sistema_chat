@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
 import { Button } from '../components/ui/Button';
+import { useConfirm } from '../components/ui/ConfirmProvider';
 
 interface Campaign {
   id: string;
@@ -49,6 +50,7 @@ interface Contact {
 }
 
 export default function Campaigns() {
+  const confirmModal = useConfirm();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -162,7 +164,13 @@ export default function Campaigns() {
   };
 
   const handleExecuteCampaign = async (campaignId: string) => {
-    if (!confirm('Deseja realmente executar esta campanha? As mensagens serão enviadas agora.')) {
+    const confirmed = await confirmModal({
+      title: 'Executar campanha',
+      message: 'Deseja realmente executar esta campanha? As mensagens serão enviadas agora.',
+      confirmText: 'Executar',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -180,7 +188,13 @@ export default function Campaigns() {
   };
 
   const handleDeleteCampaign = async (campaignId: string) => {
-    if (!confirm('Deseja realmente deletar esta campanha?')) {
+    const confirmed = await confirmModal({
+      title: 'Excluir campanha',
+      message: 'Deseja realmente deletar esta campanha?',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) {
       return;
     }
 

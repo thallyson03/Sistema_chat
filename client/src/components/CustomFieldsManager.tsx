@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { useConfirm } from './ui/ConfirmProvider';
 
 interface CustomField {
   id: string;
@@ -16,6 +17,7 @@ interface CustomFieldsManagerProps {
 }
 
 export default function CustomFieldsManager({ pipelineId }: CustomFieldsManagerProps) {
+  const confirmModal = useConfirm();
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -91,7 +93,13 @@ export default function CustomFieldsManager({ pipelineId }: CustomFieldsManagerP
   };
 
   const handleDelete = async (fieldId: string) => {
-    if (!confirm('Tem certeza que deseja deletar este campo?')) return;
+    const confirmed = await confirmModal({
+      title: 'Excluir campo',
+      message: 'Tem certeza que deseja deletar este campo?',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
 
     try {
       await api.delete(`/api/pipelines/custom-fields/${fieldId}`);
