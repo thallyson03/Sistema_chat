@@ -3,6 +3,7 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
 
 // Importar rotas
 import authRoutes from './routes/authRoutes';
@@ -49,6 +50,33 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true,
   },
+});
+
+io.use((socket, next) => {
+  try {
+    const tokenFromAuth =
+      typeof socket.handshake.auth?.token === 'string' ? socket.handshake.auth.token : null;
+    const authHeader = socket.handshake.headers?.authorization;
+    const tokenFromHeader =
+      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.slice('Bearer '.length)
+        : null;
+    const token = tokenFromAuth || tokenFromHeader;
+
+    if (!token) {
+      return next(new Error('Socket não autenticado: token ausente'));
+    }
+
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return next(new Error('Socket indisponível: JWT_SECRET não configurado'));
+    }
+
+    jwt.verify(token, jwtSecret);
+    return next();
+  } catch (error) {
+    return next(new Error('Socket não autenticado: token inválido'));
+  }
 });
 
 // Middlewares
@@ -167,7 +195,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   console.error('[Server] Stack trace:', err.stack);
   console.error('[Server] Request URL:', req.url);
   console.error('[Server] Request Method:', req.method);
-  console.error('[Server] Request Body:', req.body);
+  if (process.env.NODE_ENV !== 'production') {
+    console.error('[Server] Request Body:', req.body);
+  }
   
   res.status(err.status || 500).json({
     error: err.message || 'Erro interno do servidor',

@@ -24,6 +24,7 @@ export function getSocketIO() {
 }
 
 const router = Router();
+const isDevLogs = process.env.NODE_ENV !== 'production';
 
 async function resolveWebhookVerifyTokens(): Promise<string[]> {
   const tokens = new Set<string>();
@@ -197,15 +198,17 @@ async function resolveWhatsAppOfficialChannel(value: any) {
 
 // Middleware para log de todas as requisições ao webhook
 router.use('/whatsapp', (req: Request, res: Response, next: Function) => {
-  console.log('🔔 [WebhookMiddleware] Requisição recebida:', {
-    method: req.method,
-    url: req.url,
-    path: req.path,
-    originalUrl: req.originalUrl,
-    timestamp: new Date().toISOString(),
-    hasBody: !!req.body,
-    bodyKeys: req.body ? Object.keys(req.body) : [],
-  });
+  if (isDevLogs) {
+    console.log('🔔 [WebhookMiddleware] Requisição recebida:', {
+      method: req.method,
+      url: req.url,
+      path: req.path,
+      originalUrl: req.originalUrl,
+      timestamp: new Date().toISOString(),
+      hasBody: !!req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : [],
+    });
+  }
   next();
 });
 
@@ -230,7 +233,9 @@ router.get('/whatsapp', async (req: Request, res: Response) => {
   console.log('[WebhookWhatsApp] 🔐 ============================================');
   console.log('[WebhookWhatsApp] 🔐 Verificação do webhook (GET)');
   console.log('[WebhookWhatsApp] 🔐 URL:', req.url);
-  console.log('[WebhookWhatsApp] 🔐 Query params:', JSON.stringify(req.query, null, 2));
+  if (isDevLogs) {
+    console.log('[WebhookWhatsApp] 🔐 Query params:', JSON.stringify(req.query, null, 2));
+  }
   console.log('[WebhookWhatsApp] 🔐 Mode:', mode);
   console.log('[WebhookWhatsApp] 🔐 Token recebido:', token);
   console.log('[WebhookWhatsApp] 🔐 Total de tokens válidos carregados:', verifyTokens.length);
@@ -268,8 +273,15 @@ router.post('/whatsapp', async (req: Request, res: Response) => {
     console.log('📨 Timestamp:', new Date().toISOString());
     console.log('📨 URL:', req.url);
     console.log('📨 Method:', req.method);
-    console.log('📨 Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('📨 Body completo:', JSON.stringify(req.body, null, 2));
+    if (isDevLogs) {
+      console.log('📨 Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('📨 Body completo:', JSON.stringify(req.body, null, 2));
+    } else {
+      console.log('📨 Resumo do evento:', {
+        hasEntry: Array.isArray(req.body?.entry),
+        entryCount: Array.isArray(req.body?.entry) ? req.body.entry.length : 0,
+      });
+    }
     console.log('📨 ============================================');
 
     // Validação opcional de assinatura (X-Hub-Signature-256) do WhatsApp/META
@@ -922,7 +934,9 @@ router.post('/evolution', async (req: Request, res: Response) => {
     console.log('📨 Timestamp:', new Date().toISOString());
     console.log('📨 Event:', event.event || event.eventName || event.eventType);
     console.log('📨 Data keys:', Object.keys(event.data || event));
-    console.log('📨 Body completo:', JSON.stringify(event, null, 2));
+    if (isDevLogs) {
+      console.log('📨 Body completo:', JSON.stringify(event, null, 2));
+    }
     console.log('📨 ============================================');
 
     // Evolution API pode enviar eventos de diferentes formas

@@ -296,6 +296,9 @@ export default function ConversationDetail() {
     // Conectar ao Socket.IO para atualizações em tempo real
     const socket: Socket = io(getPublicApiOrigin(), {
       transports: ['websocket', 'polling'],
+      auth: {
+        token: localStorage.getItem('token') || '',
+      },
     });
 
     socket.on('connect', () => {

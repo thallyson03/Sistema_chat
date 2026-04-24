@@ -678,7 +678,9 @@ export class MessageService {
         console.error('Stack:', error.stack?.substring(0, 500));
         if (error.response) {
           console.error('Status:', error.response.status);
-          console.error('Headers:', JSON.stringify(error.response.headers, null, 2));
+          if (process.env.NODE_ENV !== 'production') {
+            console.error('Headers:', JSON.stringify(error.response.headers, null, 2));
+          }
           console.error('Data:', JSON.stringify(error.response.data, null, 2));
         }
         // Continua salvando a mensagem mesmo se falhar o envio

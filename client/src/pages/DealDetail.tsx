@@ -268,6 +268,9 @@ export default function DealDetail() {
       // Conectar ao Socket.IO
       const socket: Socket = io(getPublicApiOrigin(), {
         transports: ['websocket', 'polling'],
+        auth: {
+          token: localStorage.getItem('token') || '',
+        },
       });
 
       socket.on('new_message', async (data: { conversationId: string; messageId?: string }) => {

@@ -15,19 +15,26 @@ export const authenticateToken = (
   res: Response,
   next: NextFunction
 ) => {
-  console.log('[Auth] authenticateToken chamado');
-  console.log('[Auth] URL:', req.url);
-  console.log('[Auth] Method:', req.method);
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (isDev) {
+    console.log('[Auth] authenticateToken chamado');
+    console.log('[Auth] URL:', req.url);
+    console.log('[Auth] Method:', req.method);
+  }
   
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    console.log('[Auth] Token não fornecido');
+    if (isDev) {
+      console.log('[Auth] Token não fornecido');
+    }
     return res.status(401).json({ error: 'Token de acesso não fornecido' });
   }
 
-  console.log('[Auth] Token presente:', token.substring(0, 20) + '...');
+  if (isDev) {
+    console.log('[Auth] Token presente: [mascarado]');
+  }
 
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
@@ -41,7 +48,9 @@ export const authenticateToken = (
       email: string;
       role: string;
     };
-    console.log('[Auth] Token válido para usuário:', decoded.email, 'Role:', decoded.role);
+    if (isDev) {
+      console.log('[Auth] Token válido para usuário:', decoded.email, 'Role:', decoded.role);
+    }
     req.user = decoded;
     
     // Atualizar lastActiveAt do usuário (em background, não bloquear requisição)
@@ -68,21 +77,30 @@ export const authenticateToken = (
 
 export const authorizeRoles = (...roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    console.log('[Auth] authorizeRoles chamado');
-    console.log('[Auth] Roles permitidos:', roles);
-    console.log('[Auth] User role:', req.user?.role);
+    const isDev = process.env.NODE_ENV !== 'production';
+    if (isDev) {
+      console.log('[Auth] authorizeRoles chamado');
+      console.log('[Auth] Roles permitidos:', roles);
+      console.log('[Auth] User role:', req.user?.role);
+    }
     
     if (!req.user) {
-      console.log('[Auth] Usuário não autenticado');
+      if (isDev) {
+        console.log('[Auth] Usuário não autenticado');
+      }
       return res.status(401).json({ error: 'Usuário não autenticado' });
     }
 
     if (!roles.includes(req.user.role)) {
-      console.log('[Auth] Acesso negado - role:', req.user.role, 'não está em:', roles);
+      if (isDev) {
+        console.log('[Auth] Acesso negado - role:', req.user.role, 'não está em:', roles);
+      }
       return res.status(403).json({ error: 'Acesso negado. Permissões insuficientes.' });
     }
 
-    console.log('[Auth] Autorização concedida');
+    if (isDev) {
+      console.log('[Auth] Autorização concedida');
+    }
     next();
   };
 };

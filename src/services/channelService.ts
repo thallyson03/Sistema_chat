@@ -17,6 +17,62 @@ export interface CreateChannelData {
 }
 
 export class ChannelService {
+  private static readonly SECRET_MASK = '***';
+  private static readonly SECRET_CONFIG_KEYS = new Set([
+    'token',
+    'appSecret',
+    'apiKey',
+    'secret',
+    'webhookSecret',
+    'metaAppSecret',
+    'whatsappAppSecret',
+    'accessToken',
+  ]);
+
+  private sanitizeConfigForRead(config: any): any {
+    if (!config || typeof config !== 'object') return config;
+    const cloned = { ...config };
+    for (const key of Object.keys(cloned)) {
+      if (ChannelService.SECRET_CONFIG_KEYS.has(key) && typeof cloned[key] === 'string' && cloned[key]) {
+        cloned[key] = ChannelService.SECRET_MASK;
+      }
+    }
+    return cloned;
+  }
+
+  private sanitizeChannelForRead<T extends Record<string, any>>(channel: T): T {
+    const cloned: any = { ...channel };
+    if (cloned.config) {
+      cloned.config = this.sanitizeConfigForRead(cloned.config);
+    }
+    if (cloned.evolutionApiKey) cloned.evolutionApiKey = ChannelService.SECRET_MASK;
+    if (cloned.evolutionInstanceToken) cloned.evolutionInstanceToken = ChannelService.SECRET_MASK;
+    return cloned as T;
+  }
+
+  private mergeConfigPreservingSecrets(previousConfig: any, incomingConfig: any): any {
+    const prev = previousConfig && typeof previousConfig === 'object' ? previousConfig : {};
+    const next = incomingConfig && typeof incomingConfig === 'object' ? { ...incomingConfig } : {};
+
+    for (const key of ChannelService.SECRET_CONFIG_KEYS) {
+      const incoming = next[key];
+      if (
+        incoming === undefined ||
+        incoming === null ||
+        incoming === '' ||
+        incoming === ChannelService.SECRET_MASK
+      ) {
+        if (prev[key] !== undefined) {
+          next[key] = prev[key];
+        } else {
+          delete next[key];
+        }
+      }
+    }
+
+    return next;
+  }
+
   /**
    * Obtém a URL do webhook (prioriza NGROK_URL para ambiente de teste)
    */
@@ -97,7 +153,7 @@ export class ChannelService {
    * Configura o webhook manualmente (método público)
    */
   async configureWebhookManually(channelId: string): Promise<{ success: boolean; message: string; webhookUrl?: string }> {
-    const channel = await this.getChannelById(channelId);
+    const channel = await this.getChannelByIdRaw(channelId);
     
     if (!channel) {
       throw new Error('Canal não encontrado');
@@ -144,7 +200,7 @@ export class ChannelService {
   }
 
   async getChannels(): Promise<Channel[]> {
-    return await prisma.channel.findMany({
+    const channels = await prisma.channel.findMany({
       include: {
         sector: {
           select: {
@@ -158,10 +214,11 @@ export class ChannelService {
         createdAt: 'desc',
       },
     });
+    return channels.map((channel) => this.sanitizeChannelForRead(channel as any)) as Channel[];
   }
 
-  async getChannelById(id: string): Promise<Channel | null> {
-    return await prisma.channel.findUnique({
+  private async getChannelByIdRaw(id: string): Promise<Channel | null> {
+    return prisma.channel.findUnique({
       where: { id },
       include: {
         sector: {
@@ -174,6 +231,11 @@ export class ChannelService {
         },
       },
     });
+  }
+
+  async getChannelById(id: string): Promise<Channel | null> {
+    const channel = await this.getChannelByIdRaw(id);
+    return channel ? (this.sanitizeChannelForRead(channel as any) as Channel) : null;
   }
 
   async createChannel(data: CreateChannelData): Promise<Channel> {
@@ -276,6 +338,16 @@ export class ChannelService {
   }
 
   async updateChannel(id: string, data: Partial<CreateChannelData>): Promise<Channel> {
+    const existingChannel = await prisma.channel.findUnique({
+      where: { id },
+      select: {
+        config: true,
+      },
+    });
+    if (!existingChannel) {
+      throw new Error('Canal não encontrado');
+    }
+
     const rawPrimary = data.primarySectorId ?? data.sectorId;
     const normalizedPrimarySectorId =
       rawPrimary && rawPrimary.trim() !== '' ? rawPrimary : null;
@@ -286,7 +358,9 @@ export class ChannelService {
       where: { id },
       data: {
         ...(data.name && { name: data.name }),
-        ...(data.config && { config: data.config }),
+        ...(data.config && {
+          config: this.mergeConfigPreservingSecrets(existingChannel.config as any, data.config),
+        }),
         ...(data.evolutionApiKey && { evolutionApiKey: data.evolutionApiKey }),
         ...(data.evolutionInstanceId && { evolutionInstanceId: data.evolutionInstanceId }),
         ...(data.evolutionInstanceToken && { evolutionInstanceToken: data.evolutionInstanceToken }),
@@ -400,7 +474,7 @@ export class ChannelService {
   }
 
   async getQRCode(channelId: string): Promise<{ qrcode: string | null }> {
-    const channel = await this.getChannelById(channelId);
+    const channel = await this.getChannelByIdRaw(channelId);
     
     if (!channel) {
       throw new Error('Canal não encontrado');
@@ -498,7 +572,7 @@ export class ChannelService {
   }
 
   async getChannelStatus(channelId: string): Promise<{ status: string }> {
-    const channel = await this.getChannelById(channelId);
+    const channel = await this.getChannelByIdRaw(channelId);
     
     if (!channel) {
       throw new Error('Canal não encontrado');

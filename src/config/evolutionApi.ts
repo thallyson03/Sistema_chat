@@ -249,7 +249,7 @@ class EvolutionApiClient {
       };
 
       console.log('[EvolutionAPI] Payload:', JSON.stringify(payload, null, 2));
-      console.log('[EvolutionAPI] Headers:', JSON.stringify(this.getHeaders(apiKey), null, 2));
+      console.log('[EvolutionAPI] Headers: { apikey: "***masked***", "Content-Type": "application/json" }');
 
       const response = await this.client.post(
         `/message/sendText/${instanceName}`,
