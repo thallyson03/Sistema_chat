@@ -1748,7 +1748,12 @@ export default function BotFlowBuilderVisual() {
       }
 
       const response = await api.get(`/api/bots/${botId}/flows`);
-      const flowList = response.data || [];
+      const flowListRaw = response.data || [];
+      const flowList = [...flowListRaw].sort((a: any, b: any) => {
+        const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
+        const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
+        return bTime - aTime;
+      });
       setFlows(flowList);
 
       if (flowList.length === 0) {

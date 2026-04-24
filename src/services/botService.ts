@@ -238,6 +238,9 @@ export class BotService {
           },
         },
         flows: {
+          orderBy: {
+            updatedAt: 'desc',
+          },
           include: {
             steps: {
               include: {
@@ -2007,6 +2010,12 @@ export class BotService {
         buttons: Array.isArray(response.buttons) ? response.buttons : undefined,
         metadata: response.metadata || undefined,
         fromBot: true,
+      });
+
+      console.log('[BotService] Payload de resposta enviado:', {
+        type: responseType,
+        buttonsCount: Array.isArray(response.buttons) ? response.buttons.length : 0,
+        interactiveType: response?.metadata?.interactiveType || null,
       });
 
       console.log(`[BotService] Resposta do bot enviada para conversa ${conversationId}`);
