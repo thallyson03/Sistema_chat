@@ -18,6 +18,16 @@ const publicPipelineLimiter = rateLimit({
   },
 });
 
+const publicPipelineReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.PUBLIC_PIPELINE_READ_RATE_LIMIT_PER_MIN || 240),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Muitas consultas públicas de pipeline. Tente novamente em instantes.',
+  },
+});
+
 function timingSafeEqualText(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -69,7 +79,7 @@ function optionalPublicAuth(
 // Rotas públicas para API externa
 // ============================================
 // GET Pipeline por ID (público)
-router.get('/:pipelineId', pipelineController.getPipelineById.bind(pipelineController));
+router.get('/:pipelineId', publicPipelineReadLimiter, pipelineController.getPipelineById.bind(pipelineController));
 
 // POST Criar Deal via API (público)
 router.post(

@@ -1,8 +1,14 @@
 import { Router, Response } from 'express';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { authenticateToken, AuthRequest, authorizeRoles } from '../middleware/auth';
 import * as ceapdesk from '../services/ceapdeskDashboardService';
+import { TtlCache } from '../utils/ttlCache';
 
 const router = Router();
+const dashboardCache = new TtlCache();
+
+function getDashboardCacheTtlMs(): number {
+  return Math.max(1000, Number(process.env.EXTERNAL_DASHBOARD_CACHE_TTL_MS) || 15_000);
+}
 
 function queryFromReq(req: AuthRequest): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {};
@@ -16,6 +22,12 @@ function queryFromReq(req: AuthRequest): Record<string, string | undefined> {
   return out;
 }
 
+function cacheKey(req: AuthRequest, routeKey: string): string {
+  const qp = queryFromReq(req);
+  const query = new URLSearchParams(qp as Record<string, string>).toString();
+  return [routeKey, req.user?.id || 'anon', req.user?.role || 'none', query].join(':');
+}
+
 function requireUser(req: AuthRequest, res: Response): req is AuthRequest & { user: { id: string; role: string } } {
   if (!req.user?.id) {
     res.status(401).json({ error: 'Não autenticado' });
@@ -24,17 +36,21 @@ function requireUser(req: AuthRequest, res: Response): req is AuthRequest & { us
   return true;
 }
 
-router.get('/enabled', authenticateToken, (req: AuthRequest, res: Response) => {
+router.get('/enabled', authenticateToken, authorizeRoles('ADMIN', 'SUPERVISOR'), (req: AuthRequest, res: Response) => {
   res.json({ enabled: ceapdesk.isCeapdeskDashboardEnabled() });
 });
 
-router.get('/stats', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/stats', authenticateToken, authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res: Response) => {
   try {
     if (!requireUser(req, res)) return;
     if (!ceapdesk.isCeapdeskDashboardEnabled()) {
       return res.status(503).json({ error: 'Dashboard CEAPDesk desabilitado' });
     }
-    const data = await ceapdesk.fetchAnalyticsStats(req.user, queryFromReq(req));
+    const data = await dashboardCache.getOrSet(
+      cacheKey(req, 'external-dashboard:stats'),
+      getDashboardCacheTtlMs(),
+      () => ceapdesk.fetchAnalyticsStats(req.user, queryFromReq(req)),
+    );
     res.json(data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Erro ao consultar CEAPDesk';
@@ -43,13 +59,17 @@ router.get('/stats', authenticateToken, async (req: AuthRequest, res: Response) 
   }
 });
 
-router.get('/dashboard-completo', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/dashboard-completo', authenticateToken, authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res: Response) => {
   try {
     if (!requireUser(req, res)) return;
     if (!ceapdesk.isCeapdeskDashboardEnabled()) {
       return res.status(503).json({ error: 'Dashboard CEAPDesk desabilitado' });
     }
-    const data = await ceapdesk.fetchDashboardCompleto(req.user, queryFromReq(req));
+    const data = await dashboardCache.getOrSet(
+      cacheKey(req, 'external-dashboard:dashboard-completo'),
+      getDashboardCacheTtlMs(),
+      () => ceapdesk.fetchDashboardCompleto(req.user, queryFromReq(req)),
+    );
     res.json(data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Erro ao consultar CEAPDesk';
@@ -58,13 +78,17 @@ router.get('/dashboard-completo', authenticateToken, async (req: AuthRequest, re
   }
 });
 
-router.get('/productivity', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/productivity', authenticateToken, authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res: Response) => {
   try {
     if (!requireUser(req, res)) return;
     if (!ceapdesk.isCeapdeskDashboardEnabled()) {
       return res.status(503).json({ error: 'Dashboard CEAPDesk desabilitado' });
     }
-    const data = await ceapdesk.fetchProductivity(req.user, queryFromReq(req));
+    const data = await dashboardCache.getOrSet(
+      cacheKey(req, 'external-dashboard:productivity'),
+      getDashboardCacheTtlMs(),
+      () => ceapdesk.fetchProductivity(req.user, queryFromReq(req)),
+    );
     res.json(data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Erro ao consultar CEAPDesk';
@@ -73,13 +97,17 @@ router.get('/productivity', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
-router.get('/usuarios-performance', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/usuarios-performance', authenticateToken, authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res: Response) => {
   try {
     if (!requireUser(req, res)) return;
     if (!ceapdesk.isCeapdeskDashboardEnabled()) {
       return res.status(503).json({ error: 'Dashboard CEAPDesk desabilitado' });
     }
-    const data = await ceapdesk.fetchUsuariosPerformance(req.user, queryFromReq(req));
+    const data = await dashboardCache.getOrSet(
+      cacheKey(req, 'external-dashboard:usuarios-performance'),
+      getDashboardCacheTtlMs(),
+      () => ceapdesk.fetchUsuariosPerformance(req.user, queryFromReq(req)),
+    );
     res.json(data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Erro ao consultar CEAPDesk';
@@ -88,13 +116,17 @@ router.get('/usuarios-performance', authenticateToken, async (req: AuthRequest, 
   }
 });
 
-router.get('/performance-setores', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/performance-setores', authenticateToken, authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res: Response) => {
   try {
     if (!requireUser(req, res)) return;
     if (!ceapdesk.isCeapdeskDashboardEnabled()) {
       return res.status(503).json({ error: 'Dashboard CEAPDesk desabilitado' });
     }
-    const data = await ceapdesk.fetchPerformanceSetores(req.user, queryFromReq(req));
+    const data = await dashboardCache.getOrSet(
+      cacheKey(req, 'external-dashboard:performance-setores'),
+      getDashboardCacheTtlMs(),
+      () => ceapdesk.fetchPerformanceSetores(req.user, queryFromReq(req)),
+    );
     res.json(data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Erro ao consultar CEAPDesk';
@@ -103,13 +135,17 @@ router.get('/performance-setores', authenticateToken, async (req: AuthRequest, r
   }
 });
 
-router.get('/reports/stats', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/reports/stats', authenticateToken, authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res: Response) => {
   try {
     if (!requireUser(req, res)) return;
     if (!ceapdesk.isCeapdeskDashboardEnabled()) {
       return res.status(503).json({ error: 'Dashboard CEAPDesk desabilitado' });
     }
-    const data = await ceapdesk.fetchReportsStats(req.user, queryFromReq(req));
+    const data = await dashboardCache.getOrSet(
+      cacheKey(req, 'external-dashboard:reports-stats'),
+      getDashboardCacheTtlMs(),
+      () => ceapdesk.fetchReportsStats(req.user, queryFromReq(req)),
+    );
     res.json(data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Erro ao consultar CEAPDesk';
@@ -118,13 +154,17 @@ router.get('/reports/stats', authenticateToken, async (req: AuthRequest, res: Re
   }
 });
 
-router.get('/reports/data', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/reports/data', authenticateToken, authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res: Response) => {
   try {
     if (!requireUser(req, res)) return;
     if (!ceapdesk.isCeapdeskDashboardEnabled()) {
       return res.status(503).json({ error: 'Dashboard CEAPDesk desabilitado' });
     }
-    const data = await ceapdesk.fetchReportsData(req.user, queryFromReq(req));
+    const data = await dashboardCache.getOrSet(
+      cacheKey(req, 'external-dashboard:reports-data'),
+      getDashboardCacheTtlMs(),
+      () => ceapdesk.fetchReportsData(req.user, queryFromReq(req)),
+    );
     res.json(data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Erro ao consultar CEAPDesk';

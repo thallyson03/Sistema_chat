@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 // Importar rotas
 import authRoutes from './routes/authRoutes';
@@ -29,6 +30,8 @@ import whatsappTemplateRoutes from './routes/whatsappTemplateRoutes';
 import contactListRoutes from './routes/contactListRoutes';
 import { setSocketIO as setMessageSocketIO } from './controllers/messageController';
 import { setMessageServiceSocketIO } from './services/messageService';
+import { logger } from './utils/logger';
+import { distributedLockService } from './services/distributedLockService';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -39,6 +42,7 @@ import { BotService } from './services/botService';
 import { WebhookService } from './services/webhookService';
 import { pipelineAutomationService } from './services/pipelineAutomationService';
 import { runMediaPersistJobTick } from './services/mediaPersistJob';
+import { runMediaConversionWorkerTick } from './services/mediaConversionWorker';
 import { ConversationDistributionService } from './services/conversationDistributionService';
 whatsappOfficial.init();
 
@@ -80,6 +84,29 @@ io.use((socket, next) => {
 });
 
 // Middlewares
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const requestId = req.headers['x-request-id']
+    ? String(req.headers['x-request-id'])
+    : crypto.randomUUID();
+  (req as any).requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+  next();
+});
+
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    logger.info('http request completed', {
+      requestId: (req as any).requestId,
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+    });
+  });
+  next();
+});
+
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true,
@@ -191,13 +218,12 @@ if (serveStatic) {
 
 // Middleware de tratamento de erros global
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('[Server] Erro não tratado:', err);
-  console.error('[Server] Stack trace:', err.stack);
-  console.error('[Server] Request URL:', req.url);
-  console.error('[Server] Request Method:', req.method);
-  if (process.env.NODE_ENV !== 'production') {
-    console.error('[Server] Request Body:', req.body);
-  }
+  logger.errorWithCause('unhandled server error', err, {
+    requestId: (req as any).requestId,
+    requestUrl: req.url,
+    requestMethod: req.method,
+    ...(process.env.NODE_ENV !== 'production' ? { requestBody: req.body } : {}),
+  });
   
   res.status(err.status || 500).json({
     error: err.message || 'Erro interno do servidor',
@@ -217,20 +243,27 @@ export { io };
 const PORT = process.env.PORT || 3007;
 
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`📡 Webhooks disponíveis em:`);
-  console.log(`   - http://localhost:${PORT}/api/webhooks/whatsapp`);
-  console.log(`   - http://localhost:${PORT}/webhooks/whatsapp`);
-  console.log(`   - http://localhost:${PORT}/api/whatsapp/whatsapp`);
+  logger.info('server started', {
+    port: PORT,
+    webhooks: [
+      `http://localhost:${PORT}/api/webhooks/whatsapp`,
+      `http://localhost:${PORT}/webhooks/whatsapp`,
+      `http://localhost:${PORT}/api/whatsapp/whatsapp`,
+    ],
+  });
   
   const ngrokUrl = process.env.API_BASE_URL || process.env.NGROK_URL;
   if (ngrokUrl) {
-    console.log(`🌐 URL pública (ngrok): ${ngrokUrl}`);
-    console.log(`📨 Webhook URL completa: ${ngrokUrl}/api/webhooks/whatsapp`);
+    logger.info('public base url configured', {
+      publicUrl: ngrokUrl,
+      webhookUrl: `${ngrokUrl}/api/webhooks/whatsapp`,
+    });
   }
   
   if (process.env.EVOLUTION_API_URL) {
-    console.log(`🔗 Evolution API: ${process.env.EVOLUTION_API_URL}`);
+    logger.info('evolution api configured', {
+      evolutionApiUrl: process.env.EVOLUTION_API_URL,
+    });
   }
 
   // Agendador simples para encerramento automático de conversas inativas
@@ -238,23 +271,20 @@ httpServer.listen(PORT, () => {
   const webhookService = new WebhookService();
   const distributionService = new ConversationDistributionService();
   const intervalMs = 60 * 1000; // a cada 60 segundos
-  console.log(`⏱️ Auto-close de conversas inativas agendado a cada ${intervalMs / 1000}s`);
+  logger.info('auto-close scheduler configured', {
+    intervalSeconds: intervalMs / 1000,
+  });
 
   setInterval(() => {
-    botService.autoCloseInactiveConversations().catch((err) => {
-      console.error('[AutoClose] Erro ao executar verificação de conversas inativas (bots):', err);
-    });
-    webhookService.autoCloseInactiveConversationsForIntegrations().catch((err) => {
-      console.error(
-        '[AutoClose] Erro ao executar verificação de conversas inativas (integrações):',
-        err,
-      );
-    });
-
-    // Processar tarefas vencidas do pipeline e notificar no chat
-    pipelineAutomationService.processDueTasks().catch((err) => {
-      console.error('[PipelineTasks] Erro ao processar tarefas vencidas:', err);
-    });
+    void distributedLockService.runWithPgAdvisoryLock(
+      91001,
+      'auto-close-and-pipeline-tasks',
+      async () => {
+        await botService.autoCloseInactiveConversations();
+        await webhookService.autoCloseInactiveConversationsForIntegrations();
+        await pipelineAutomationService.processDueTasks();
+      },
+    );
   }, intervalMs);
 
   // Job em background: baixa mídia recebida (URLs da Meta/Evolution expiram) e grava em uploads/
@@ -262,21 +292,62 @@ httpServer.listen(PORT, () => {
     30_000,
     Number(process.env.MEDIA_PERSIST_JOB_INTERVAL_MS) || 120_000,
   );
-  console.log(
-    `[MediaPersistJob] Agendado a cada ${mediaJobMs / 1000}s (desative com MEDIA_PERSIST_JOB_ENABLED=false)`,
-  );
+  logger.info('media persist scheduler configured', {
+    intervalSeconds: mediaJobMs / 1000,
+    enabled: process.env.MEDIA_PERSIST_JOB_ENABLED !== 'false',
+  });
   setInterval(() => {
-    runMediaPersistJobTick().catch((err) => {
-      console.error('[MediaPersistJob] Erro no tick:', err);
-    });
+    void distributedLockService.runWithPgAdvisoryLock(
+      91002,
+      'media-persist-job',
+      async () => {
+        await runMediaPersistJobTick();
+      },
+    );
   }, mediaJobMs);
 
   // Primeira execução após subir o servidor (não bloquear o listen)
   setTimeout(() => {
-    runMediaPersistJobTick().catch((err) => {
-      console.error('[MediaPersistJob] Erro na primeira execução:', err);
-    });
+    void distributedLockService.runWithPgAdvisoryLock(
+      91002,
+      'media-persist-job-first-run',
+      async () => {
+        await runMediaPersistJobTick();
+      },
+    );
   }, 15_000);
+
+  // Worker assíncrono de conversão de mídia (ex.: OGG -> MP3) para reduzir custo em requisições interativas.
+  if (process.env.MEDIA_CONVERSION_WORKER_ENABLED !== 'false') {
+    const mediaConversionJobMs = Math.max(
+      30_000,
+      Number(process.env.MEDIA_CONVERSION_WORKER_INTERVAL_MS) || 90_000,
+    );
+    logger.info('media conversion worker configured', {
+      intervalSeconds: mediaConversionJobMs / 1000,
+      enabled: true,
+    });
+
+    setInterval(() => {
+      void distributedLockService.runWithPgAdvisoryLock(
+        91004,
+        'media-conversion-worker',
+        async () => {
+          await runMediaConversionWorkerTick();
+        },
+      );
+    }, mediaConversionJobMs);
+
+    setTimeout(() => {
+      void distributedLockService.runWithPgAdvisoryLock(
+        91004,
+        'media-conversion-worker-first-run',
+        async () => {
+          await runMediaConversionWorkerTick();
+        },
+      );
+    }, 20_000);
+  }
 
   // Job em background: conversa em WAITING deve ser atribuída quando surgir agente disponível
   if (process.env.WAITING_QUEUE_JOB_ENABLED !== 'false') {
@@ -284,20 +355,29 @@ httpServer.listen(PORT, () => {
       15_000,
       Number(process.env.WAITING_QUEUE_JOB_INTERVAL_MS) || 30_000,
     );
-    console.log(
-      `[WaitingQueueJob] Agendado a cada ${waitingQueueJobMs / 1000}s (desative com WAITING_QUEUE_JOB_ENABLED=false)`,
-    );
+    logger.info('waiting queue scheduler configured', {
+      intervalSeconds: waitingQueueJobMs / 1000,
+      enabled: true,
+    });
 
     setInterval(() => {
-      distributionService.redistributeWaitingConversations().catch((err) => {
-        console.error('[WaitingQueueJob] Erro no tick:', err);
-      });
+      void distributedLockService.runWithPgAdvisoryLock(
+        91003,
+        'waiting-queue-job',
+        async () => {
+          await distributionService.redistributeWaitingConversations();
+        },
+      );
     }, waitingQueueJobMs);
 
     setTimeout(() => {
-      distributionService.redistributeWaitingConversations().catch((err) => {
-        console.error('[WaitingQueueJob] Erro na primeira execução:', err);
-      });
+      void distributedLockService.runWithPgAdvisoryLock(
+        91003,
+        'waiting-queue-job-first-run',
+        async () => {
+          await distributionService.redistributeWaitingConversations();
+        },
+      );
     }, 10_000);
   }
 });

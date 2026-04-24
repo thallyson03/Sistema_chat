@@ -105,7 +105,13 @@ export class UserController {
 
   async getUserById(req: AuthRequest, res: Response) {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
       const { id } = req.params;
+      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR' && req.user.id !== id) {
+        return res.status(403).json({ error: 'Sem permissão para visualizar este usuário' });
+      }
 
       const user = await userService.getUserById(id);
 
@@ -122,6 +128,12 @@ export class UserController {
 
   async listUsers(req: AuthRequest, res: Response) {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR') {
+        return res.status(403).json({ error: 'Sem permissão para listar usuários' });
+      }
       const includeInactive = req.query.includeInactive === 'true';
 
       const users = await userService.listUsers(includeInactive);
@@ -135,7 +147,13 @@ export class UserController {
 
   async getUserSectors(req: AuthRequest, res: Response) {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
       const { id } = req.params;
+      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR' && req.user.id !== id) {
+        return res.status(403).json({ error: 'Sem permissão para visualizar setores deste usuário' });
+      }
 
       const sectors = await userService.getUserSectors(id);
 
@@ -239,7 +257,13 @@ export class UserController {
 
   async getPauseStatus(req: AuthRequest, res: Response) {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
       const { id } = req.params;
+      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPERVISOR' && req.user.id !== id) {
+        return res.status(403).json({ error: 'Sem permissão para visualizar status de pausa deste usuário' });
+      }
 
       const pauseStatus = await userService.getPauseStatus(id);
 

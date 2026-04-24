@@ -6,6 +6,7 @@ import { ConversationDistributionService } from '../services/conversationDistrib
 import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -25,6 +26,16 @@ export function getSocketIO() {
 
 const router = Router();
 const isDevLogs = process.env.NODE_ENV !== 'production';
+
+const webhookReceiveLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.WEBHOOK_RATE_LIMIT_PER_MIN || 600),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Muitas requisições de webhook. Tente novamente em instantes.',
+  },
+});
 
 async function resolveWebhookVerifyTokens(): Promise<string[]> {
   const tokens = new Set<string>();
@@ -266,7 +277,7 @@ router.get('/whatsapp', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/whatsapp', async (req: Request, res: Response) => {
+router.post('/whatsapp', webhookReceiveLimiter, async (req: Request, res: Response) => {
   try {
     console.log('📨 ============================================');
     console.log('📨 Webhook recebido do WhatsApp Official API');
@@ -926,7 +937,7 @@ async function handleWhatsAppOfficialStatus(status: any) {
 // ============================================
 
 // Webhook da Evolution API - Rota principal
-router.post('/evolution', async (req: Request, res: Response) => {
+router.post('/evolution', webhookReceiveLimiter, async (req: Request, res: Response) => {
   try {
     const event = req.body;
     console.log('📨 ============================================');
@@ -1707,7 +1718,7 @@ async function handleQRCodeUpdate(data: any) {
 
 // Rota alternativa para compatibilidade com URLs antigas (/api/whatsapp/webhook)
 // Reutiliza o mesmo handler do webhook /evolution
-router.post('/webhook', async (req: Request, res: Response) => {
+router.post('/webhook', webhookReceiveLimiter, async (req: Request, res: Response) => {
   try {
     const event = req.body;
     console.log('📨 Webhook recebido (rota alternativa /webhook)');

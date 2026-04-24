@@ -4,12 +4,38 @@ import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
 import { DashboardPerformanceService } from '../services/dashboardPerformanceService';
 import { getSocketIO } from '../routes/webhookRoutes';
+import { TtlCache } from '../utils/ttlCache';
 
 const conversationService = new ConversationService();
 const satisfactionSurveyService = new SatisfactionSurveyService();
 const dashboardPerformanceService = new DashboardPerformanceService();
+const metricsCache = new TtlCache();
 
 export class ConversationController {
+  private getMetricsTtlMs() {
+    return Math.max(
+      1000,
+      Number(process.env.DASHBOARD_CACHE_TTL_MS) || 15_000,
+    );
+  }
+
+  private buildMetricsCacheKey(prefix: string, req: AuthRequest): string {
+    const qp = new URLSearchParams();
+    Object.entries(req.query || {}).forEach(([k, v]) => {
+      if (Array.isArray(v)) {
+        v.forEach((item) => qp.append(k, String(item)));
+      } else if (v !== undefined) {
+        qp.append(k, String(v));
+      }
+    });
+    return [
+      prefix,
+      req.user?.id || 'anon',
+      req.user?.role || 'none',
+      qp.toString(),
+    ].join(':');
+  }
+
   private async ensureConversationAccess(req: AuthRequest, res: Response, conversationId: string) {
     if (!req.user) {
       res.status(401).json({ error: 'Usuário não autenticado' });
@@ -201,7 +227,12 @@ export class ConversationController {
 
   async getStats(req: AuthRequest, res: Response) {
     try {
-      const stats = await conversationService.getStats(req.user);
+      const cacheKey = this.buildMetricsCacheKey('conversation:stats', req);
+      const stats = await metricsCache.getOrSet(
+        cacheKey,
+        this.getMetricsTtlMs(),
+        () => conversationService.getStats(req.user),
+      );
       res.json(stats);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -214,6 +245,7 @@ export class ConversationController {
    */
   async getDashboardConversationMetrics(req: AuthRequest, res: Response) {
     try {
+      const cacheKey = this.buildMetricsCacheKey('conversation:metrics', req);
       const daysRaw = req.query.days;
       let days: number | undefined;
       if (daysRaw !== undefined && daysRaw !== '') {
@@ -224,11 +256,16 @@ export class ConversationController {
       }
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
-      const data = await conversationService.getDashboardConversationMetrics(req.user, {
-        days,
-        channelId,
-        sectorId,
-      });
+      const data = await metricsCache.getOrSet(
+        cacheKey,
+        this.getMetricsTtlMs(),
+        () =>
+          conversationService.getDashboardConversationMetrics(req.user, {
+            days,
+            channelId,
+            sectorId,
+          }),
+      );
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar métricas de conversas' });
@@ -241,13 +278,19 @@ export class ConversationController {
    */
   async getSatisfactionSurveyStats(req: AuthRequest, res: Response) {
     try {
+      const cacheKey = this.buildMetricsCacheKey('conversation:satisfaction', req);
       const days = parseInt(String(req.query.days || '30'), 10);
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
-      const data = await satisfactionSurveyService.getDashboardStats(days, req.user, {
-        channelId,
-        sectorId,
-      });
+      const data = await metricsCache.getOrSet(
+        cacheKey,
+        this.getMetricsTtlMs(),
+        () =>
+          satisfactionSurveyService.getDashboardStats(days, req.user, {
+            channelId,
+            sectorId,
+          }),
+      );
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar estatísticas da pesquisa' });
@@ -260,13 +303,19 @@ export class ConversationController {
    */
   async getDashboardPerformance(req: AuthRequest, res: Response) {
     try {
+      const cacheKey = this.buildMetricsCacheKey('conversation:performance', req);
       const days = parseInt(String(req.query.days || '30'), 10);
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
-      const data = await dashboardPerformanceService.getInsights(days, req.user, {
-        channelId,
-        sectorId,
-      });
+      const data = await metricsCache.getOrSet(
+        cacheKey,
+        this.getMetricsTtlMs(),
+        () =>
+          dashboardPerformanceService.getInsights(days, req.user, {
+            channelId,
+            sectorId,
+          }),
+      );
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar performance do dashboard' });

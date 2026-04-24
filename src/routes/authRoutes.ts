@@ -6,6 +6,16 @@ import rateLimit from 'express-rate-limit';
 const router = Router();
 const authController = new AuthController();
 
+const authGeneralLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.AUTH_RATE_LIMIT_PER_MIN || 120),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Muitas requisições de autenticação. Tente novamente em instantes.',
+  },
+});
+
 // Rate limiting para evitar brute force no login e registro
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
@@ -16,6 +26,8 @@ const authLimiter = rateLimit({
     error: 'Muitas tentativas. Tente novamente em alguns minutos.',
   },
 });
+
+router.use(authGeneralLimiter);
 
 // Registro de usuários deve ser restrito a administradores autenticados
 router.post(

@@ -5,12 +5,23 @@ import crypto from 'crypto';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import rateLimit from 'express-rate-limit';
 import { authenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
 import { convertWebmToOgg, convertOggToMp3 } from '../utils/audioConverter';
 import { objectStorageService } from '../services/objectStorageService';
 
 const router = Router();
+
+const mediaUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.MEDIA_UPLOAD_RATE_LIMIT_MAX || 120),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Muitos uploads em pouco tempo. Tente novamente em alguns minutos.',
+  },
+});
 
 // Configurar multer para upload de arquivos
 const uploadDir = path.join(__dirname, '../../uploads');
@@ -86,7 +97,7 @@ function getPublicMediaUrlForFilename(filename: string): string {
 }
 
 // Rota para upload de arquivos
-router.post('/upload', authenticateToken, upload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('file'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
