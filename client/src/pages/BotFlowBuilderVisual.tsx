@@ -2096,10 +2096,20 @@ export default function BotFlowBuilderVisual() {
       console.log('📦 sourceNode:', sourceNode);
       console.log('📦 targetNode:', targetNode);
       
-      // Conexões saindo do Início não são persistidas no backend.
-      // Para evitar linhas "automáticas" e layout confuso, não criamos edge visual aqui.
+      // Conexões saindo do Início não são persistidas no backend, mas
+      // permitimos uma ligação visual manual para orientar o fluxo no canvas/preview.
       if (params.source === 'start') {
-        console.log('ℹ️ Conexão do Início ignorada (não persistente)');
+        if (!params.target) return;
+        const startEdge = {
+          ...params,
+          id: `start-${params.target}-${Date.now()}`,
+          style: { stroke: '#10b981', strokeWidth: 2 },
+        };
+        setEdges((eds) => [
+          ...eds.filter((e) => e.source !== 'start'),
+          startEdge,
+        ]);
+        console.log('✅ Conexão manual do Início adicionada (somente visual)');
         return;
       }
       
