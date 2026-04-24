@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
+import { motion } from 'framer-motion';
 import api from '../utils/api';
 import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl } from '../config/publicUrl';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
@@ -1107,6 +1108,16 @@ export default function DealDetail() {
     }
   };
 
+  const getAvatarUrl = (name: string, size = 40) =>
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Contato')}&background=1f2937&color=ffffff&size=${size}`;
+
+  const getContactAvatar = (contact: { name: string; profilePicture?: string }, size = 40) => {
+    if (contact?.profilePicture && contact.profilePicture.trim() !== '') {
+      return contact.profilePicture;
+    }
+    return getAvatarUrl(contact?.name || 'Contato', size);
+  };
+
   if (loading) {
     return <div className="p-5 text-on-surface-variant">Carregando...</div>;
   }
@@ -1858,112 +1869,137 @@ export default function DealDetail() {
         <div
           ref={messagesScrollRef}
           onScroll={handleMessagesPaneScroll}
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
-            padding: '20px',
-            backgroundColor: '#121412',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-          }}
+          className="conv-no-scrollbar flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden bg-surface-container-lowest/70 p-5"
         >
           {loadingMessages ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+            <div className="py-10 text-center text-sm text-on-surface-variant">
               Carregando mensagens...
             </div>
           ) : messages.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-              <p>Nenhuma mensagem ainda.</p>
-              <p style={{ fontSize: '14px', marginTop: '8px' }}>
+            <div className="py-10 text-center text-on-surface-variant">
+              <p className="text-sm">Nenhuma mensagem ainda.</p>
+              <p className="mt-2 text-xs text-primary/70">
                 Envie uma mensagem para começar a conversa.
               </p>
             </div>
           ) : (
-            <>
+            <motion.div
+              initial="hidden"
+              animate="visible"
+              variants={{
+                visible: {
+                  transition: {
+                    staggerChildren: 0.05,
+                  },
+                },
+              }}
+            >
               {/* Paginação: carregar mensagens mais antigas */}
               {hasMoreMessages && !loadingMessages && !loadingMoreMessages && (
-                <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                <div className="mb-2 text-center">
                   <button
                     onClick={() => {
                       if (conversation?.id) {
                         fetchMessages(conversation.id, { reset: false });
                       }
                     }}
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: '999px',
-                      border: '1px solid #d1d5db',
-                      backgroundColor: '#f3f4f6',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                    }}
+                    className="cursor-pointer rounded-full border border-[rgba(63,73,69,0.2)] bg-surface-container-highest px-3 py-1.5 text-xs font-medium text-on-surface-variant transition hover:bg-surface-variant"
                   >
                     Carregar mensagens anteriores
                   </button>
                 </div>
               )}
               {loadingMoreMessages && (
-                <div
-                  style={{
-                    textAlign: 'center',
-                    marginBottom: '8px',
-                    color: '#6b7280',
-                    fontSize: '12px',
-                  }}
-                >
+                <div className="mb-2 text-center text-xs text-on-surface-variant">
                   Carregando mensagens anteriores...
                 </div>
               )}
 
-            {messages.map((message) => {
+            {messages.map((message, index) => {
+              const messageDate = new Date(message.createdAt);
+              const dateLabel = messageDate.toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+              });
+              let showDateDivider = false;
+              if (index === 0) {
+                showDateDivider = true;
+              } else {
+                const prev = messages[index - 1];
+                const prevLabel = new Date(prev.createdAt).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                });
+                if (prevLabel !== dateLabel) {
+                  showDateDivider = true;
+                }
+              }
               const isBotMessage = message.metadata?.fromBot === true;
               const isTaskNotification =
                 isBotMessage &&
                 typeof message.content === 'string' &&
                 message.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.');
+              const isFromCustomer = !isBotMessage && message.userId === null;
               const isOwnMessage = !!message.user || isBotMessage;
               const isMediaMessage = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(message.type);
+              const contactName = deal?.contact?.name || '';
+              const contactAvatar = deal?.contact
+                ? getContactAvatar(deal.contact, 40)
+                : getAvatarUrl('Contato', 40);
               return (
-                <div
-                  key={message.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
-                    alignItems: 'flex-end',
-                    gap: '8px',
-                    marginBottom: '4px',
+                <div key={message.id}>
+                  {showDateDivider && (
+                    <div className="relative my-3 text-center text-[10px] font-semibold uppercase tracking-widest text-primary/70">
+                      <span className="rounded-full border border-primary/10 bg-emerald-950/25 px-4 py-1">
+                        {dateLabel}
+                      </span>
+                    </div>
+                  )}
+                <motion.div
+                  className={`mb-1 flex w-full min-w-0 max-w-full items-end gap-2 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                  variants={{
+                    hidden: { opacity: 0, y: 10, scale: 0.95 },
+                    visible: { opacity: 1, y: 0, scale: 1 },
                   }}
+                  transition={{
+                    duration: 0.2,
+                    type: 'spring',
+                    stiffness: 200,
+                  }}
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
                 >
+                  {isFromCustomer && (
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-container-highest ring-1 ring-primary/15">
+                      <img
+                        src={contactAvatar}
+                        alt={contactName}
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.src = getAvatarUrl(contactName || 'Contato', 40);
+                        }}
+                      />
+                    </div>
+                  )}
                   <div
-                    style={{
-                      maxWidth: '70%',
-                      padding: isMediaMessage ? 0 : isTaskNotification ? '8px 12px' : '10px 14px',
-                      borderRadius: '12px',
-                      backgroundColor: isMediaMessage
-                        ? 'transparent'
+                    className={`relative min-w-0 max-w-[min(70%,36rem)] rounded-xl ${
+                      isMediaMessage
+                        ? 'bg-transparent p-0 text-on-surface'
                         : isTaskNotification
-                        ? '#e5e7eb'
+                        ? 'rounded-lg bg-surface-container-highest p-3 text-on-surface'
                         : isOwnMessage
-                        ? '#3b82f6'
-                        : 'white',
-                      color: isMediaMessage
-                        ? '#1f2937'
-                        : isTaskNotification
-                        ? '#111827'
-                        : isOwnMessage
-                        ? 'white'
-                        : '#1f2937',
-                      border: isMediaMessage
-                        ? 'none'
-                        : isTaskNotification
-                        ? 'none'
-                        : isOwnMessage
-                        ? 'none'
-                        : '1px solid #e5e7eb',
-                    }}
+                        ? 'bg-primary-container px-3.5 py-2.5 text-on-secondary-container'
+                        : 'border border-[rgba(63,73,69,0.2)] bg-surface-container px-3.5 py-2.5 text-on-surface'
+                    }`}
                   >
+                    {isFromCustomer && (
+                      <div className="mb-1 text-xs font-semibold text-on-surface-variant">
+                        {contactName}
+                      </div>
+                    )}
                     {/* Exibir mídia se houver (mesmo estilo de Conversations) */}
                     {['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(message.type) && message.id && (
                       <div style={{ marginBottom: '8px' }}>
@@ -2359,25 +2395,21 @@ export default function DealDetail() {
                     
                     {/* Exibir conteúdo/caption */}
                     {message.content && (
-                      <p style={{ margin: 0, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <p className="m-0 whitespace-pre-wrap break-words text-sm">
                         {message.content}
                       </p>
                     )}
                     <span
-                      style={{
-                        fontSize: '11px',
-                        opacity: 0.7,
-                        display: 'block',
-                        marginTop: '4px',
-                      }}
+                      className="mt-1 block text-[11px] opacity-70"
                     >
                       {formatDate(message.createdAt)}
                     </span>
                   </div>
+                </motion.div>
                 </div>
               );
             })}
-            </>
+            </motion.div>
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -2436,35 +2468,21 @@ export default function DealDetail() {
         {/* Input de mensagem e ações (igual ao chat principal) */}
         {conversation && (
           <div
-            style={{
-              padding: '16px 20px',
-              borderTop: '1px solid rgba(63, 73, 69, 0.35)',
-              backgroundColor: '#1a1c1a',
-              position: 'relative',
-            }}
+            className="relative border-t border-primary/10 bg-surface/85 px-5 py-4 backdrop-blur-sm"
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <div className="mb-2 flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowEmojiPicker((prev) => !prev)}
-                style={{
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  fontSize: '20px',
-                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(63,73,69,0.2)] bg-surface-container-highest text-base text-on-surface transition hover:bg-surface-variant"
+                title="Emoji"
               >
                 😀
               </button>
               <button
                 type="button"
                 onClick={() => setShowQuickReplies(true)}
-                style={{
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  fontSize: '20px',
-                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(63,73,69,0.2)] bg-surface-container-highest text-base text-on-surface transition hover:bg-surface-variant"
                 title="Respostas rápidas"
               >
                 ⚡
@@ -2472,12 +2490,7 @@ export default function DealDetail() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                style={{
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  fontSize: '20px',
-                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(63,73,69,0.2)] bg-surface-container-highest text-base text-on-surface transition hover:bg-surface-variant"
                 title="Enviar arquivo"
               >
                 📎
@@ -2487,13 +2500,11 @@ export default function DealDetail() {
                   type="button"
                   onClick={startRecording}
                   disabled={uploadingFile}
-                  style={{
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    cursor: uploadingFile ? 'not-allowed' : 'pointer',
-                    fontSize: '20px',
-                    color: uploadingFile ? '#9ca3af' : '#ef4444',
-                  }}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(63,73,69,0.2)] bg-surface-container-highest text-base transition ${
+                    uploadingFile
+                      ? 'cursor-not-allowed text-on-surface-variant/60'
+                      : 'cursor-pointer text-red-300 hover:bg-surface-variant'
+                  }`}
                   title="Gravar áudio"
                 >
                   🎤
@@ -2502,14 +2513,7 @@ export default function DealDetail() {
                 <button
                   type="button"
                   onClick={stopRecording}
-                  style={{
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    cursor: 'pointer',
-                    fontSize: '20px',
-                    color: '#ef4444',
-                    animation: 'pulse 1s infinite',
-                  }}
+                  className="flex h-9 w-9 animate-pulse items-center justify-center rounded-full border border-red-300/40 bg-red-500/10 text-base text-red-300"
                   title="Parar gravação"
                 >
                   ⏹
@@ -2538,7 +2542,7 @@ export default function DealDetail() {
 
             <form
               onSubmit={(e) => handleSendMessage(e)}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              className="flex items-center gap-2"
             >
               <input
                 type="text"
@@ -2546,30 +2550,18 @@ export default function DealDetail() {
                 onChange={(e) => setMessageInput(e.target.value)}
                 placeholder={recording ? 'Gravando áudio...' : uploadingFile ? 'Enviando arquivo...' : 'Digite sua mensagem...'}
                 disabled={recording || uploadingFile}
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  border: '1px solid rgba(63, 73, 69, 0.45)',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  opacity: recording || uploadingFile ? 0.6 : 1,
-                  backgroundColor: '#0d0f0d',
-                  color: '#e5e7eb',
-                }}
+                className={`min-w-0 flex-1 rounded-xl border border-[rgba(63,73,69,0.28)] bg-surface-container px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/70 focus:border-primary/40 focus:outline-none ${
+                  recording || uploadingFile ? 'opacity-60' : ''
+                }`}
               />
               <button
                 type="submit"
                 disabled={(!messageInput.trim() && !recording && !uploadingFile) || sending || uploadingFile}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: (messageInput.trim() || recording) && !sending && !uploadingFile ? '#10b981' : '#2e312e',
-                  color: (messageInput.trim() || recording) && !sending && !uploadingFile ? '#003919' : '#9ca3af',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: (messageInput.trim() || recording) && !sending && !uploadingFile ? 'pointer' : 'not-allowed',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                }}
+                className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${
+                  (messageInput.trim() || recording) && !sending && !uploadingFile
+                    ? 'active-gradient-emerald cursor-pointer text-on-primary shadow-emerald-send hover:brightness-110'
+                    : 'cursor-not-allowed bg-surface-container-highest text-on-surface-variant'
+                }`}
               >
                 {sending ? 'Enviando...' : uploadingFile ? 'Enviando...' : recording ? 'Gravando...' : 'Enviar'}
               </button>
