@@ -717,111 +717,64 @@ export class BotService {
     // Processar step baseado no tipo
     switch (currentStep.type) {
       case 'MESSAGE':
-        if (currentStep.response) {
-          console.log(`[BotService] Enviando mensagem do step:`, currentStep.response.content?.substring(0, 50));
-          const sessionContext = (session.context as Record<string, any>) || {};
-          await this.sendBotResponse(session.conversationId, currentStep.response, session.botId, sessionContext);
-        } else {
+        if (!currentStep.response) {
           console.warn(`[BotService] Step MESSAGE sem resposta configurada`);
-        }
-        // Avançar para próximo step automaticamente se houver.
-        // 1) Preferir nextStepId explícito (via conexões do builder).
-        // 2) Se não existir, usar fallback pelo campo "order" (próximo step na sequência).
-        let nextStepId: string | null | undefined = currentStep.nextStepId;
-        const autoAdvanceAllowed =
-          !inputMeta?.['_fromWait'] && !inputMeta?.['_fromJump'];
-
-        if (!nextStepId && autoAdvanceAllowed) {
-          const orderedSteps = [...flow.steps].sort(
-            (a: any, b: any) => (a.order || 0) - (b.order || 0),
-          );
-          const currentIndex = orderedSteps.findIndex((s: any) => s.id === currentStep.id);
-          if (currentIndex >= 0 && currentIndex + 1 < orderedSteps.length) {
-            nextStepId = orderedSteps[currentIndex + 1].id;
-            console.log(
-              `[BotService] nextStepId não definido; usando fallback pelo order -> próximo step ${nextStepId}`,
-            );
-          }
-        }
-
-        if (!nextStepId) {
-          // Se não há próximo step, finalizar fluxo
-          console.log(
-            `[BotService] Fluxo "${flow.name}" finalizado (sem nextStepId e sem fallback pelo order)`,
-          );
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: {
-              currentFlowId: null,
-              currentStepId: null,
-            },
-          });
+          await advanceToNextStep(currentStep.nextStepId, 'step MESSAGE sem response');
           break;
         }
 
-        // Se nextStepId é "END", finalizar fluxo
-        if (nextStepId === 'END') {
-          console.log(`[BotService] Fluxo "${flow.name}" finalizado (step END)`);
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: {
-              currentFlowId: null,
-              currentStepId: null,
-            },
-          });
-        } else {
-          // Atualizar sessão com próximo step
-          await prisma.botSession.update({
-            where: { id: session.id },
-            data: {
-              currentStepId: nextStepId,
-            },
+        const responseButtons = Array.isArray(currentStep.response?.buttons)
+          ? currentStep.response.buttons
+          : [];
+        const hasButtons = responseButtons.length > 0;
+        const isFlowDrivenExecution = !!inputMeta?.['_fromFlow'];
+
+        // Primeiro envio do bloco MESSAGE (ou execução automática): envia a mensagem
+        // e, se houver botões, aguarda escolha do usuário sem avançar automaticamente.
+        if (isFlowDrivenExecution) {
+          console.log(`[BotService] Enviando mensagem do step:`, currentStep.response.content?.substring(0, 50));
+          const sessionContext = (session.context as Record<string, any>) || {};
+          await this.sendBotResponse(session.conversationId, currentStep.response, session.botId, sessionContext);
+
+          if (hasButtons) {
+            console.log('[BotService] MESSAGE com botões: aguardando escolha do usuário');
+            break;
+          }
+
+          await advanceToNextStep(currentStep.nextStepId, 'após MESSAGE sem botões');
+          break;
+        }
+
+        // Quando o step MESSAGE possui botões e a execução veio de input do usuário,
+        // interpretar a resposta e rotear para o nextStepId do botão escolhido.
+        if (hasButtons) {
+          const normalizedInput = String(input || '').trim().toLowerCase();
+          const numericIndex = Number.parseInt(normalizedInput, 10);
+          const selectedByNumber =
+            Number.isFinite(numericIndex) && numericIndex >= 1 && numericIndex <= responseButtons.length
+              ? responseButtons[numericIndex - 1]
+              : null;
+
+          const selectedByMatch = responseButtons.find((btn: any) => {
+            const text = String(btn?.text || btn?.title || '').trim().toLowerCase();
+            const id = String(btn?.id || btn?.value || '').trim().toLowerCase();
+            return normalizedInput.length > 0 && (normalizedInput === text || normalizedInput === id);
           });
 
-        // Executar próximo step automaticamente se for MESSAGE
-        // Se for INPUT/PICTURE_CHOICE, apenas atualizar o currentStepId e aguardar resposta do usuário
-          const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
-          if (nextStep) {
-            if (nextStep.type === 'MESSAGE') {
-              // Executar próximo step MESSAGE automaticamente
-              const updatedSession = {
-                ...session,
-                currentStepId: nextStepId,
-              };
-              await this.executeFlow(
-                flow,
-                updatedSession,
-                input,
-                { ...(inputMeta || {}), _fromFlow: true } as any,
-              );
-            } else if (
-              nextStep.type === 'INPUT' ||
-              nextStep.type === 'TEXT_INPUT' ||
-              nextStep.type === 'EMAIL_INPUT' ||
-              nextStep.type === 'NUMBER_INPUT' ||
-              nextStep.type === 'PHONE_INPUT' ||
-              nextStep.type === 'PICTURE_CHOICE'
-            ) {
-              // Para steps INPUT/PICTURE_CHOICE, apenas atualizar o currentStepId e aguardar resposta do usuário
-              // Não executar automaticamente - o próximo processMessage vai processar o INPUT
-              console.log(
-                `[BotService] Aguardando input/imagem do usuário no step ${nextStep.id} (tipo: ${nextStep.type})`,
-              );
-            } else {
-              // Para outros tipos, executar automaticamente
-              const updatedSession = {
-                ...session,
-                currentStepId: nextStepId,
-              };
-              await this.executeFlow(
-                flow,
-                updatedSession,
-                input,
-                { ...(inputMeta || {}), _fromFlow: true } as any,
-              );
-            }
+          const selectedButton = selectedByNumber || selectedByMatch || null;
+          if (!selectedButton) {
+            console.log('[BotService] Resposta não corresponde a nenhum botão; mantendo no step atual');
+            break;
           }
+
+          const buttonNextStepId = selectedButton?.nextStepId;
+          await advanceToNextStep(buttonNextStepId, 'após escolha de botão em MESSAGE');
+          break;
         }
+
+        // Sem botões e sem _fromFlow: não deve reprocessar o bloco nem avançar por fallback.
+        // Mantemos o fluxo no step atual para evitar saltos inesperados.
+        console.log('[BotService] MESSAGE sem botões recebido fora de _fromFlow; sem autoavançar');
         break;
 
       case 'HANDOFF': {
@@ -2496,7 +2449,6 @@ export class BotService {
     config?: any;
     intentId?: string;
     nextStepId?: string;
-    responseId?: string | null;
   }) {
     const updateData: any = {};
     if (data.type) updateData.type = data.type;
@@ -2504,7 +2456,6 @@ export class BotService {
     if (data.config) updateData.config = data.config;
     if (data.intentId !== undefined) updateData.intentId = data.intentId;
     if (data.nextStepId !== undefined) updateData.nextStepId = data.nextStepId;
-    if (data.responseId !== undefined) updateData.responseId = data.responseId;
 
     const step = await prisma.flowStep.update({
       where: { id: stepId },

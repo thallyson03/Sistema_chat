@@ -2033,24 +2033,7 @@ export default function BotFlowBuilderVisual() {
         }
       });
 
-      // Steps que são destino de alguma conexão (não são "entrada")
-      const targetStepIds = new Set<string>();
-      newEdges.forEach((e) => {
-        if (e.target && e.target !== 'end') targetStepIds.add(e.target);
-      });
-
-      // Conectar Início a todos os steps de entrada (que não são alvo de nenhuma outra conexão)
-      steps.forEach((step) => {
-        if (!targetStepIds.has(step.id)) {
-          newEdges.push({
-            id: `start-${step.id}`,
-            source: 'start',
-            target: step.id,
-          });
-        }
-      });
-
-      // Remover duplicatas de edges start-> (caso já existissem no loop acima)
+      // Remover duplicatas de edges
       const seen = new Set<string>();
       const deduped: Edge[] = [];
       newEdges.forEach((e) => {
@@ -2113,16 +2096,10 @@ export default function BotFlowBuilderVisual() {
       console.log('📦 sourceNode:', sourceNode);
       console.log('📦 targetNode:', targetNode);
       
-      // Conexões saindo do Início: apenas adicionar a edge na tela (não há step no backend para salvar)
+      // Conexões saindo do Início não são persistidas no backend.
+      // Para evitar linhas "automáticas" e layout confuso, não criamos edge visual aqui.
       if (params.source === 'start') {
-        const targetNodeId = params.target;
-        const newEdge = {
-          ...params,
-          id: `start-${targetNodeId}-${Date.now()}`,
-          style: { stroke: '#10b981', strokeWidth: 2 },
-        };
-        setEdges((eds) => [...eds, newEdge]);
-        console.log('✅ Conexão do Início adicionada na tela');
+        console.log('ℹ️ Conexão do Início ignorada (não persistente)');
         return;
       }
       
@@ -2694,12 +2671,11 @@ export default function BotFlowBuilderVisual() {
       }
 
       // Criar ou atualizar resposta se for tipo MESSAGE ou mídia
-      let responseId = null;
       if (stepFormData.type === 'MESSAGE' && stepFormData.content) {
         try {
           const interactiveType = String(stepFormData.config?.interactiveType || 'buttons');
           const messageButtons = Array.isArray(stepFormData.buttons) ? stepFormData.buttons : [];
-          const response = await api.post('/api/bots/responses', {
+          await api.post('/api/bots/responses', {
             type: 'TEXT',
             content: stepFormData.content,
             buttons: messageButtons,
@@ -2713,61 +2689,41 @@ export default function BotFlowBuilderVisual() {
             flowStepId: stepId,
             intentId: null,
           });
-          responseId = response.data.id;
-          
-          await api.put(`/api/bots/steps/${stepId}`, {
-            responseId: responseId,
-          });
         } catch (responseError: any) {
           console.error('Erro ao criar resposta:', responseError);
         }
       } else if (stepFormData.type === 'IMAGE' && imageUrl) {
         try {
-          const response = await api.post('/api/bots/responses', {
+          await api.post('/api/bots/responses', {
             type: 'IMAGE',
             content: stepFormData.config.altText || '',
             mediaUrl: imageUrl,
             flowStepId: stepId,
             intentId: null,
           });
-          responseId = response.data.id;
-          
-          await api.put(`/api/bots/steps/${stepId}`, {
-            responseId: responseId,
-          });
         } catch (responseError: any) {
           console.error('Erro ao criar resposta de imagem:', responseError);
         }
       } else if (stepFormData.type === 'VIDEO' && videoUrl) {
         try {
-          const response = await api.post('/api/bots/responses', {
+          await api.post('/api/bots/responses', {
             type: 'VIDEO',
             content: '',
             mediaUrl: videoUrl,
             flowStepId: stepId,
             intentId: null,
           });
-          responseId = response.data.id;
-          
-          await api.put(`/api/bots/steps/${stepId}`, {
-            responseId: responseId,
-          });
         } catch (responseError: any) {
           console.error('Erro ao criar resposta de vídeo:', responseError);
         }
       } else if (stepFormData.type === 'AUDIO' && audioUrl) {
         try {
-          const response = await api.post('/api/bots/responses', {
+          await api.post('/api/bots/responses', {
             type: 'AUDIO',
             content: '',
             mediaUrl: audioUrl,
             flowStepId: stepId,
             intentId: null,
-          });
-          responseId = response.data.id;
-          
-          await api.put(`/api/bots/steps/${stepId}`, {
-            responseId: responseId,
           });
         } catch (responseError: any) {
           console.error('Erro ao criar resposta de áudio:', responseError);

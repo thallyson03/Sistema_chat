@@ -635,7 +635,7 @@ export class BotController {
 
       const { stepId } = req.params;
       const body = req.body || {};
-      const { type, order, config, intentId, nextStepId, responseId } = body;
+      const { type, order, config, intentId, nextStepId } = body;
       const bodyKeys = Object.keys(body).filter(k => body[k] !== undefined);
 
       const isOnlyNextStepId = bodyKeys.length === 1 && bodyKeys[0] === 'nextStepId';
@@ -654,7 +654,6 @@ export class BotController {
         config,
         intentId,
         nextStepId,
-        responseId,
       });
 
       res.json(step);
