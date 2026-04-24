@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import PipelineAutomationModal from '../components/PipelineAutomationModal';
-import { useConfirm } from '../components/ui/ConfirmProvider';
+import { useConfirm, usePrompt } from '../components/ui/ConfirmProvider';
 
 interface Pipeline {
   id: string;
@@ -629,6 +629,7 @@ function EditPipelineModal({
   onSuccess: () => void;
 }) {
   const confirm = useConfirm();
+  const prompt = usePrompt();
   const [name, setName] = useState(pipeline.name);
   const [description, setDescription] = useState(pipeline.description || '');
   const [color, setColor] = useState(pipeline.color || '#3B82F6');
@@ -653,7 +654,12 @@ function EditPipelineModal({
   };
 
   const handleAddStage = async () => {
-    const name = window.prompt('Nome da nova etapa:');
+    const name = await prompt({
+      title: 'Nova etapa',
+      message: 'Nome da nova etapa:',
+      placeholder: 'Ex: Qualificação',
+      confirmText: 'Criar',
+    });
     if (!name) return;
 
     try {

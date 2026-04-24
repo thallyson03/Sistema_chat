@@ -1643,6 +1643,10 @@ export default function BotFlowBuilderVisual() {
   const [pipelines, setPipelines] = useState<any[]>([]);
   const [selectedBlockType, setSelectedBlockType] = useState<string>('condition');
 
+  const markBotAsPending = useCallback(() => {
+    setBotMeta((prev) => (prev ? { ...prev, hasPendingChanges: true } : prev));
+  }, []);
+
 
   // Função para substituir variáveis no preview
   const parsePreviewVariables = useCallback((text: string, context?: Record<string, any>): string => {
@@ -1848,7 +1852,8 @@ export default function BotFlowBuilderVisual() {
     
     // Remover todas as conexões relacionadas a este nó
     setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
-  }, []);
+    markBotAsPending();
+  }, [markBotAsPending]);
 
   const requestNodeDelete = useCallback((nodeId: string) => {
     (async () => {
@@ -2292,6 +2297,7 @@ export default function BotFlowBuilderVisual() {
         console.log('📊 Edges atualizadas:', updated.length, 'edges');
         return updated;
       });
+      markBotAsPending();
       
       // Recarregar o fluxo para exibir as conexões salvas
       if (selectedFlow) {
@@ -2307,7 +2313,7 @@ export default function BotFlowBuilderVisual() {
         }
       }
     },
-    [edges, nodes, selectedFlow]
+    [edges, nodes, selectedFlow, markBotAsPending]
   );
 
   const handleCreateFlow = async (e: React.FormEvent) => {
@@ -2798,6 +2804,7 @@ export default function BotFlowBuilderVisual() {
       setShowStepModal(false);
       setEditingNode(null);
       setStepFormData({ type: 'MESSAGE', content: '', order: 0, intentId: '', config: {}, buttons: [] });
+      markBotAsPending();
       alert('Step salvo com sucesso!');
     } catch (error: any) {
       console.error('Erro ao salvar step:', error);
@@ -3655,6 +3662,7 @@ export default function BotFlowBuilderVisual() {
                     const updatedFlow = flowResponse.data;
                     loadFlowToCanvas(updatedFlow);
                     setSelectedFlow(updatedFlow);
+                    markBotAsPending();
                   } catch (error) {
                     console.error('Erro ao remover conexão do backend:', error);
                     // Remover visualmente mesmo se falhar no backend
