@@ -1913,6 +1913,7 @@ export default function BotFlowBuilderVisual() {
 
     // Carregar steps como nós
     if (steps.length > 0) {
+      let startStepId: string | null = null;
       steps.forEach((step, index) => {
         const nodeType = step.type === 'MESSAGE' ? 'message' :
                          step.type === 'CONDITION' ? 'condition' :
@@ -2031,7 +2032,19 @@ export default function BotFlowBuilderVisual() {
             });
           }
         }
+        if (step.config?.isStart === true) {
+          startStepId = step.id;
+        }
       });
+
+      if (startStepId) {
+        newEdges.push({
+          id: `start-${startStepId}`,
+          source: 'start',
+          target: startStepId,
+          style: { stroke: '#10b981', strokeWidth: 2 },
+        });
+      }
 
       // Remover duplicatas de edges
       const seen = new Set<string>();
@@ -2097,19 +2110,43 @@ export default function BotFlowBuilderVisual() {
       console.log('📦 targetNode:', targetNode);
       
       // Conexões saindo do Início não são persistidas no backend, mas
-      // permitimos uma ligação visual manual para orientar o fluxo no canvas/preview.
+      // também persistimos o step de entrada no config (isStart) para manter após publish/reload.
       if (params.source === 'start') {
-        if (!params.target) return;
-        const startEdge = {
-          ...params,
-          id: `start-${params.target}-${Date.now()}`,
-          style: { stroke: '#10b981', strokeWidth: 2 },
-        };
-        setEdges((eds) => [
-          ...eds.filter((e) => e.source !== 'start'),
-          startEdge,
-        ]);
-        console.log('✅ Conexão manual do Início adicionada (somente visual)');
+        if (!params.target || params.target === 'end' || !selectedFlow) return;
+        const targetStepId = targetNode?.data?.stepId;
+        if (!targetStepId || targetStepId.startsWith('step-')) {
+          console.warn('Não é possível definir início: step de destino não foi salvo ainda');
+          return;
+        }
+        try {
+          const flowResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`);
+          const flow = flowResponse.data;
+          const steps = Array.isArray(flow?.steps) ? flow.steps : [];
+
+          for (const step of steps) {
+            const shouldBeStart = step.id === targetStepId;
+            if (step?.config?.isStart === shouldBeStart) continue;
+            await api.put(`/api/bots/steps/${step.id}`, {
+              config: {
+                ...(step?.config || {}),
+                isStart: shouldBeStart,
+              },
+            });
+          }
+
+          const updatedFlowResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`, {
+            params: { _: Date.now() },
+          });
+          const updatedFlow = updatedFlowResponse.data;
+          loadFlowToCanvas(updatedFlow);
+          setSelectedFlow(updatedFlow);
+          markBotAsPending();
+          console.log('✅ Step de início atualizado e persistido');
+        } catch (error: any) {
+          console.error('❌ Erro ao definir step de início:', error);
+          const msg = error?.response?.data?.error || error?.message || 'Falha ao definir step inicial';
+          alert(`Não foi possível salvar a conexão do início: ${msg}`);
+        }
         return;
       }
       
@@ -3577,7 +3614,31 @@ export default function BotFlowBuilderVisual() {
                 const sourceNode = nodes.find(n => n.id === edge.source);
                 const sourceStepId = sourceNode?.data?.stepId;
                 
-                if (sourceStepId && !sourceStepId.startsWith('step-') && selectedFlow) {
+                if (edge.source === 'start' && selectedFlow) {
+                  try {
+                    const targetNode = nodes.find((n) => n.id === edge.target);
+                    const targetStepId = targetNode?.data?.stepId;
+                    if (targetStepId && !targetStepId.startsWith('step-')) {
+                      const stepResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`);
+                      const flow = stepResponse.data;
+                      const step = flow?.steps?.find((s: any) => s.id === targetStepId);
+                      await api.put(`/api/bots/steps/${targetStepId}`, {
+                        config: {
+                          ...(step?.config || {}),
+                          isStart: false,
+                        },
+                      });
+                    }
+                    const flowResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`);
+                    const updatedFlow = flowResponse.data;
+                    loadFlowToCanvas(updatedFlow);
+                    setSelectedFlow(updatedFlow);
+                    markBotAsPending();
+                  } catch (error) {
+                    console.error('Erro ao remover step de início:', error);
+                    setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+                  }
+                } else if (sourceStepId && !sourceStepId.startsWith('step-') && selectedFlow) {
                   try {
                     if (sourceNode?.type === 'condition') {
                       const stepResponse = await api.get(`/api/bots/flows/${selectedFlow.id}`);

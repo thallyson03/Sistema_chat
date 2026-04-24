@@ -558,6 +558,11 @@ export class BotService {
     const steps = flow.steps || [];
     if (steps.length === 0) return null;
 
+    const explicitStart = steps.find((step: any) => step?.config?.isStart === true);
+    if (explicitStart) {
+      return explicitStart;
+    }
+
     // Construir conjunto de IDs que são alvo de alguma conexão:
     // - nextStepId de qualquer step
     // - trueStepId / falseStepId das condições
@@ -573,6 +578,13 @@ export class BotService {
           }
           if (c.falseStepId && c.falseStepId !== 'END') {
             referencedIds.add(c.falseStepId);
+          }
+        }
+      }
+      if (s.type === 'MESSAGE' && Array.isArray(s?.config?.buttons)) {
+        for (const btn of s.config.buttons) {
+          if (btn?.nextStepId && btn.nextStepId !== 'END') {
+            referencedIds.add(btn.nextStepId);
           }
         }
       }

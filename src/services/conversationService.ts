@@ -713,8 +713,8 @@ export class ConversationService {
     const currentSectorId = conversation.sectorId || primarySectorId;
 
     // Regra: se existe contexto de setor (currentSectorId não nulo),
-    // não fazemos fallback para outro setor.
-    // Se não houver bot configurado para o setor, o bot NÃO existe (comportamento normal).
+    // NÃO fazemos fallback para bot de canal.
+    // Se não houver bot ativo no setor, o bot NÃO existe (comportamento normal).
     if (currentSectorId) {
       const botForSector = await prisma.bot.findFirst({
         where: {
