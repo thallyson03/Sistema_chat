@@ -738,7 +738,11 @@ export class BotService {
         const responseButtons = Array.isArray(currentStep.response?.buttons)
           ? currentStep.response.buttons
           : [];
-        const hasButtons = responseButtons.length > 0;
+        const configButtons = Array.isArray(currentStep.config?.buttons)
+          ? currentStep.config.buttons
+          : [];
+        const effectiveButtons = configButtons.length > 0 ? configButtons : responseButtons;
+        const hasButtons = effectiveButtons.length > 0;
         const isFlowDrivenExecution = !!inputMeta?.['_fromFlow'];
 
         // Primeiro envio do bloco MESSAGE (ou execução automática): envia a mensagem
@@ -746,7 +750,14 @@ export class BotService {
         if (isFlowDrivenExecution) {
           console.log(`[BotService] Enviando mensagem do step:`, currentStep.response.content?.substring(0, 50));
           const sessionContext = (session.context as Record<string, any>) || {};
-          await this.sendBotResponse(session.conversationId, currentStep.response, session.botId, sessionContext);
+          const responseToSend =
+            responseButtons.length > 0
+              ? currentStep.response
+              : {
+                  ...currentStep.response,
+                  buttons: configButtons,
+                };
+          await this.sendBotResponse(session.conversationId, responseToSend as any, session.botId, sessionContext);
 
           if (hasButtons) {
             console.log('[BotService] MESSAGE com botões: aguardando escolha do usuário');
@@ -763,11 +774,11 @@ export class BotService {
           const normalizedInput = String(input || '').trim().toLowerCase();
           const numericIndex = Number.parseInt(normalizedInput, 10);
           const selectedByNumber =
-            Number.isFinite(numericIndex) && numericIndex >= 1 && numericIndex <= responseButtons.length
-              ? responseButtons[numericIndex - 1]
+            Number.isFinite(numericIndex) && numericIndex >= 1 && numericIndex <= effectiveButtons.length
+              ? effectiveButtons[numericIndex - 1]
               : null;
 
-          const selectedByMatch = responseButtons.find((btn: any) => {
+          const selectedByMatch = effectiveButtons.find((btn: any) => {
             const text = String(btn?.text || btn?.title || '').trim().toLowerCase();
             const id = String(btn?.id || btn?.value || '').trim().toLowerCase();
             return normalizedInput.length > 0 && (normalizedInput === text || normalizedInput === id);
@@ -780,6 +791,13 @@ export class BotService {
           }
 
           const buttonNextStepId = selectedButton?.nextStepId;
+          console.log('[BotService] Botão selecionado no MESSAGE:', {
+            input,
+            selectedButtonText: selectedButton?.text || selectedButton?.title || null,
+            selectedButtonId: selectedButton?.id || selectedButton?.value || null,
+            selectedButtonNextStepId: buttonNextStepId || null,
+            source: configButtons.length > 0 ? 'config.buttons' : 'response.buttons',
+          });
           await advanceToNextStep(buttonNextStepId, 'após escolha de botão em MESSAGE');
           break;
         }
