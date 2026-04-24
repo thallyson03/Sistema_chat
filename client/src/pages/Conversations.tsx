@@ -225,6 +225,8 @@ export default function Conversations() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const statusFilterRef = useRef<string>('ALL');
+  const fetchConversationsRef = useRef<(filterOverride?: string) => Promise<void>>(async () => {});
+  const conversationsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
@@ -254,6 +256,16 @@ export default function Conversations() {
       setLoadingTransferSectorUsers(false);
     }
   }, [showTransferModal]);
+
+  const queueConversationsRefresh = useCallback((delayMs = 300, filterOverride?: string) => {
+    if (conversationsRefreshTimeoutRef.current) {
+      clearTimeout(conversationsRefreshTimeoutRef.current);
+    }
+    conversationsRefreshTimeoutRef.current = setTimeout(() => {
+      conversationsRefreshTimeoutRef.current = null;
+      void fetchConversationsRef.current(filterOverride);
+    }, delayMs);
+  }, []);
 
   useEffect(() => {
     fetchConversations();
@@ -359,13 +371,13 @@ export default function Conversations() {
         }
       }
       
-      // Atualizar lista de conversas sem bloquear o painel de mensagens
-      void fetchConversations();
+      // Atualizar lista de conversas com debounce para evitar tempestade de requests.
+      queueConversationsRefresh(250);
     });
 
     socket.on('conversation_updated', async () => {
       console.log('🔄 Conversa atualizada via Socket.IO');
-      await fetchConversations();
+      queueConversationsRefresh(250);
     });
 
     socket.on(
@@ -390,8 +402,12 @@ export default function Conversations() {
     return () => {
       socket.disconnect();
       window.removeEventListener('selectConversation', handleSelectConversation);
+      if (conversationsRefreshTimeoutRef.current) {
+        clearTimeout(conversationsRefreshTimeoutRef.current);
+        conversationsRefreshTimeoutRef.current = null;
+      }
     };
-  }, []);
+  }, [queueConversationsRefresh]);
 
   // Buscar usuário atual para poder assumir conversas do bot
   useEffect(() => {
@@ -513,6 +529,10 @@ export default function Conversations() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchConversationsRef.current = fetchConversations;
+  }, [fetchConversations]);
 
   // Abrir conversa a partir de /conversations?c=... (ex.: link no dashboard) — mesmo layout da área de conversas
   useEffect(() => {

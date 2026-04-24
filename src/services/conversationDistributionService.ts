@@ -75,26 +75,43 @@ export class ConversationDistributionService {
     }
 
     // Calcular carga de trabalho de cada usuário
-    const usersWithWorkload = await Promise.all(
-      availableUsers.map(async (user) => {
-        const openConversationsCount = await prisma.conversation.count({
-          where: {
-            assignedToId: user.id,
-            status: {
-              in: ['OPEN', 'WAITING'],
+    const userIds = availableUsers.map((user) => user.id);
+    const workloadCounts =
+      userIds.length > 0
+        ? await prisma.conversation.groupBy({
+            by: ['assignedToId'],
+            where: {
+              assignedToId: {
+                in: userIds,
+              },
+              status: {
+                in: [ConversationStatus.OPEN, ConversationStatus.WAITING],
+              },
             },
-          },
-        });
+            _count: {
+              _all: true,
+            },
+          })
+        : [];
 
-        // Peso por role (ADMIN e SUPERVISOR podem ter menos carga)
-        const roleWeight = user.role === 'ADMIN' ? 0.5 : user.role === 'SUPERVISOR' ? 0.7 : 1.0;
+    const countByUserId = new Map<string, number>();
+    for (const row of workloadCounts) {
+      if (row.assignedToId) {
+        countByUserId.set(row.assignedToId, row._count._all);
+      }
+    }
 
-        return {
-          ...user,
-          workload: openConversationsCount * roleWeight,
-        };
-      })
-    );
+    const usersWithWorkload = availableUsers.map((user) => {
+      const openConversationsCount = countByUserId.get(user.id) || 0;
+
+      // Peso por role (ADMIN e SUPERVISOR podem ter menos carga)
+      const roleWeight = user.role === 'ADMIN' ? 0.5 : user.role === 'SUPERVISOR' ? 0.7 : 1.0;
+
+      return {
+        ...user,
+        workload: openConversationsCount * roleWeight,
+      };
+    });
 
     // Ordenar por carga de trabalho (menor = prioridade)
     usersWithWorkload.sort((a, b) => a.workload - b.workload);

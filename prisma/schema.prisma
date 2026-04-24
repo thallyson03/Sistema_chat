@@ -250,6 +250,10 @@ model Conversation {
   // Relacionamento com campanhas
   campaignRecipients CampaignRecipient[]
   satisfactionSurveyDispatches SatisfactionSurveyDispatch[]
+
+  @@index([status, assignedToId, lastMessageAt])
+  @@index([channelId, status, lastMessageAt])
+  @@index([sectorId, status, lastMessageAt])
 }
 
 model SatisfactionSurveyDispatch {
@@ -287,6 +291,7 @@ model Message {
 
   @@index([conversationId])
   @@index([createdAt])
+  @@index([conversationId, createdAt])
 }
 
 /// Campanhas de envio em massa
