@@ -37,6 +37,19 @@ export interface CreateDealActivityData {
   metadata?: any;
 }
 
+export interface UpdatePipelineTaskData {
+  status?: string;
+  result?: string;
+}
+
+export interface CalendarTaskFilters {
+  start: Date;
+  end: Date;
+  userId: string;
+  role?: string;
+  includeNoDue?: boolean;
+}
+
 export class DealService {
   async createDeal(data: CreateDealData) {
     // Verificar se já existe um deal para esta conversa (se conversationId foi fornecido)
@@ -92,9 +105,12 @@ export class DealService {
           },
         },
         conversation: {
-          select: {
-            id: true,
-            status: true,
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
           },
         },
       },
@@ -196,9 +212,12 @@ export class DealService {
           },
         },
         conversation: {
-          select: {
-            id: true,
-            status: true,
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
           },
         },
         _count: {
@@ -243,9 +262,12 @@ export class DealService {
           },
         },
         conversation: {
-          select: {
-            id: true,
-            status: true,
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
           },
         },
         activities: {
@@ -258,6 +280,9 @@ export class DealService {
               },
             },
           },
+          orderBy: { createdAt: 'desc' },
+        },
+        tasks: {
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -316,9 +341,12 @@ export class DealService {
           },
         },
         conversation: {
-          select: {
-            id: true,
-            status: true,
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
           },
         },
       },
@@ -438,6 +466,78 @@ export class DealService {
     });
   }
 
+  async addTagToDeal(dealId: string, tagName: string) {
+    const normalizedName = String(tagName || '').trim();
+    if (!normalizedName) {
+      throw new Error('Nome da tag é obrigatório');
+    }
+
+    const deal = await prisma.deal.findUnique({
+      where: { id: dealId },
+      select: { id: true, conversationId: true },
+    });
+
+    if (!deal) {
+      throw new Error('Negócio não encontrado');
+    }
+
+    if (!deal.conversationId) {
+      throw new Error('Negócio sem conversa vinculada');
+    }
+
+    const existingTag = await prisma.tag.findFirst({
+      where: { name: { equals: normalizedName, mode: 'insensitive' } },
+      select: { id: true, name: true },
+    });
+
+    const tag = existingTag
+      ? existingTag
+      : await prisma.tag.create({
+          data: { name: normalizedName },
+          select: { id: true, name: true },
+        });
+
+    await prisma.conversationTag.upsert({
+      where: {
+        conversationId_tagId: {
+          conversationId: deal.conversationId,
+          tagId: tag.id,
+        },
+      },
+      update: {},
+      create: {
+        conversationId: deal.conversationId,
+        tagId: tag.id,
+      },
+    });
+
+    return this.getDealById(dealId);
+  }
+
+  async removeTagFromDeal(dealId: string, tagId: string) {
+    const deal = await prisma.deal.findUnique({
+      where: { id: dealId },
+      select: { id: true, conversationId: true },
+    });
+
+    if (!deal) {
+      throw new Error('Negócio não encontrado');
+    }
+
+    if (!deal.conversationId) {
+      throw new Error('Negócio sem conversa vinculada');
+    }
+
+    await prisma.conversationTag.deleteMany({
+      where: {
+        conversationId: deal.conversationId,
+        tagId,
+      },
+    });
+
+    return this.getDealById(dealId);
+  }
+
   // ============================================
   // ACTIVITIES
   // ============================================
@@ -482,6 +582,193 @@ export class DealService {
     });
 
     return activities;
+  }
+
+  async updatePipelineTask(taskId: string, data: UpdatePipelineTaskData, userId?: string) {
+    const task = await prisma.pipelineTask.findUnique({
+      where: { id: taskId },
+      include: {
+        deal: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      throw new Error('Tarefa não encontrada');
+    }
+
+    const nextStatus =
+      typeof data.status === 'string' && data.status.trim().length > 0
+        ? data.status.trim().toUpperCase()
+        : undefined;
+    const nextResult =
+      typeof data.result === 'string'
+        ? data.result.trim().slice(0, 2000)
+        : undefined;
+
+    const updatedTask = await prisma.pipelineTask.update({
+      where: { id: taskId },
+      data: {
+        status: nextStatus || undefined,
+        description: nextResult !== undefined ? nextResult : undefined,
+      },
+    });
+
+    if (nextResult !== undefined && nextResult.length > 0) {
+      await prisma.dealActivity.create({
+        data: {
+          dealId: task.deal.id,
+          userId,
+          type: 'NOTE',
+          title: 'Resultado de tarefa registrado',
+          description: `${task.title}: ${nextResult}`,
+          metadata: {
+            source: 'TASK_RESULT',
+            taskId: task.id,
+          },
+        },
+      });
+    }
+
+    if (nextStatus === 'DONE' && task.status !== 'DONE') {
+      await prisma.dealActivity.create({
+        data: {
+          dealId: task.deal.id,
+          userId,
+          type: 'TASK_COMPLETED',
+          title: 'Tarefa concluída',
+          description: task.title,
+          metadata: {
+            source: 'TASK_COMPLETE',
+            taskId: task.id,
+          },
+        },
+      });
+    }
+
+    return updatedTask;
+  }
+
+  async updatePipelineTaskByDealAndTitle(
+    dealId: string,
+    title: string,
+    data: UpdatePipelineTaskData,
+    userId?: string,
+  ) {
+    const normalizedTitle = String(title || '').trim();
+    if (!normalizedTitle) {
+      throw new Error('Título da tarefa é obrigatório');
+    }
+
+    const task = await prisma.pipelineTask.findFirst({
+      where: {
+        dealId,
+        title: {
+          equals: normalizedTitle,
+          mode: 'insensitive',
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    if (!task) {
+      throw new Error('Tarefa não encontrada para este negócio');
+    }
+
+    return this.updatePipelineTask(task.id, data, userId);
+  }
+
+  async getCalendarTasks(filters: CalendarTaskFilters) {
+    const isAdminView = filters.role === 'ADMIN' || filters.role === 'SUPERVISOR';
+    const includeNoDue = filters.includeNoDue !== false;
+
+    const tasks = await prisma.pipelineTask.findMany({
+      where: {
+        ...(includeNoDue
+          ? {
+              OR: [
+                {
+                  dueDate: {
+                    not: null,
+                    gte: filters.start,
+                    lte: filters.end,
+                  },
+                },
+                {
+                  dueDate: null,
+                },
+              ],
+            }
+          : {
+              dueDate: {
+                not: null,
+                gte: filters.start,
+                lte: filters.end,
+              },
+            }),
+        ...(isAdminView
+          ? {}
+          : {
+              deal: {
+                assignedToId: filters.userId,
+              },
+            }),
+      },
+      include: {
+        deal: {
+          select: {
+            id: true,
+            name: true,
+            assignedToId: true,
+            assignedTo: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            contact: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            pipeline: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+            stage: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    return tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      // Compatibilidade: tarefas antigas sem prazo entram no calendário
+      // usando o momento em que foram criadas.
+      dueDate: task.dueDate || task.createdAt,
+      originalDueDate: task.dueDate,
+      createdAt: task.createdAt,
+      deal: task.deal,
+    }));
   }
 
   // ============================================

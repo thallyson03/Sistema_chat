@@ -1,7 +1,7 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, type HTMLMotionProps } from 'framer-motion';
 
-interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface IconButtonProps extends Omit<HTMLMotionProps<'button'>, 'children'> {
   icon: React.ReactNode;
   variant?: 'default' | 'primary' | 'danger' | 'ghost';
   size?: 'sm' | 'md' | 'lg';

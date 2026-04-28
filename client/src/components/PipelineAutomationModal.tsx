@@ -44,7 +44,6 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
   const confirmModal = useConfirm();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [duplicateControlEnabled, setDuplicateControlEnabled] = useState(false);
   const [automationBlocks, setAutomationBlocks] = useState<AutomationBlock[]>([]);
   const [selectedBlock, setSelectedBlock] = useState<AutomationBlock | null>(null);
   const [showBlockPalette, setShowBlockPalette] = useState(false);
@@ -226,59 +225,6 @@ export default function PipelineAutomationModal({ pipeline, onClose }: Props) {
 
       {/* Main Content */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Sidebar Esquerda - Fontes de Lead */}
-        <aside className="hidden w-80 shrink-0 overflow-y-auto border-r border-outline-variant bg-surface-container-low p-5 lg:block">
-          <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.16em] text-on-surface-variant">
-            Fontes de lead
-          </h3>
-
-          {/* Controle duplicado */}
-          <div className="mb-4 rounded-xl border border-outline-variant bg-surface-container p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h4 className="text-sm font-semibold text-on-surface">
-                Controle duplicado
-              </h4>
-              <label className="relative inline-block h-6 w-11">
-                <input
-                  type="checkbox"
-                  checked={duplicateControlEnabled}
-                  onChange={(e) => setDuplicateControlEnabled(e.target.checked)}
-                  className="peer sr-only"
-                />
-                <span
-                  className="absolute inset-0 cursor-pointer rounded-full bg-surface-variant transition peer-checked:bg-primary"
-                >
-                  <span
-                    className={`absolute bottom-[3px] left-[3px] h-[18px] w-[18px] rounded-full bg-white transition ${
-                      duplicateControlEnabled ? 'translate-x-5' : ''
-                    }`}
-                  />
-                </span>
-              </label>
-            </div>
-            <p className="mb-2 text-xs leading-relaxed text-on-surface-variant">
-              Escolha como o sistema detecta e lida com leads de entrada duplicados
-            </p>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                alert('Configurar regras de duplicados');
-              }}
-              className="text-xs font-semibold text-primary-fixed-dim transition hover:opacity-80"
-            >
-              Configurar regras
-            </button>
-          </div>
-
-          <button
-            onClick={() => alert('Adicionar fonte')}
-            className="w-full rounded-lg border border-dashed border-primary/35 bg-primary/5 px-3 py-2.5 text-sm font-semibold text-primary-fixed-dim transition hover:bg-primary/10"
-          >
-            + Adicionar fonte
-          </button>
-        </aside>
-
         {/* Área Central - Canvas de Automação */}
         <div className="relative flex-1 overflow-auto bg-surface">
           <div className="min-h-full p-5">

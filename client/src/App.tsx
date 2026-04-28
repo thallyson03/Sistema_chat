@@ -18,6 +18,7 @@ import ContactImport from './pages/ContactImport';
 import Journeys from './pages/Journeys';
 import ContactLists from './pages/ContactLists';
 import Templates from './pages/Templates';
+import Calendario from './pages/Calendario';
 import Layout from './components/Layout';
 import TicketsRedirect from './pages/TicketsRedirect';
 
@@ -71,6 +72,7 @@ function App() {
           <Route path="journeys" element={<Journeys />} />
           <Route path="contact-lists" element={<ContactLists />} />
           <Route path="templates" element={<Templates />} />
+          <Route path="calendario" element={<Calendario />} />
           <Route path="bots" element={<Bots />} />
           <Route path="bots/:botId/flows" element={<BotFlowBuilder />} />
           <Route path="bots/:botId/flows/visual" element={<BotFlowBuilderVisual />} />

@@ -49,6 +49,14 @@ interface Deal {
   conversation?: {
     id: string;
     status: string;
+    tags?: Array<{
+      tagId: string;
+      tag: {
+        id: string;
+        name: string;
+        color?: string;
+      };
+    }>;
   };
 }
 
@@ -340,6 +348,25 @@ export default function Pipelines() {
                             <span className="text-[11px]">👤 {deal.assignedTo.name}</span>
                           )}
                         </div>
+                        {(deal.conversation?.tags || []).length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {deal.conversation!.tags!.slice(0, 3).map((item) => (
+                              <span
+                                key={item.tag.id}
+                                className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                                style={{ backgroundColor: item.tag.color || '#3B82F6' }}
+                                title={item.tag.name}
+                              >
+                                {item.tag.name}
+                              </span>
+                            ))}
+                            {deal.conversation!.tags!.length > 3 && (
+                              <span className="rounded-full bg-surface-container-highest px-2 py-0.5 text-[10px] font-semibold text-on-surface-variant">
+                                +{deal.conversation!.tags!.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))
                   ) : (
@@ -906,13 +933,33 @@ function CreateDealModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  interface ContactOption {
+    id: string;
+    name: string;
+    phone?: string;
+    email?: string;
+    channelId?: string | null;
+  }
+
+  interface ChannelOption {
+    id: string;
+    name: string;
+    type: string;
+  }
+
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [currency, setCurrency] = useState('BRL');
   const [selectedStageId, setSelectedStageId] = useState('');
   const [selectedContactId, setSelectedContactId] = useState('');
   const [customFieldsValues, setCustomFieldsValues] = useState<Record<string, any>>({});
-  const [conversations, setConversations] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<ContactOption[]>([]);
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
+  const [createNewContact, setCreateNewContact] = useState(false);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [newContactEmail, setNewContactEmail] = useState('');
+  const [newContactChannelId, setNewContactChannelId] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -926,16 +973,20 @@ function CreateDealModal({
         setSelectedStageId(firstStage.id);
       }
     }
-    fetchConversations();
+    fetchContactsAndChannels();
   }, [pipeline]);
 
-  const fetchConversations = async () => {
+  const fetchContactsAndChannels = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/api/conversations?limit=100');
-      setConversations(response.data.conversations || []);
+      const [contactsResponse, channelsResponse] = await Promise.all([
+        api.get('/api/contacts?limit=300'),
+        api.get('/api/channels'),
+      ]);
+      setContacts(contactsResponse.data?.contacts || []);
+      setChannels(channelsResponse.data || []);
     } catch (error: any) {
-      console.error('Erro ao carregar conversas:', error);
+      console.error('Erro ao carregar contatos/canais:', error);
     } finally {
       setLoading(false);
     }
@@ -944,13 +995,42 @@ function CreateDealModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!selectedContactId || !selectedStageId) {
-      alert('Por favor, selecione um contato e uma etapa');
+    if (!selectedStageId) {
+      alert('Por favor, selecione uma etapa');
       return;
     }
 
     try {
       setSubmitting(true);
+      let finalContactId = selectedContactId;
+
+      if (createNewContact) {
+        if (!newContactName.trim() || !newContactChannelId) {
+          alert('Para criar contato, informe nome e canal.');
+          setSubmitting(false);
+          return;
+        }
+        const channelIdentifier =
+          newContactPhone.trim() ||
+          newContactEmail.trim() ||
+          `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        const createdContactResponse = await api.post('/api/contacts', {
+          name: newContactName.trim(),
+          phone: newContactPhone.trim() || undefined,
+          email: newContactEmail.trim() || undefined,
+          channelId: newContactChannelId,
+          channelIdentifier,
+        });
+        finalContactId = createdContactResponse.data.id;
+      }
+
+      if (!finalContactId) {
+        alert('Selecione um contato existente ou crie um novo contato.');
+        setSubmitting(false);
+        return;
+      }
+
       // Montar customFields apenas com valores preenchidos
       const customFields: Record<string, any> = {};
       if (pipeline.customFields) {
@@ -965,7 +1045,7 @@ function CreateDealModal({
       await api.post('/api/pipelines/deals', {
         pipelineId: pipeline.id,
         stageId: selectedStageId,
-        contactId: selectedContactId,
+        contactId: finalContactId,
         name: name,
         value: value ? parseFloat(value) : undefined,
         currency: currency,
@@ -978,26 +1058,6 @@ function CreateDealModal({
       setSubmitting(false);
     }
   };
-
-  // Agrupar conversas por contato
-  const contactsMap = new Map();
-  conversations.forEach((conv) => {
-    if (conv.contact) {
-      const contactId = conv.contact.id;
-      if (!contactsMap.has(contactId)) {
-        contactsMap.set(contactId, {
-          id: contactId,
-          name: conv.contact.name,
-          phone: conv.contact.phone,
-          profilePicture: conv.contact.profilePicture,
-          conversations: [],
-        });
-      }
-      contactsMap.get(contactId).conversations.push(conv);
-    }
-  });
-
-  const contacts = Array.from(contactsMap.values());
 
   return (
     <div
@@ -1024,9 +1084,65 @@ function CreateDealModal({
             <label htmlFor="deal-contact" className={PIPELINE_MODAL_LABEL}>
               Contato *
             </label>
+            <div className="mb-2 flex items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-on-surface-variant">
+                <input
+                  type="radio"
+                  checked={!createNewContact}
+                  onChange={() => setCreateNewContact(false)}
+                />
+                Selecionar existente
+              </label>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-on-surface-variant">
+                <input
+                  type="radio"
+                  checked={createNewContact}
+                  onChange={() => setCreateNewContact(true)}
+                />
+                Criar novo contato
+              </label>
+            </div>
             {loading ? (
               <div className="rounded-lg border border-outline-variant bg-surface-container py-8 text-center text-sm text-on-surface-variant">
                 Carregando contatos…
+              </div>
+            ) : createNewContact ? (
+              <div className="space-y-3 rounded-lg border border-outline-variant bg-surface-container p-3">
+                <input
+                  type="text"
+                  value={newContactName}
+                  onChange={(e) => setNewContactName(e.target.value)}
+                  placeholder="Nome do contato *"
+                  className={PIPELINE_MODAL_INPUT}
+                  required={createNewContact}
+                />
+                <input
+                  type="text"
+                  value={newContactPhone}
+                  onChange={(e) => setNewContactPhone(e.target.value)}
+                  placeholder="Telefone (opcional)"
+                  className={PIPELINE_MODAL_INPUT}
+                />
+                <input
+                  type="email"
+                  value={newContactEmail}
+                  onChange={(e) => setNewContactEmail(e.target.value)}
+                  placeholder="E-mail (opcional)"
+                  className={PIPELINE_MODAL_INPUT}
+                />
+                <select
+                  value={newContactChannelId}
+                  onChange={(e) => setNewContactChannelId(e.target.value)}
+                  className={PIPELINE_MODAL_SELECT}
+                  required={createNewContact}
+                >
+                  <option value="">Selecione o canal *</option>
+                  {channels.map((ch) => (
+                    <option key={ch.id} value={ch.id}>
+                      {ch.name} ({ch.type})
+                    </option>
+                  ))}
+                </select>
               </div>
             ) : (
               <select

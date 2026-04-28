@@ -20,8 +20,11 @@ router.use(authenticateToken);
 router.post('/deals', dealController.createDeal.bind(dealController));
 router.get('/deals', dealController.getDeals.bind(dealController));
 router.get('/deals/:id', dealController.getDealById.bind(dealController));
+router.get('/tasks/calendar', dealController.getCalendarTasks.bind(dealController));
 router.put('/deals/:id', dealController.updateDeal.bind(dealController));
 router.put('/deals/:id/move', dealController.moveDealToStage.bind(dealController));
+router.post('/deals/:id/tags', dealController.addTagToDeal.bind(dealController));
+router.delete('/deals/:id/tags/:tagId', dealController.removeTagFromDeal.bind(dealController));
 router.delete('/deals/:id', dealController.deleteDeal.bind(dealController));
 
 // ============================================
@@ -46,6 +49,11 @@ router.put('/:pipelineId/stages/reorder', pipelineController.reorderStages.bind(
 // ============================================
 router.post('/deals/:dealId/activities', dealController.createActivity.bind(dealController));
 router.get('/deals/:dealId/activities', dealController.getDealActivities.bind(dealController));
+router.put('/tasks/:taskId', dealController.updatePipelineTask.bind(dealController));
+router.put(
+  '/deals/:dealId/tasks/by-title',
+  dealController.updatePipelineTaskByDealAndTitle.bind(dealController),
+);
 
 // ============================================
 // CUSTOM FIELDS

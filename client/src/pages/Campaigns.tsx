@@ -321,7 +321,7 @@ export default function Campaigns() {
             <div className="flex gap-2 mt-4">
               {campaign.status === 'DRAFT' && campaign.totalRecipients === 0 && (
                 <Button
-                  variant="default"
+                  variant="secondary"
                   onClick={() => {
                     setSelectedCampaign(campaign);
                     setShowRecipientsModal(true);
@@ -504,7 +504,7 @@ export default function Campaigns() {
 
             <div className="flex justify-end gap-3 mt-6">
               <Button
-                variant="default"
+                variant="secondary"
                 onClick={() => {
                   setShowCreateModal(false);
                   setFormData({
@@ -583,7 +583,7 @@ export default function Campaigns() {
 
             <div className="flex justify-end gap-3 mt-6">
               <Button
-                variant="default"
+                variant="secondary"
                 onClick={() => {
                   setShowRecipientsModal(false);
                   setSelectedContactIds([]);

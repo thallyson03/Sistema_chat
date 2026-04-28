@@ -118,9 +118,12 @@ export class PipelineService {
                   },
                 },
                 conversation: {
-                  select: {
-                    id: true,
-                    status: true,
+                  include: {
+                    tags: {
+                      include: {
+                        tag: true,
+                      },
+                    },
                   },
                 },
               },

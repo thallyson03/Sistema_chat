@@ -126,6 +126,15 @@ export default function Bots() {
     }
   };
 
+  const fetchVariables = async (botId: string) => {
+    try {
+      const response = await api.get(`/api/bots/${botId}/variables`);
+      setVariables(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar variáveis:', error);
+    }
+  };
+
   const handleCreateBot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.channelId) {
@@ -841,13 +850,4 @@ export default function Bots() {
     </div>
   );
 }
-
-  const fetchVariables = async (botId: string) => {
-    try {
-      const response = await api.get(`/api/bots/${botId}/variables`);
-      setVariables(response.data || []);
-    } catch (error) {
-      console.error('Erro ao carregar variáveis:', error);
-    }
-  };
 

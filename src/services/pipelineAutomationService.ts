@@ -39,6 +39,16 @@ class PipelineAutomationService {
     this.messageService = new MessageService();
   }
 
+  private asBoolean(value: any): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+    }
+    return false;
+  }
+
   /**
    * Busca regras de automação ativas para uma etapa específica
    */
@@ -166,6 +176,26 @@ class PipelineAutomationService {
           shouldExecute = await this.shouldExecuteScheduledTrigger(ruleTrigger, config);
         }
         
+        // Quando estamos reaplicando para leads já existentes na etapa,
+        // processar somente SALES_BOT com applyToExisting habilitado.
+        // Isso evita disparar regras paralelas (ex: ADD_TASK) fora do esperado.
+        if (triggerType === 'apply_existing') {
+          shouldExecute =
+            rule.type === PipelineAutomationType.SALES_BOT &&
+            this.asBoolean(config.applyToExisting);
+        }
+
+        // Regra de negócio: SALES_BOT de pipeline deve iniciar também quando o lead entra
+        // pela primeira vez na etapa (criação manual/API), mesmo se a regra estiver
+        // configurada como "when_moved_to_stage".
+        if (
+          rule.type === PipelineAutomationType.SALES_BOT &&
+          isNewDeal &&
+          ruleTrigger === 'when_moved_to_stage'
+        ) {
+          shouldExecute = true;
+        }
+
         if (!shouldExecute) {
           console.log(`[PipelineAutomation] Regra ${rule.id} não corresponde ao trigger ${ruleTrigger}`);
           continue;
@@ -234,33 +264,13 @@ class PipelineAutomationService {
 
     console.log(`[PipelineAutomation] Executando SALES_BOT: iniciando bot ${config.botId} para contato ${deal.contactId}`);
 
-    // Verificar se há conversa associada ao deal
+    // Não criar conversa automaticamente para não poluir /conversations.
+    // Se não existir conversa vinculada, o SALES_BOT não inicia para este deal.
     if (!deal.conversationId) {
-      console.warn(`[PipelineAutomation] Deal ${deal.id} não tem conversa associada. Criando conversa...`);
-      
-      // Buscar ou criar conversa para o contato
-      let conversation = await prisma.conversation.findFirst({
-        where: {
-          contactId: deal.contactId,
-          channelId: deal.contact.channelId,
-        },
-      });
-
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: {
-            contactId: deal.contactId,
-            channelId: deal.contact.channelId,
-            status: 'OPEN',
-          },
-        });
-
-        // Atualizar deal com a conversa criada
-        await prisma.deal.update({
-          where: { id: deal.id },
-          data: { conversationId: conversation.id },
-        });
-      }
+      console.warn(
+        `[PipelineAutomation] Deal ${deal.id} sem conversa vinculada. SALES_BOT não iniciará automaticamente.`,
+      );
+      return false;
     }
 
     // Verificar se o bot existe e está ativo
@@ -273,11 +283,8 @@ class PipelineAutomationService {
       return false;
     }
 
-    // Verificar se o bot pertence ao mesmo canal do contato
-    if (bot.channelId !== deal.contact.channelId) {
-      console.error(`[PipelineAutomation] Bot ${config.botId} não pertence ao canal do contato`);
-      return false;
-    }
+    // SALES_BOT de pipeline é global por regra de negócio:
+    // não deve depender de canal/setor do lead.
 
     // Criar ou ativar sessão do bot
     let conversationId = deal.conversationId;
@@ -366,6 +373,24 @@ class PipelineAutomationService {
       } catch (err: any) {
         console.error(`[PipelineAutomation] Erro ao enviar mensagem de boas-vindas:`, err.message);
       }
+    }
+
+    // Disparar execução automática do fluxo do bot imediatamente.
+    // Isso garante que ações de automação (ex: mover lead no pipeline) rodem
+    // mesmo quando o contato ainda não iniciou conversa.
+    try {
+      await this.botService.processMessage('', conversationId, {
+        messageType: 'text',
+        source: 'pipeline_automation',
+      } as any);
+      console.log(
+        `[PipelineAutomation] Execução automática do bot disparada para deal ${deal.id} (conversation ${conversationId})`,
+      );
+    } catch (err: any) {
+      console.error(
+        `[PipelineAutomation] Erro ao disparar execução automática do bot para deal ${deal.id}:`,
+        err?.message || err,
+      );
     }
 
     console.log(`[PipelineAutomation] Bot ${config.botId} iniciado com sucesso para deal ${deal.id}`);
@@ -463,13 +488,18 @@ class PipelineAutomationService {
       return;
     }
 
-    console.log(`[PipelineAutomation] Executando ADD_TASK: criando tarefa para deal ${deal.id}`);
+    console.log(
+      `[PipelineAutomation] Executando ADD_TASK (rule ${ruleId}): criando tarefa para deal ${deal.id} com título "${config.taskTitle}"`,
+    );
 
     // Calcular data de vencimento baseado no prazo configurado
     let dueDate: Date | null = null;
     const deadline = config.deadline || 'immediately';
-    
-    if (deadline !== 'immediately') {
+
+    if (deadline === 'immediately') {
+      // Regra solicitada: tarefa imediata recebe data/hora atual.
+      dueDate = new Date();
+    } else {
       let daysToAdd = 0;
       
       switch (deadline) {
@@ -527,14 +557,16 @@ class PipelineAutomationService {
     });
 
     console.log(`[PipelineAutomation] Tarefa criada com sucesso para deal ${deal.id}`, {
+      ruleId,
       title: config.taskTitle,
+      source: 'PIPELINE_ADD_TASK',
       type: config.taskType,
       dueDate,
       assignedTo: assignedUserId || 'N/A',
     });
 
-    // Se o prazo é imediato (sem dueDate), já notificar no chat agora
-    if (!dueDate) {
+    // Notificar imediatamente quando for tarefa imediata (prazo "agora")
+    if (deadline === 'immediately') {
       try {
         console.log(
           `[PipelineAutomation] Notificando imediatamente tarefa ${task.id} no chat do deal ${deal.id}`,
@@ -542,32 +574,8 @@ class PipelineAutomationService {
 
         let conversationId = deal.conversationId || deal.conversation?.id || null;
 
-        if (!conversationId) {
-          let conversation = await prisma.conversation.findFirst({
-            where: {
-              contactId: deal.contactId,
-              channelId: deal.contact.channelId,
-            },
-            orderBy: { createdAt: 'desc' },
-          });
-
-          if (!conversation) {
-            conversation = await prisma.conversation.create({
-              data: {
-                contactId: deal.contactId,
-                channelId: deal.contact.channelId,
-                status: 'OPEN',
-              },
-            });
-
-            await prisma.deal.update({
-              where: { id: deal.id },
-              data: { conversationId: conversation.id },
-            });
-          }
-
-          conversationId = conversation.id;
-        }
+        // Regra de negócio: só notificar no chat se existir conversa real
+        // explicitamente vinculada ao negócio.
 
         if (conversationId) {
           const contentLines = [
@@ -589,6 +597,17 @@ class PipelineAutomationService {
             type: MessageType.TEXT,
             fromBot: true,
             internalOnly: true,
+            metadata: {
+              source: 'PIPELINE_ADD_TASK',
+              taskNotification: {
+                taskId: task.id,
+                dealId: deal.id,
+                title: task.title,
+                description: task.description || '',
+                dueDate: task.dueDate ? task.dueDate.toISOString() : null,
+                status: task.status,
+              },
+            },
           });
 
           await prisma.pipelineTask.update({
@@ -731,42 +750,9 @@ class PipelineAutomationService {
             continue;
           }
 
-          // Garantir que existe uma conversa para o deal/contato
+          // Regra de negócio: só notificar no chat se existir conversa real
+          // explicitamente vinculada ao negócio.
           let conversationId = deal.conversationId || deal.conversation?.id || null;
-
-          if (!conversationId) {
-            let conversation = await prisma.conversation.findFirst({
-              where: {
-                contactId: deal.contactId,
-                channelId: deal.contact.channelId,
-              },
-              orderBy: { createdAt: 'desc' },
-            });
-
-            if (!conversation) {
-              conversation = await prisma.conversation.create({
-                data: {
-                  contactId: deal.contactId,
-                  channelId: deal.contact.channelId,
-                  status: 'OPEN',
-                },
-              });
-
-              await prisma.deal.update({
-                where: { id: deal.id },
-                data: { conversationId: conversation.id },
-              });
-            }
-
-            conversationId = conversation.id;
-          }
-
-          if (!conversationId) {
-            console.warn(
-              `[PipelineAutomation] Não foi possível encontrar/criar conversa para tarefa ${task.id}`,
-            );
-            continue;
-          }
 
           const contentLines = [
             '⏰ Chegou a hora de realizar uma tarefa deste negócio.',
@@ -787,6 +773,17 @@ class PipelineAutomationService {
             type: MessageType.TEXT,
             fromBot: true,
             internalOnly: true,
+            metadata: {
+              source: 'PIPELINE_ADD_TASK',
+              taskNotification: {
+                taskId: task.id,
+                dealId: task.dealId,
+                title: task.title,
+                description: task.description || '',
+                dueDate: task.dueDate ? task.dueDate.toISOString() : null,
+                status: task.status,
+              },
+            },
           });
 
           await prisma.pipelineTask.update({
@@ -841,6 +838,37 @@ class PipelineAutomationService {
         },
       });
       createdRules.push(created);
+    }
+
+    // Aplicar automações em leads já existentes nas etapas selecionadas
+    // quando a regra estiver com applyToExisting=true.
+    const stagesToApplyExisting = new Set<string>();
+    for (const rule of createdRules) {
+      const config = (rule.config || {}) as AutomationConfig;
+      if (rule.active && this.asBoolean(config.applyToExisting)) {
+        stagesToApplyExisting.add(rule.stageId);
+      }
+    }
+
+    for (const stageId of stagesToApplyExisting) {
+      const dealsInStage = await prisma.deal.findMany({
+        where: {
+          pipelineId,
+          stageId,
+        },
+        select: { id: true },
+      });
+
+      for (const deal of dealsInStage) {
+        try {
+          await this.handleStageEnter(deal.id, stageId, false, 'apply_existing');
+        } catch (err: any) {
+          console.error(
+            `[PipelineAutomation] Erro ao aplicar automação existente no deal ${deal.id}:`,
+            err?.message || err,
+          );
+        }
+      }
     }
 
     return createdRules;

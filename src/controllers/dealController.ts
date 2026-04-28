@@ -92,6 +92,27 @@ export class DealController {
     }
   }
 
+  async addTagToDeal(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { name } = req.body || {};
+      const deal = await dealService.addTagToDeal(id, name);
+      res.json(deal);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  async removeTagFromDeal(req: AuthRequest, res: Response) {
+    try {
+      const { id, tagId } = req.params;
+      const deal = await dealService.removeTagFromDeal(id, tagId);
+      res.json(deal);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
   // ============================================
   // ACTIVITIES
   // ============================================
@@ -113,6 +134,61 @@ export class DealController {
       const { dealId } = req.params;
       const activities = await dealService.getDealActivities(dealId);
       res.json(activities);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async updatePipelineTask(req: AuthRequest, res: Response) {
+    try {
+      const { taskId } = req.params;
+      const { status, result } = req.body || {};
+      const task = await dealService.updatePipelineTask(taskId, { status, result }, req.user?.id);
+      res.json(task);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  async updatePipelineTaskByDealAndTitle(req: AuthRequest, res: Response) {
+    try {
+      const { dealId } = req.params;
+      const { title, status, result } = req.body || {};
+      const task = await dealService.updatePipelineTaskByDealAndTitle(
+        dealId,
+        title,
+        { status, result },
+        req.user?.id,
+      );
+      res.json(task);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  async getCalendarTasks(req: AuthRequest, res: Response) {
+    try {
+      const { start, end, includeNoDue } = req.query;
+      if (!start || !end) {
+        return res.status(400).json({ error: 'Parâmetros start e end são obrigatórios.' });
+      }
+
+      const startDate = new Date(String(start));
+      const endDate = new Date(String(end));
+
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({ error: 'Datas inválidas para start/end.' });
+      }
+
+      const tasks = await dealService.getCalendarTasks({
+        start: startDate,
+        end: endDate,
+        userId: req.user!.id,
+        role: req.user!.role,
+        includeNoDue: String(includeNoDue ?? 'true') !== 'false',
+      });
+
+      res.json(tasks);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

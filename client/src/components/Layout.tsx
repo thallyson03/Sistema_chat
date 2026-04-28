@@ -240,6 +240,7 @@ export default function Layout() {
             />
             <SidebarLink to="/channels" icon="📡">Canais</SidebarLink>
             <SidebarLink to="/journeys" icon="🧩">Jornadas</SidebarLink>
+            <SidebarLink to="/calendario" icon="🗓️">Calendario</SidebarLink>
             <SidebarLink to="/templates" icon="🧾">Templates WhatsApp</SidebarLink>
           </div>
 

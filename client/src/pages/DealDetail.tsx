@@ -8,6 +8,12 @@ import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import CustomFieldsManager from '../components/CustomFieldsManager';
 import { useConfirm } from '../components/ui/ConfirmProvider';
+import TaskNotificationCard, {
+  TaskNotificationData,
+} from '../components/chat/TaskNotificationCard';
+import NoteNotificationCard, {
+  NoteNotificationData,
+} from '../components/chat/NoteNotificationCard';
 
 interface Deal {
   id: string;
@@ -21,6 +27,7 @@ interface Deal {
   contact: {
     id: string;
     name: string;
+    channelId?: string;
     phone?: string;
     email?: string;
     profilePicture?: string;
@@ -33,6 +40,14 @@ interface Deal {
   conversation?: {
     id: string;
     status: string;
+    tags?: Array<{
+      tagId: string;
+      tag: {
+        id: string;
+        name: string;
+        color?: string;
+      };
+    }>;
   };
   stage: {
     id: string;
@@ -70,6 +85,9 @@ interface Message {
     mimetype?: string;
     mediaMetadata?: any;
     fromBot?: boolean;
+    source?: string;
+    taskNotification?: TaskNotificationData;
+    noteNotification?: NoteNotificationData;
   };
   user?: {
     id: string;
@@ -133,6 +151,8 @@ export default function DealDetail() {
   >(null);
   const [transferSectorUsers, setTransferSectorUsers] = useState<any[]>([]);
   const [loadingTransferUsers, setLoadingTransferUsers] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [savingTag, setSavingTag] = useState(false);
   
   // Campos comerciais fixos
   const fixedCommercialFields = [
@@ -238,21 +258,6 @@ export default function DealDetail() {
     });
   }, []);
 
-  // Detectar chegada de notificação de tarefa e exibir alerta visual
-  useEffect(() => {
-    if (!messages.length) return;
-    const last = messages[messages.length - 1];
-    if (
-      last &&
-      last.metadata?.fromBot === true &&
-      typeof last.content === 'string' &&
-      last.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.') &&
-      taskNotification?.id !== last.id
-    ) {
-      setTaskNotification(last);
-    }
-  }, [messages]);
-
   useEffect(() => {
     if (deal?.conversation?.id) {
       fetchConversation(deal.conversation.id);
@@ -282,6 +287,15 @@ export default function DealDetail() {
               params: { conversationId: conversation.id },
             });
             const newMsg = msgRes.data;
+            const isTaskNotificationMessage =
+              newMsg?.metadata?.fromBot === true &&
+              (newMsg?.metadata?.taskNotification?.taskId ||
+                (typeof newMsg?.content === 'string' &&
+                  (newMsg.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.') ||
+                    newMsg.content.startsWith('🤖 Tarefa criada pelo bot deste negócio.'))));
+            if (isTaskNotificationMessage) {
+              setTaskNotification(newMsg);
+            }
             const el = messagesScrollRef.current;
             if (el) {
               const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -707,6 +721,37 @@ export default function DealDetail() {
     }
   };
 
+  const handleAddTagToDeal = async () => {
+    if (!deal || !newTagName.trim() || savingTag) return;
+    try {
+      setSavingTag(true);
+      const response = await api.post(`/api/pipelines/deals/${deal.id}/tags`, {
+        name: newTagName.trim(),
+      });
+      setDeal(response.data);
+      setNewTagName('');
+    } catch (error: any) {
+      console.error('Erro ao adicionar tag no lead:', error);
+      alert(error.response?.data?.error || 'Erro ao adicionar tag');
+    } finally {
+      setSavingTag(false);
+    }
+  };
+
+  const handleRemoveTagFromDeal = async (tagId: string) => {
+    if (!deal || savingTag) return;
+    try {
+      setSavingTag(true);
+      const response = await api.delete(`/api/pipelines/deals/${deal.id}/tags/${tagId}`);
+      setDeal(response.data);
+    } catch (error: any) {
+      console.error('Erro ao remover tag do lead:', error);
+      alert(error.response?.data?.error || 'Erro ao remover tag');
+    } finally {
+      setSavingTag(false);
+    }
+  };
+
   const createOrGetConversation = async () => {
     if (!deal) return;
 
@@ -1118,6 +1163,159 @@ export default function DealDetail() {
     return getAvatarUrl(contact?.name || 'Contato', size);
   };
 
+  const getTaskNotificationData = (message: Message): TaskNotificationData | null => {
+    const metadataTask = message.metadata?.taskNotification;
+    if (metadataTask?.taskId) return metadataTask;
+    if (
+      message.metadata?.fromBot === true &&
+      typeof message.content === 'string' &&
+      (message.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.') ||
+        message.content.startsWith('🤖 Tarefa criada pelo bot deste negócio.'))
+    ) {
+      const titleMatch = message.content.match(/• Tarefa:\s*(.+)/);
+      const detailsMatch = message.content.match(/• Detalhes:\s*(.+)/);
+      return {
+        taskId: `legacy-${message.id}`,
+        title: titleMatch?.[1]?.trim() || 'Tarefa',
+        description: detailsMatch?.[1]?.trim() || '',
+      };
+    }
+    return null;
+  };
+
+  const getNoteNotificationData = (message: Message): NoteNotificationData | null => {
+    const metadataNote = message.metadata?.noteNotification;
+    if (metadataNote?.note) return metadataNote;
+    if (
+      message.metadata?.fromBot === true &&
+      typeof message.content === 'string' &&
+      message.content.startsWith('📝 Nota adicionada pelo bot')
+    ) {
+      const noteText = message.content.replace(/^📝 Nota adicionada pelo bot\s*/u, '').trim();
+      return { note: noteText || 'Nota sem conteúdo' };
+    }
+    return null;
+  };
+
+  const handleSaveTaskResult = async (taskId: string, result: string) => {
+    try {
+      if (!taskId) return;
+      if (taskId.startsWith('legacy-')) {
+        const legacyMessage = messages.find((m) => `legacy-${m.id}` === taskId);
+        const title =
+          legacyMessage?.metadata?.taskNotification?.title ||
+          legacyMessage?.content.match(/• Tarefa:\s*(.+)/)?.[1]?.trim();
+        if (!deal?.id || !title) {
+          throw new Error('Não foi possível identificar a tarefa antiga.');
+        }
+        const response = await api.put(`/api/pipelines/deals/${deal.id}/tasks/by-title`, { title, result });
+        const resolvedTask = response.data;
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === legacyMessage?.id
+              ? {
+                  ...msg,
+                  metadata: {
+                    ...msg.metadata,
+                    taskNotification: {
+                      taskId: resolvedTask.id,
+                      dealId: deal.id,
+                      title: resolvedTask.title,
+                      description: result,
+                      dueDate: resolvedTask.dueDate,
+                      status: resolvedTask.status,
+                    },
+                  },
+                }
+              : msg,
+          ),
+        );
+        return;
+      }
+
+      await api.put(`/api/pipelines/tasks/${taskId}`, { result });
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.metadata?.taskNotification?.taskId === taskId
+            ? {
+                ...msg,
+                metadata: {
+                  ...msg.metadata,
+                  taskNotification: {
+                    ...msg.metadata.taskNotification,
+                    description: result,
+                  },
+                },
+              }
+            : msg,
+        ),
+      );
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Erro ao salvar resultado.');
+    }
+  };
+
+  const handleCompleteTask = async (taskId: string) => {
+    try {
+      if (!taskId) return;
+      if (taskId.startsWith('legacy-')) {
+        const legacyMessage = messages.find((m) => `legacy-${m.id}` === taskId);
+        const title =
+          legacyMessage?.metadata?.taskNotification?.title ||
+          legacyMessage?.content.match(/• Tarefa:\s*(.+)/)?.[1]?.trim();
+        if (!deal?.id || !title) {
+          throw new Error('Não foi possível identificar a tarefa antiga.');
+        }
+        const response = await api.put(`/api/pipelines/deals/${deal.id}/tasks/by-title`, {
+          title,
+          status: 'DONE',
+        });
+        const resolvedTask = response.data;
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === legacyMessage?.id
+              ? {
+                  ...msg,
+                  metadata: {
+                    ...msg.metadata,
+                    taskNotification: {
+                      taskId: resolvedTask.id,
+                      dealId: deal.id,
+                      title: resolvedTask.title,
+                      description: resolvedTask.description || '',
+                      dueDate: resolvedTask.dueDate,
+                      status: 'DONE',
+                    },
+                  },
+                }
+              : msg,
+          ),
+        );
+        return;
+      }
+
+      await api.put(`/api/pipelines/tasks/${taskId}`, { status: 'DONE' });
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.metadata?.taskNotification?.taskId === taskId
+            ? {
+                ...msg,
+                metadata: {
+                  ...msg.metadata,
+                  taskNotification: {
+                    ...msg.metadata.taskNotification,
+                    status: 'DONE',
+                  },
+                },
+              }
+            : msg,
+        ),
+      );
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Erro ao concluir tarefa.');
+    }
+  };
+
   if (loading) {
     return <div className="p-5 text-on-surface-variant">Carregando...</div>;
   }
@@ -1261,6 +1459,94 @@ export default function DealDetail() {
                       </option>
                     ))}
                 </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', opacity: 0.8, display: 'block', marginBottom: '6px' }}>
+                  Tags do lead
+                </label>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  {(deal.conversation?.tags || []).map((item) => (
+                    <span
+                      key={item.tag.id}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        backgroundColor: item.tag.color || 'rgba(255,255,255,0.2)',
+                        color: 'white',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {item.tag.name}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTagFromDeal(item.tag.id)}
+                        disabled={savingTag}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'white',
+                          cursor: savingTag ? 'not-allowed' : 'pointer',
+                          fontSize: '12px',
+                          opacity: 0.9,
+                          padding: 0,
+                          lineHeight: 1,
+                        }}
+                        title="Remover tag"
+                      >
+                        x
+                      </button>
+                    </span>
+                  ))}
+                  {(deal.conversation?.tags || []).length === 0 && (
+                    <span style={{ fontSize: '12px', opacity: 0.65, fontStyle: 'italic' }}>
+                      Sem tags
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTagToDeal();
+                      }
+                    }}
+                    placeholder="Criar tag manual"
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: 'white',
+                      fontSize: '13px',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddTagToDeal}
+                    disabled={savingTag || !newTagName.trim()}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: '#3b82f6',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: savingTag || !newTagName.trim() ? 'not-allowed' : 'pointer',
+                      fontSize: '12px',
+                      opacity: savingTag || !newTagName.trim() ? 0.6 : 1,
+                    }}
+                  >
+                    + Tag
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -1937,12 +2223,13 @@ export default function DealDetail() {
                 }
               }
               const isBotMessage = message.metadata?.fromBot === true;
+              const taskData = getTaskNotificationData(message);
+              const noteData = getNoteNotificationData(message);
               const isTaskNotification =
-                isBotMessage &&
-                typeof message.content === 'string' &&
-                message.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.');
+                isBotMessage && taskData !== null;
+              const isNoteNotification = isBotMessage && noteData !== null;
               const isFromCustomer = !isBotMessage && message.userId === null;
-              const isOwnMessage = !!message.user || isBotMessage;
+              const isOwnMessage = !!message.user || (isBotMessage && !isTaskNotification && !isNoteNotification);
               const isMediaMessage = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(message.type);
               const contactName = deal?.contact?.name || '';
               const contactAvatar = deal?.contact
@@ -1985,7 +2272,7 @@ export default function DealDetail() {
                     </div>
                   )}
                   <div
-                    className={`relative min-w-0 max-w-[min(70%,36rem)] rounded-xl ${
+                    className={`relative min-w-0 ${isTaskNotification ? 'w-full max-w-full' : 'max-w-[min(70%,36rem)]'} rounded-xl ${
                       isMediaMessage
                         ? 'bg-transparent p-0 text-on-surface'
                         : isTaskNotification
@@ -2393,11 +2680,20 @@ export default function DealDetail() {
                       </div>
                     )}
                     
-                    {/* Exibir conteúdo/caption */}
-                    {message.content && (
-                      <p className="m-0 whitespace-pre-wrap break-words text-sm">
-                        {message.content}
-                      </p>
+                    {taskData && message.type === 'TEXT' ? (
+                      <TaskNotificationCard
+                        task={taskData}
+                        onSaveResult={handleSaveTaskResult}
+                        onComplete={handleCompleteTask}
+                      />
+                    ) : noteData && message.type === 'TEXT' ? (
+                      <NoteNotificationCard note={noteData} />
+                    ) : (
+                      message.content && (
+                        <p className="m-0 whitespace-pre-wrap break-words text-sm">
+                          {message.content}
+                        </p>
+                      )
                     )}
                     <span
                       className="mt-1 block text-[11px] opacity-70"

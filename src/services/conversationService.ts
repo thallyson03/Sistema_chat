@@ -212,6 +212,20 @@ export class ConversationService {
       });
     }
 
+    // Regra de negócio: conversa só aparece na lista principal
+    // quando houver mensagem "real" (não apenas notificação interna).
+    andConditions.push({
+      messages: {
+        some: {
+          OR: [
+            { userId: { not: null } }, // mensagem de agente
+            { metadata: { path: ['fromBot'], not: true } }, // cliente/entrada normal
+            { metadata: { path: ['internalOnly'], not: true } }, // bot externo / não-interno
+          ],
+        },
+      },
+    });
+
     if (andConditions.length > 0) {
       where.AND = andConditions;
     }
@@ -464,6 +478,11 @@ export class ConversationService {
   async deleteConversation(id: string) {
     // Deletar mensagens primeiro para evitar problemas de chave estrangeira
     await prisma.message.deleteMany({
+      where: { conversationId: id },
+    });
+
+    // Deletar tags vinculadas à conversa (FK ConversationTag -> Conversation é RESTRICT)
+    await prisma.conversationTag.deleteMany({
       where: { conversationId: id },
     });
 

@@ -118,6 +118,44 @@ const nodeBodyBoxStyle = {
   minHeight: '16px',
 };
 
+const NODE_LABELS: Record<string, string> = {
+  message: 'Texto',
+  image: 'Imagem',
+  video: 'Video',
+  embed: 'Embed',
+  audio: 'Audio',
+  input: 'Texto Livre',
+  emailInput: 'E-mail',
+  numberInput: 'Numero',
+  phoneInput: 'Telefone',
+  dateInput: 'Data',
+  fileUpload: 'Arquivo',
+  pictureChoice: 'Escolha com Imagem',
+  condition: 'Condição',
+  httpRequest: 'Webhook',
+  handoff: 'Handoff',
+  setVariable: 'Variável',
+  redirect: 'Redirect',
+  script: 'Code',
+  typebotLink: 'Typebot',
+  jump: 'Jump',
+  wait: 'Wait',
+  delay: 'Delay',
+  moveDeal: 'Mover lead',
+  crmLeadStatus: 'Mover lead (pipeline/coluna)',
+  crmLeadOwner: 'Responsavel lead',
+  crmManageTags: 'Gerenciar tags',
+  crmAddTask: 'Adicionar tarefa',
+  crmAddNote: 'Adicionar nota',
+  crmCompleteTasks: 'Completar tarefas',
+  crmConversationStatus: 'Status conversa',
+  start: 'Início',
+  end: 'Fim',
+};
+
+const getNodeLabel = (nodeType: string, fallback?: string) =>
+  NODE_LABELS[nodeType] || fallback || nodeType;
+
 const renderNodeHeader = (label: string, icon: string, iconColor: string) => (
   <div style={{ ...nodeHeaderStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
     <span className="material-symbols-rounded" style={{ fontSize: '13px', color: iconColor }}>
@@ -492,7 +530,7 @@ const SetVariableNode = ({ data, selected, id }: any) => {
         </button>
       )}
       <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
-      {renderNodeHeader('Definir Variável', 'tune', '#8b5cf6')}
+      {renderNodeHeader(getNodeLabel(data?.type || '', data?.label || 'Definir Variável'), 'tune', '#8b5cf6')}
       <div style={{ ...nodeBodyBoxStyle, margin: '10px' }}>
         {data.config?.variableName ? `{{${data.config.variableName}}}` : 'Nova variável'}
       </div>
@@ -1602,6 +1640,14 @@ const nodeTypes: NodeTypes = {
   typebotLink: TypebotLinkNode,
   jump: JumpNode,
   pictureChoice: PictureChoiceNode,
+  crmLeadStatus: SetVariableNode,
+  crmLeadOwner: SetVariableNode,
+  crmManageTags: SetVariableNode,
+  crmAddTask: SetVariableNode,
+  crmAddNote: SetVariableNode,
+  crmCreateLead: SetVariableNode,
+  crmCompleteTasks: SetVariableNode,
+  crmConversationStatus: SetVariableNode,
   start: StartNode,
   end: EndNode,
 };
@@ -1937,7 +1983,15 @@ export default function BotFlowBuilderVisual() {
                         step.type === 'WAIT' ? 'wait' :
                         step.type === 'TYPEBOT_LINK' ? 'typebotLink' :
                         step.type === 'JUMP' ? 'jump' :
-                         step.type === 'PICTURE_CHOICE' ? 'pictureChoice' : 'message';
+                         step.type === 'PICTURE_CHOICE' ? 'pictureChoice' :
+                         step.type === 'CRM_LEAD_STATUS' ? 'crmLeadStatus' :
+                         step.type === 'CRM_LEAD_OWNER' ? 'crmLeadOwner' :
+                         step.type === 'CRM_MANAGE_TAGS' ? 'crmManageTags' :
+                         step.type === 'CRM_ADD_TASK' ? 'crmAddTask' :
+                         step.type === 'CRM_ADD_NOTE' ? 'crmAddNote' :
+                         step.type === 'CRM_CREATE_LEAD' ? 'crmCreateLead' :
+                         step.type === 'CRM_COMPLETE_TASKS' ? 'crmCompleteTasks' :
+                         step.type === 'CRM_CONVERSATION_STATUS' ? 'crmConversationStatus' : 'message';
 
         const position = (step.config?.position && typeof step.config.position === 'object' && 'x' in step.config.position && 'y' in step.config.position)
           ? { x: Number(step.config.position.x), y: Number(step.config.position.y) }
@@ -1948,7 +2002,8 @@ export default function BotFlowBuilderVisual() {
           type: nodeType,
           position,
           data: {
-            label: step.type,
+            label: getNodeLabel(nodeType, step.type),
+            type: nodeType,
             content: step.response?.content || '',
             mediaUrl: step.response?.mediaUrl || '',
             condition: step.conditions?.[0]?.condition || '',
@@ -2101,6 +2156,11 @@ export default function BotFlowBuilderVisual() {
   const onConnect = useCallback(
     async (params: Connection) => {
       console.log('🔌 onConnect chamado:', params);
+
+      if (!params.source || !params.target) {
+        console.warn('Conexão inválida: source/target ausentes', params);
+        return;
+      }
       
       // Adicionar label baseado no tipo de conexão
       const sourceNode = nodes.find(n => n.id === params.source);
@@ -2308,9 +2368,11 @@ export default function BotFlowBuilderVisual() {
         }
       }
       
-      const newEdge = {
+      const newEdge: Edge = {
         ...params,
         id: `${params.source}-${params.target}-${Date.now()}`,
+        source: params.source,
+        target: params.target,
         label: label,
         style: edgeStyle,
         labelStyle: { 
@@ -2414,6 +2476,22 @@ export default function BotFlowBuilderVisual() {
           return { choices: [], variableName: '', multiple: false, layout: 'grid' };
         case 'moveDeal':
           return { pipelineId: '', stageId: '', pipelineName: '', stageName: '' };
+        case 'crmLeadStatus':
+          return { pipelineId: '', stageId: '' };
+        case 'crmLeadOwner':
+          return { mode: 'SET', userId: '' };
+        case 'crmManageTags':
+          return { mode: 'ADD', tagsText: '' };
+        case 'crmAddTask':
+          return { title: '', description: '', dueDate: '' };
+        case 'crmAddNote':
+          return { note: '' };
+        case 'crmCreateLead':
+          return { pipelineId: '', stageId: '', leadName: '' };
+        case 'crmCompleteTasks':
+          return { mode: 'ALL_PENDING', taskId: '', taskTitle: '' };
+        case 'crmConversationStatus':
+          return { status: 'OPEN' };
         default:
           return {};
       }
@@ -2427,7 +2505,8 @@ export default function BotFlowBuilderVisual() {
         y: Math.random() * 400 + 100,
       },
       data: {
-        label: type,
+        label: getNodeLabel(type, type),
+        type,
         content: '',
         stepId: `step-${Date.now()}`,
         config: getDefaultConfig(type),
@@ -2466,7 +2545,15 @@ export default function BotFlowBuilderVisual() {
                      node.type === 'typebotLink' ? 'TYPEBOT_LINK' :
                      node.type === 'abTest' ? 'AB_TEST' :
                      node.type === 'jump' ? 'JUMP' :
-                     node.type === 'pictureChoice' ? 'PICTURE_CHOICE' : 'MESSAGE';
+                     node.type === 'pictureChoice' ? 'PICTURE_CHOICE' :
+                     node.type === 'crmLeadStatus' ? 'CRM_LEAD_STATUS' :
+                     node.type === 'crmLeadOwner' ? 'CRM_LEAD_OWNER' :
+                     node.type === 'crmManageTags' ? 'CRM_MANAGE_TAGS' :
+                     node.type === 'crmAddTask' ? 'CRM_ADD_TASK' :
+                     node.type === 'crmAddNote' ? 'CRM_ADD_NOTE' :
+                     node.type === 'crmCreateLead' ? 'CRM_CREATE_LEAD' :
+                     node.type === 'crmCompleteTasks' ? 'CRM_COMPLETE_TASKS' :
+                     node.type === 'crmConversationStatus' ? 'CRM_CONVERSATION_STATUS' : 'MESSAGE';
     
     // Configurar config baseado no tipo
     let config: any = {};
@@ -2548,6 +2635,22 @@ export default function BotFlowBuilderVisual() {
       config = { targetStepId: '' };
     } else if (stepType === 'PICTURE_CHOICE') {
       config = { choices: [], variableName: '', multiple: false, layout: 'grid' };
+    } else if (stepType === 'CRM_LEAD_STATUS') {
+      config = { pipelineId: '', stageId: '' };
+    } else if (stepType === 'CRM_LEAD_OWNER') {
+      config = { mode: 'SET', userId: '' };
+    } else if (stepType === 'CRM_MANAGE_TAGS') {
+      config = { mode: 'ADD', tagsText: '' };
+    } else if (stepType === 'CRM_ADD_TASK') {
+      config = { title: '', description: '', dueDate: '' };
+    } else if (stepType === 'CRM_ADD_NOTE') {
+      config = { note: '' };
+    } else if (stepType === 'CRM_CREATE_LEAD') {
+      config = { pipelineId: '', stageId: '', leadName: '' };
+    } else if (stepType === 'CRM_COMPLETE_TASKS') {
+      config = { mode: 'ALL_PENDING', taskId: '', taskTitle: '' };
+    } else if (stepType === 'CRM_CONVERSATION_STATUS') {
+      config = { status: 'OPEN' };
     }
     
     const isNewNode = !node.data?.stepId || String(node.data.stepId).startsWith('step-');
@@ -2582,6 +2685,13 @@ export default function BotFlowBuilderVisual() {
             listSectionTitle: config?.listSectionTitle || 'Opções',
           }
         : config;
+    if (
+      stepType === 'CRM_MANAGE_TAGS' &&
+      !normalizedMessageConfig?.tagsText &&
+      Array.isArray(normalizedMessageConfig?.tags)
+    ) {
+      normalizedMessageConfig.tagsText = normalizedMessageConfig.tags.join(', ');
+    }
 
     setStepFormData({
       type: stepType,
@@ -2625,7 +2735,7 @@ export default function BotFlowBuilderVisual() {
       // Verificar se é edição: stepId existe e não começa com "step-" (que indica ID temporário)
       const stepIdValue = editingNode.data.stepId;
       const isEditing = stepIdValue && !stepIdValue.startsWith('step-');
-      let stepId: string;
+      let stepId: string = String(stepIdValue || editingNode.data.stepId || editingNode.id);
       let shouldCreateNew = false;
 
       if (isEditing) {
@@ -2637,6 +2747,13 @@ export default function BotFlowBuilderVisual() {
             buttons: stepFormData.buttons,
             position: editingNode.position || undefined,
           };
+          if (stepFormData.type === 'CRM_MANAGE_TAGS') {
+            const tagsText = String(stepFormData.config?.tagsText || '');
+            (configWithPosition as any).tags = tagsText
+              .split(',')
+              .map((tag) => tag.trim())
+              .filter((tag) => tag.length > 0);
+          }
           if (stepFormData.type === 'CONDITION') {
             (configWithPosition as any).logicOperator = stepFormData.config.logicOperator || 'AND';
           }
@@ -2692,6 +2809,13 @@ export default function BotFlowBuilderVisual() {
           buttons: stepFormData.buttons,
           position: editingNode.position || undefined,
         };
+      if (stepFormData.type === 'CRM_MANAGE_TAGS') {
+        const tagsText = String(stepFormData.config?.tagsText || '');
+        (configWithPosition as any).tags = tagsText
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0);
+      }
         if (stepFormData.type === 'CONDITION') {
           (configWithPosition as any).logicOperator = stepFormData.config.logicOperator || 'AND';
         }
@@ -3024,6 +3148,27 @@ export default function BotFlowBuilderVisual() {
         }]);
         break;
 
+      case 'crmLeadStatus':
+      case 'crmLeadOwner':
+      case 'crmManageTags':
+      case 'crmAddTask':
+      case 'crmAddNote':
+      case 'crmCreateLead':
+      case 'crmCompleteTasks':
+      case 'crmConversationStatus':
+        setPreviewMessages(prev => [...prev, {
+          type: 'bot',
+          content: `🧩 Ação CRM executada (${stepType})`,
+          timestamp: new Date(),
+        }]);
+        const crmNextEdge = edges.find(e => e.source === stepId);
+        if (crmNextEdge) {
+          setTimeout(() => {
+            executePreviewStep(crmNextEdge.target);
+          }, 500);
+        }
+        break;
+
       case 'image':
         // Exibir imagem
         const imageUrl = stepData.config?.imageUrl || '';
@@ -3354,6 +3499,18 @@ export default function BotFlowBuilderVisual() {
         { key: 'wait', label: 'Wait', icon: 'hourglass_top' },
         { key: 'delay', label: 'Delay', icon: 'timer' },
         { key: 'moveDeal', label: 'Mover lead', icon: 'move_up' },
+      ],
+    },
+    {
+      title: 'CRM / PIPELINES',
+      items: [
+        { key: 'crmLeadStatus', label: 'Mover lead (pipeline/coluna)', icon: 'move_up' },
+        { key: 'crmLeadOwner', label: 'Responsavel lead', icon: 'person' },
+        { key: 'crmManageTags', label: 'Gerenciar tags', icon: 'sell' },
+        { key: 'crmAddTask', label: 'Adicionar tarefa', icon: 'task_alt' },
+        { key: 'crmAddNote', label: 'Adicionar nota', icon: 'sticky_note_2' },
+        { key: 'crmCompleteTasks', label: 'Completar tarefas', icon: 'checklist' },
+        { key: 'crmConversationStatus', label: 'Status conversa', icon: 'forum' },
       ],
     },
   ];
@@ -4561,6 +4718,249 @@ export default function BotFlowBuilderVisual() {
                   </p>
                 </div>
               </>
+            )}
+
+            {stepFormData.type === 'CRM_LEAD_STATUS' && (
+              <>
+                <div
+                  style={{
+                    marginBottom: '15px',
+                    padding: '10px',
+                    backgroundColor: '#ecfeff',
+                    borderRadius: '6px',
+                    border: '1px solid #a5f3fc',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: '#0f766e' }}>
+                    📦 Mover lead entre pipeline e coluna
+                  </div>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#0f766e' }}>
+                    Este bloco move o lead da conversa para o pipeline/coluna escolhidos.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                    Pipeline de destino
+                  </label>
+                  <select
+                    value={stepFormData.config?.pipelineId || ''}
+                    onChange={(e) => setStepFormData({
+                      ...stepFormData,
+                      config: { ...stepFormData.config, pipelineId: e.target.value, stageId: '' },
+                    })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                  >
+                    <option value="">Manter pipeline atual</option>
+                    {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                    Coluna de destino
+                  </label>
+                  <select
+                    value={stepFormData.config?.stageId || ''}
+                    onChange={(e) => setStepFormData({
+                      ...stepFormData,
+                      config: { ...stepFormData.config, stageId: e.target.value },
+                    })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                  >
+                    <option value="">Manter coluna atual</option>
+                    {(pipelines.find((p) => p.id === stepFormData.config?.pipelineId)?.stages || []).map((stage: any) => (
+                      <option key={stage.id} value={stage.id}>{stage.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {stepFormData.type === 'CRM_LEAD_OWNER' && (
+              <>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                    Modo
+                  </label>
+                  <select
+                    value={stepFormData.config?.mode || 'SET'}
+                    onChange={(e) => setStepFormData({
+                      ...stepFormData,
+                      config: { ...stepFormData.config, mode: e.target.value },
+                    })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                  >
+                    <option value="SET">Definir responsável</option>
+                    <option value="RULE_CONVERSATION_OWNER">Regra: dono da conversa</option>
+                    <option value="RULE_SECTOR_RANDOM">Regra: aleatório do setor</option>
+                    <option value="REMOVE">Remover responsável</option>
+                  </select>
+                </div>
+                {(stepFormData.config?.mode || 'SET') !== 'REMOVE' && (
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                      Usuário responsável
+                    </label>
+                    <select
+                      value={stepFormData.config?.userId || ''}
+                      onChange={(e) => setStepFormData({
+                        ...stepFormData,
+                        config: { ...stepFormData.config, userId: e.target.value },
+                      })}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                    >
+                      <option value="">Selecionar usuário</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </>
+            )}
+
+            {stepFormData.type === 'CRM_MANAGE_TAGS' && (
+              <>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                    Operação
+                  </label>
+                  <select
+                    value={stepFormData.config?.mode || 'ADD'}
+                    onChange={(e) => setStepFormData({
+                      ...stepFormData,
+                      config: { ...stepFormData.config, mode: e.target.value },
+                    })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                  >
+                    <option value="ADD">Adicionar tags</option>
+                    <option value="REMOVE">Remover tags</option>
+                    <option value="REPLACE">Substituir tags</option>
+                  </select>
+                </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                    Tags (separadas por vírgula)
+                  </label>
+                  <input
+                    type="text"
+                    value={stepFormData.config?.tagsText || ''}
+                    onChange={(e) => setStepFormData({
+                      ...stepFormData,
+                      config: { ...stepFormData.config, tagsText: e.target.value },
+                    })}
+                    placeholder="vip, urgente, onboarding"
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                  />
+                </div>
+              </>
+            )}
+
+            {stepFormData.type === 'CRM_ADD_TASK' && (
+              <>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>Título da tarefa</label>
+                  <input
+                    type="text"
+                    value={stepFormData.config?.title || ''}
+                    onChange={(e) => setStepFormData({ ...stepFormData, config: { ...stepFormData.config, title: e.target.value } })}
+                    placeholder="Ex: Retornar contato em 24h"
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>Descrição</label>
+                  <textarea
+                    value={stepFormData.config?.description || ''}
+                    onChange={(e) => setStepFormData({ ...stepFormData, config: { ...stepFormData.config, description: e.target.value } })}
+                    rows={3}
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px', resize: 'vertical' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>Prazo (opcional)</label>
+                  <input
+                    type="datetime-local"
+                    value={stepFormData.config?.dueDate || ''}
+                    onChange={(e) => setStepFormData({ ...stepFormData, config: { ...stepFormData.config, dueDate: e.target.value } })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                  />
+                </div>
+              </>
+            )}
+
+            {stepFormData.type === 'CRM_ADD_NOTE' && (
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>Nota interna</label>
+                <textarea
+                  value={stepFormData.config?.note || ''}
+                  onChange={(e) => setStepFormData({ ...stepFormData, config: { ...stepFormData.config, note: e.target.value } })}
+                  rows={4}
+                  placeholder="Escreva a nota que será adicionada no lead..."
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px', resize: 'vertical' }}
+                />
+              </div>
+            )}
+
+            {stepFormData.type === 'CRM_COMPLETE_TASKS' && (
+              <>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>Modo</label>
+                  <select
+                    value={stepFormData.config?.mode || 'ALL_PENDING'}
+                    onChange={(e) => setStepFormData({ ...stepFormData, config: { ...stepFormData.config, mode: e.target.value } })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                  >
+                    <option value="ALL_PENDING">Todas pendentes do lead</option>
+                    <option value="BY_TITLE">Por título</option>
+                    <option value="BY_ID">Por ID</option>
+                  </select>
+                </div>
+                {stepFormData.config?.mode === 'BY_TITLE' && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>Título da tarefa</label>
+                    <input
+                      type="text"
+                      value={stepFormData.config?.taskTitle || ''}
+                      onChange={(e) => setStepFormData({ ...stepFormData, config: { ...stepFormData.config, taskTitle: e.target.value } })}
+                      style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                    />
+                  </div>
+                )}
+                {stepFormData.config?.mode === 'BY_ID' && (
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>ID da tarefa</label>
+                    <input
+                      type="text"
+                      value={stepFormData.config?.taskId || ''}
+                      onChange={(e) => setStepFormData({ ...stepFormData, config: { ...stepFormData.config, taskId: e.target.value } })}
+                      style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
+            {stepFormData.type === 'CRM_CONVERSATION_STATUS' && (
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', fontSize: '14px' }}>
+                  Novo status da conversa
+                </label>
+                <select
+                  value={stepFormData.config?.status || 'OPEN'}
+                  onChange={(e) => setStepFormData({
+                    ...stepFormData,
+                    config: { ...stepFormData.config, status: e.target.value },
+                  })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
+                >
+                  <option value="OPEN">OPEN</option>
+                  <option value="WAITING">WAITING</option>
+                  <option value="CLOSED">CLOSED</option>
+                  <option value="ARCHIVED">ARCHIVED</option>
+                </select>
+              </div>
             )}
 
             {stepFormData.type === 'CONDITION' && (

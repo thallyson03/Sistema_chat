@@ -917,6 +917,432 @@ export class BotService {
         break;
       }
 
+      case 'CRM_LEAD_STATUS': {
+        const targetPipelineId = String(currentStep.config?.pipelineId || '').trim();
+        const targetStageId = String(currentStep.config?.stageId || '').trim();
+
+        if (!targetPipelineId && !targetStageId) {
+          console.warn('[BotService] CRM_LEAD_STATUS sem pipeline/coluna de destino configurados');
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_LEAD_STATUS sem destino');
+          break;
+        }
+
+        const deal = await prisma.deal.findFirst({
+          where: { conversationId: session.conversationId },
+          select: { id: true, pipelineId: true, stageId: true },
+        });
+        if (!deal) {
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_LEAD_STATUS sem deal');
+          break;
+        }
+
+        let finalStageId: string | null = targetStageId || null;
+        let finalPipelineId: string = targetPipelineId || deal.pipelineId;
+
+        if (targetStageId) {
+          const stage = await prisma.pipelineStage.findUnique({
+            where: { id: targetStageId },
+            select: { id: true, pipelineId: true },
+          });
+          if (!stage) {
+            await advanceToNextStep(currentStep.nextStepId, 'após CRM_LEAD_STATUS com coluna inválida');
+            break;
+          }
+          finalStageId = stage.id;
+          finalPipelineId = stage.pipelineId;
+        } else if (targetPipelineId) {
+          const firstStage = await prisma.pipelineStage.findFirst({
+            where: { pipelineId: targetPipelineId, isActive: true },
+            orderBy: { order: 'asc' },
+            select: { id: true, pipelineId: true },
+          });
+          if (!firstStage) {
+            await advanceToNextStep(currentStep.nextStepId, 'após CRM_LEAD_STATUS sem coluna ativa');
+            break;
+          }
+          finalStageId = firstStage.id;
+          finalPipelineId = firstStage.pipelineId;
+        }
+
+        await prisma.deal.update({
+          where: { id: deal.id },
+          data: {
+            pipelineId: finalPipelineId,
+            stageId: finalStageId || deal.stageId,
+          },
+        });
+
+        await advanceToNextStep(currentStep.nextStepId, 'após CRM_LEAD_STATUS');
+        break;
+      }
+
+      case 'CRM_LEAD_OWNER': {
+        const mode = String(currentStep.config?.mode || 'SET').toUpperCase();
+        const userId = String(currentStep.config?.userId || '').trim();
+        const deal = await prisma.deal.findFirst({
+          where: { conversationId: session.conversationId },
+          select: { id: true },
+        });
+        if (!deal) {
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_LEAD_OWNER sem deal');
+          break;
+        }
+        let assignedToId: string | null = null;
+        if (mode === 'REMOVE') {
+          assignedToId = null;
+        } else if (mode === 'RULE_SECTOR_RANDOM') {
+          const conversation = await prisma.conversation.findUnique({
+            where: { id: session.conversationId },
+            select: { sectorId: true, assignedToId: true },
+          });
+          if (conversation?.sectorId) {
+            const users = await prisma.userSector.findMany({
+              where: { sectorId: conversation.sectorId },
+              select: { userId: true },
+            });
+            if (users.length > 0) {
+              const randomIndex = Math.floor(Math.random() * users.length);
+              assignedToId = users[randomIndex].userId;
+            } else {
+              assignedToId = conversation.assignedToId || null;
+            }
+          }
+        } else if (mode === 'RULE_CONVERSATION_OWNER') {
+          const conversation = await prisma.conversation.findUnique({
+            where: { id: session.conversationId },
+            select: { assignedToId: true },
+          });
+          assignedToId = conversation?.assignedToId || null;
+        } else {
+          assignedToId = userId || null;
+        }
+        await prisma.deal.update({ where: { id: deal.id }, data: { assignedToId } });
+        await prisma.conversation.update({
+          where: { id: session.conversationId },
+          data: { assignedToId },
+        });
+        await advanceToNextStep(currentStep.nextStepId, 'após CRM_LEAD_OWNER');
+        break;
+      }
+
+      case 'CRM_MANAGE_TAGS': {
+        const mode = String(currentStep.config?.mode || 'ADD').toUpperCase();
+        const configuredTags = Array.isArray(currentStep.config?.tags) ? currentStep.config.tags : [];
+        const tagNames = configuredTags
+          .map((name: any) => this.parseVariables(String(name || ''), (session.context as Record<string, any>) || {}))
+          .map((name: string) => name.trim())
+          .filter((name: string) => name.length > 0);
+        if (tagNames.length === 0) {
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_MANAGE_TAGS sem tags');
+          break;
+        }
+
+        const existingTags = await prisma.tag.findMany({
+          where: { name: { in: tagNames } },
+          select: { id: true, name: true },
+        });
+        const tagByName = new Map(existingTags.map((tag) => [tag.name, tag]));
+        const finalTags: Array<{ id: string; name: string }> = [];
+        for (const tagName of tagNames) {
+          const existing = tagByName.get(tagName);
+          if (existing) {
+            finalTags.push(existing);
+            continue;
+          }
+          const created = await prisma.tag.create({
+            data: { name: tagName },
+            select: { id: true, name: true },
+          });
+          finalTags.push(created);
+        }
+
+        if (mode === 'REPLACE') {
+          await prisma.conversationTag.deleteMany({ where: { conversationId: session.conversationId } });
+        }
+
+        if (mode === 'REMOVE') {
+          await prisma.conversationTag.deleteMany({
+            where: {
+              conversationId: session.conversationId,
+              tagId: { in: finalTags.map((tag) => tag.id) },
+            },
+          });
+        } else {
+          for (const tag of finalTags) {
+            await prisma.conversationTag.upsert({
+              where: {
+                conversationId_tagId: {
+                  conversationId: session.conversationId,
+                  tagId: tag.id,
+                },
+              },
+              update: {},
+              create: {
+                conversationId: session.conversationId,
+                tagId: tag.id,
+              },
+            });
+          }
+        }
+
+        await advanceToNextStep(currentStep.nextStepId, 'após CRM_MANAGE_TAGS');
+        break;
+      }
+
+      case 'CRM_ADD_TASK': {
+        console.log('[BotService] CRM_ADD_TASK iniciado', {
+          conversationId: session.conversationId,
+          contextDealId: (session.context as any)?.dealId || null,
+        });
+        const title = this.parseVariables(
+          String(currentStep.config?.title || '').trim(),
+          (session.context as Record<string, any>) || {},
+        );
+        if (!title) {
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_ADD_TASK inválido');
+          break;
+        }
+        const contextDealId = String((session.context as any)?.dealId || '').trim();
+        const deal =
+          (contextDealId
+            ? await prisma.deal.findUnique({
+                where: { id: contextDealId },
+                select: { id: true },
+              })
+            : null) ||
+          (await prisma.deal.findFirst({
+            where: { conversationId: session.conversationId },
+            select: { id: true },
+          }));
+        if (!deal) {
+          console.warn('[BotService] CRM_ADD_TASK sem deal identificado', {
+            conversationId: session.conversationId,
+            contextDealId: (session.context as any)?.dealId || null,
+          });
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_ADD_TASK sem deal');
+          break;
+        }
+        const dueDateRaw = String(currentStep.config?.dueDate || '').trim();
+        let dueDate = dueDateRaw ? new Date(dueDateRaw) : null;
+        // Regra solicitada: quando não há prazo informado, usar data/hora atual.
+        if (!dueDate || Number.isNaN(dueDate.getTime())) {
+          dueDate = new Date();
+        }
+        const createdTask = await prisma.pipelineTask.create({
+          data: {
+            dealId: deal.id,
+            title,
+            description: currentStep.config?.description
+              ? this.parseVariables(String(currentStep.config.description), (session.context as Record<string, any>) || {})
+              : null,
+            dueDate,
+          },
+        });
+
+        // Notificação imediata no chat (mesmo padrão visual das tarefas de pipeline)
+        // para garantir que o usuário veja a criação da tarefa em tempo real.
+        const notifyInChat = currentStep.config?.notifyInChat !== false;
+        if (notifyInChat) {
+          try {
+            const conversationForNotify = await prisma.conversation.findUnique({
+              where: { id: session.conversationId },
+              select: {
+                id: true,
+                channelId: true,
+                contact: {
+                  select: {
+                    channelId: true,
+                  },
+                },
+              },
+            });
+
+            // Tarefa do bot nunca deve depender de canal.
+            // Se houver canal no contato, tentamos preencher na conversa para notificar no chat.
+            if (!conversationForNotify?.channelId && conversationForNotify?.contact?.channelId) {
+              await prisma.conversation.update({
+                where: { id: session.conversationId },
+                data: { channelId: conversationForNotify.contact.channelId },
+              });
+              console.log('[BotService] CRM_ADD_TASK vinculou canal na conversa para notificação', {
+                conversationId: session.conversationId,
+                channelId: conversationForNotify.contact.channelId,
+              });
+            }
+
+            const contentLines = [
+              '🤖 Tarefa criada pelo bot deste negócio.',
+              '',
+              `• Tarefa: ${createdTask.title}`,
+            ];
+            if (createdTask.description) {
+              contentLines.push(`• Detalhes: ${createdTask.description}`);
+            }
+            await this.messageService.sendMessage({
+              conversationId: session.conversationId,
+              userId: '',
+              content: contentLines.join('\n'),
+              type: 'TEXT',
+              fromBot: true,
+              internalOnly: true,
+              metadata: {
+                source: 'BOT_CRM_ADD_TASK',
+                taskNotification: {
+                  taskId: createdTask.id,
+                  dealId: deal.id,
+                  title: createdTask.title,
+                  description: createdTask.description || '',
+                  dueDate: createdTask.dueDate ? createdTask.dueDate.toISOString() : null,
+                  status: createdTask.status,
+                },
+              },
+            });
+          } catch (err: any) {
+            // Não impedir a automação quando a conversa estiver sem canal.
+            // Nesse cenário a tarefa já foi criada e deve permanecer válida.
+            console.warn('[BotService] CRM_ADD_TASK não conseguiu enviar notificação no chat', {
+              taskId: createdTask.id,
+              conversationId: session.conversationId,
+              error: err?.message || err,
+            });
+          }
+
+          // Se a tarefa já venceu (ou é imediata), marcamos como notificada
+          // para evitar notificações duplicadas no job de tarefas.
+          if (createdTask.dueDate && createdTask.dueDate.getTime() <= Date.now()) {
+            await prisma.pipelineTask.update({
+              where: { id: createdTask.id },
+              data: { notified: true },
+            });
+          }
+        }
+        console.log('[BotService] CRM_ADD_TASK criado com sucesso', {
+          dealId: deal.id,
+          taskId: createdTask.id,
+          title: createdTask.title,
+          source: 'BOT_CRM_ADD_TASK',
+          notifyInChat,
+        });
+        await advanceToNextStep(currentStep.nextStepId, 'após CRM_ADD_TASK');
+        break;
+      }
+
+      case 'CRM_ADD_NOTE': {
+        const note = this.parseVariables(
+          String(currentStep.config?.note || '').trim(),
+          (session.context as Record<string, any>) || {},
+        );
+        if (!note) {
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_ADD_NOTE inválido');
+          break;
+        }
+        const deal = await prisma.deal.findFirst({
+          where: { conversationId: session.conversationId },
+          select: { id: true },
+        });
+        if (!deal) {
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_ADD_NOTE sem deal');
+          break;
+        }
+        await prisma.dealActivity.create({
+          data: {
+            dealId: deal.id,
+            type: 'NOTE',
+            title: 'Nota adicionada pelo bot',
+            description: note,
+          },
+        });
+        try {
+          await this.messageService.sendMessage({
+            conversationId: session.conversationId,
+            userId: '',
+            content: `📝 Nota adicionada pelo bot\n\n${note}`,
+            type: 'TEXT',
+            fromBot: true,
+            internalOnly: true,
+            metadata: {
+              source: 'BOT_CRM_ADD_NOTE',
+              noteNotification: {
+                dealId: deal.id,
+                note,
+              },
+            },
+          });
+        } catch (err: any) {
+          console.warn('[BotService] CRM_ADD_NOTE não conseguiu enviar nota no chat', {
+            dealId: deal.id,
+            conversationId: session.conversationId,
+            error: err?.message || err,
+          });
+        }
+        await advanceToNextStep(currentStep.nextStepId, 'após CRM_ADD_NOTE');
+        break;
+      }
+
+      case 'CRM_CREATE_LEAD': {
+        // Bloco removido do produto: mantemos apenas compatibilidade para fluxos antigos.
+        console.warn('[BotService] CRM_CREATE_LEAD ignorado (bloco removido)', {
+          conversationId: session.conversationId,
+          stepId: currentStep.id,
+        });
+        await advanceToNextStep(currentStep.nextStepId, 'após CRM_CREATE_LEAD removido');
+        break;
+      }
+
+      case 'CRM_COMPLETE_TASKS': {
+        const mode = String(currentStep.config?.mode || 'ALL_PENDING').toUpperCase();
+        const deal = await prisma.deal.findFirst({
+          where: { conversationId: session.conversationId },
+          select: { id: true },
+        });
+        if (!deal) {
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_COMPLETE_TASKS sem deal');
+          break;
+        }
+        if (mode === 'BY_TITLE') {
+          const taskTitle = this.parseVariables(
+            String(currentStep.config?.taskTitle || '').trim(),
+            (session.context as Record<string, any>) || {},
+          );
+          if (taskTitle) {
+            await prisma.pipelineTask.updateMany({
+              where: { dealId: deal.id, status: 'PENDING', title: taskTitle },
+              data: { status: 'DONE' },
+            });
+          }
+        } else if (mode === 'BY_ID') {
+          const taskId = String(currentStep.config?.taskId || '').trim();
+          if (taskId) {
+            await prisma.pipelineTask.updateMany({
+              where: { id: taskId, dealId: deal.id, status: 'PENDING' },
+              data: { status: 'DONE' },
+            });
+          }
+        } else {
+          await prisma.pipelineTask.updateMany({
+            where: { dealId: deal.id, status: 'PENDING' },
+            data: { status: 'DONE' },
+          });
+        }
+        await advanceToNextStep(currentStep.nextStepId, 'após CRM_COMPLETE_TASKS');
+        break;
+      }
+
+      case 'CRM_CONVERSATION_STATUS': {
+        const status = this.normalizeEnumValue(currentStep.config?.status);
+        const allowedStatuses = new Set(['OPEN', 'WAITING', 'CLOSED', 'ARCHIVED']);
+        if (!allowedStatuses.has(status)) {
+          await advanceToNextStep(currentStep.nextStepId, 'após CRM_CONVERSATION_STATUS inválido');
+          break;
+        }
+        await prisma.conversation.update({
+          where: { id: session.conversationId },
+          data: { status: status as any },
+        });
+        await advanceToNextStep(currentStep.nextStepId, 'após CRM_CONVERSATION_STATUS');
+        break;
+      }
+
       case 'CONDITION': {
         // Múltiplas condições: avaliar todas e combinar com AND ou OR (config.logicOperator)
         const conditionsList = (currentStep.conditions || []).slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
@@ -948,10 +1374,10 @@ export class BotService {
             data: { currentStepId: nextStepId },
           });
 
-          // Executar automaticamente o próximo step se for MESSAGE ou CONDITION
+          // Executar automaticamente o próximo step se NÃO for bloco de entrada
           if (nextStepId !== 'END') {
             const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
-            if (nextStep && (nextStep.type === 'MESSAGE' || nextStep.type === 'CONDITION')) {
+            if (nextStep && !inputStepTypes.includes(nextStep.type)) {
               const updatedSession = {
                 ...session,
                 currentStepId: nextStepId,
@@ -1018,14 +1444,9 @@ export class BotService {
                 },
               });
               
-              // Executar próximo step automaticamente se for MESSAGE, CONDITION ou SCRIPT
+              // Executar próximo step automaticamente se NÃO for bloco de entrada
               const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
-              if (
-                nextStep &&
-                (nextStep.type === 'MESSAGE' ||
-                 nextStep.type === 'CONDITION' ||
-                 nextStep.type === 'SCRIPT')
-              ) {
+              if (nextStep && !inputStepTypes.includes(nextStep.type)) {
                 const updatedSession = {
                   ...session,
                   currentStepId: currentStep.nextStepId,
@@ -1191,9 +1612,9 @@ export class BotService {
           },
         });
 
-        // Executar automaticamente o próximo step se for MESSAGE, CONDITION ou SCRIPT
+        // Executar automaticamente o próximo step se NÃO for bloco de entrada
         const nextStep = flow.steps.find((s: any) => s.id === nextStepId);
-        if (nextStep && (nextStep.type === 'MESSAGE' || nextStep.type === 'CONDITION' || nextStep.type === 'SCRIPT')) {
+        if (nextStep && !inputStepTypes.includes(nextStep.type)) {
           const updatedSession = {
             ...session,
             currentStepId: nextStepId,
@@ -1359,9 +1780,9 @@ export class BotService {
             data: { currentStepId: currentStep.nextStepId },
           });
 
-          // Se o próximo step for MESSAGE, executa imediatamente para o bot responder
+          // Se o próximo step NÃO for bloco de entrada, executa imediatamente
           const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
-          if (nextStep && nextStep.type === 'MESSAGE') {
+          if (nextStep && !inputStepTypes.includes(nextStep.type)) {
             const updatedSession = {
               ...session,
               currentStepId: currentStep.nextStepId,
@@ -1469,7 +1890,7 @@ export class BotService {
           });
 
           const nextStep = flow.steps.find((s: any) => s.id === currentStep.nextStepId);
-          if (nextStep && (nextStep.type === 'MESSAGE' || nextStep.type === 'CONDITION')) {
+          if (nextStep && !inputStepTypes.includes(nextStep.type)) {
             const updatedSession = {
               ...session,
               currentStepId: currentStep.nextStepId,
@@ -1898,6 +2319,13 @@ export class BotService {
       default:
         return false;
     }
+  }
+
+  private normalizeEnumValue(value: any): string {
+    return String(value || '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '_');
   }
 
   /**

@@ -10,6 +10,12 @@ import { getTimeAgo } from '../utils/timeUtils';
 import { ConversationCard } from '../components/ui/ConversationCard';
 import { IconButton } from '../components/ui/IconButton';
 import { useConfirm } from '../components/ui/ConfirmProvider';
+import TaskNotificationCard, {
+  TaskNotificationData,
+} from '../components/chat/TaskNotificationCard';
+import NoteNotificationCard, {
+  NoteNotificationData,
+} from '../components/chat/NoteNotificationCard';
 
 // Função para gerar avatar com iniciais
 const getAvatarUrl = (name: string, size: number = 40): string => {
@@ -116,6 +122,9 @@ interface Message {
     satisfactionSurveyResponse?: boolean;
     score?: number;
     variant?: string;
+    source?: string;
+    taskNotification?: TaskNotificationData;
+    noteNotification?: NoteNotificationData;
   };
 }
 
@@ -1273,6 +1282,94 @@ export default function Conversations() {
     return `${apiBase}/api/media/${message.id}`;
   };
 
+  const getTaskNotificationData = (message: Message): TaskNotificationData | null => {
+    const metadataTask = message.metadata?.taskNotification;
+    if (metadataTask?.taskId) return metadataTask;
+    if (
+      message.metadata?.fromBot === true &&
+      typeof message.content === 'string' &&
+      (message.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.') ||
+        message.content.startsWith('🤖 Tarefa criada pelo bot deste negócio.'))
+    ) {
+      const titleMatch = message.content.match(/• Tarefa:\s*(.+)/);
+      const detailsMatch = message.content.match(/• Detalhes:\s*(.+)/);
+      return {
+        taskId: `legacy-${message.id}`,
+        title: titleMatch?.[1]?.trim() || 'Tarefa',
+        description: detailsMatch?.[1]?.trim() || '',
+      };
+    }
+    return null;
+  };
+
+  const getNoteNotificationData = (message: Message): NoteNotificationData | null => {
+    const metadataNote = message.metadata?.noteNotification;
+    if (metadataNote?.note) return metadataNote;
+    if (
+      message.metadata?.fromBot === true &&
+      typeof message.content === 'string' &&
+      message.content.startsWith('📝 Nota adicionada pelo bot')
+    ) {
+      const noteText = message.content.replace(/^📝 Nota adicionada pelo bot\s*/u, '').trim();
+      return { note: noteText || 'Nota sem conteúdo' };
+    }
+    return null;
+  };
+
+  const handleSaveTaskResult = async (taskId: string, result: string) => {
+    try {
+      if (!taskId || taskId.startsWith('legacy-')) {
+        throw new Error('Esta tarefa é antiga. Abra o negócio para atualizar.');
+      }
+      await api.put(`/api/pipelines/tasks/${taskId}`, { result });
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.metadata?.taskNotification?.taskId === taskId
+            ? {
+                ...msg,
+                metadata: {
+                  ...msg.metadata,
+                  taskNotification: {
+                    ...msg.metadata.taskNotification,
+                    description: result,
+                  },
+                },
+              }
+            : msg,
+        ),
+      );
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Erro ao salvar resultado.');
+    }
+  };
+
+  const handleCompleteTask = async (taskId: string) => {
+    try {
+      if (!taskId || taskId.startsWith('legacy-')) {
+        throw new Error('Esta tarefa é antiga. Abra o negócio para atualizar.');
+      }
+      await api.put(`/api/pipelines/tasks/${taskId}`, { status: 'DONE' });
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.metadata?.taskNotification?.taskId === taskId
+            ? {
+                ...msg,
+                metadata: {
+                  ...msg.metadata,
+                  taskNotification: {
+                    ...msg.metadata.taskNotification,
+                    status: 'DONE',
+                  },
+                },
+              }
+            : msg,
+        ),
+      );
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Erro ao concluir tarefa.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background font-body text-on-surface">
@@ -1751,12 +1848,14 @@ export default function Conversations() {
                       }
                     }
                     const isBotMessage = message.metadata?.fromBot === true;
+                    const taskData = getTaskNotificationData(message);
+                    const noteData = getNoteNotificationData(message);
                     const isTaskNotification =
-                      isBotMessage &&
-                      typeof message.content === 'string' &&
-                      message.content.startsWith('⏰ Chegou a hora de realizar uma tarefa deste negócio.');
+                      isBotMessage && taskData !== null;
+                    const isNoteNotification = isBotMessage && noteData !== null;
                     const isFromCustomer = !isBotMessage && message.userId === null;
-                    const isOwnMessage = message.userId !== null || isBotMessage;
+                    const isOwnMessage =
+                      message.userId !== null || (isBotMessage && !isTaskNotification && !isNoteNotification);
                     const contactName = selectedConversation?.contact.name || '';
                     const contactAvatar = selectedConversation
                       ? getContactAvatar(selectedConversation.contact)
@@ -1803,7 +1902,7 @@ export default function Conversations() {
                       )}
                       
                       <motion.div
-                        className={`relative min-w-0 max-w-[min(70%,36rem)] rounded-xl px-0 py-0 ${
+                        className={`relative min-w-0 ${isTaskNotification ? 'w-full max-w-full' : 'max-w-[min(70%,36rem)]'} rounded-xl px-0 py-0 ${
                           isTaskNotification
                             ? 'rounded-lg bg-surface-container-highest p-3 text-on-surface'
                             : 'bg-transparent text-on-surface'
@@ -2416,7 +2515,16 @@ export default function Conversations() {
                         
                         {/* Exibir texto apenas para mensagens de texto.
                             Para mídias (imagem, vídeo, áudio, documento) não mostramos mais o "título"/arquivo abaixo. */}
-                        {message.content && message.type === 'TEXT' && (
+                        {taskData && message.type === 'TEXT' ? (
+                          <TaskNotificationCard
+                            task={taskData}
+                            onSaveResult={handleSaveTaskResult}
+                            onComplete={handleCompleteTask}
+                          />
+                        ) : noteData && message.type === 'TEXT' ? (
+                          <NoteNotificationCard note={noteData} />
+                        ) : (
+                        message.content && message.type === 'TEXT' && (
                           <div
                             className={`inline-block max-w-full whitespace-pre-wrap break-words px-3 py-2 text-sm leading-relaxed ${
                               isOwnMessage
@@ -2482,7 +2590,7 @@ export default function Conversations() {
                                 </div>
                               )}
                           </div>
-                        )}
+                        ))}
 
                         <div
                           className={`mt-1.5 flex items-center gap-1 text-[10px] text-on-surface-variant ${

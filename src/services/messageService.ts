@@ -78,22 +78,24 @@ export class MessageService {
       }
     }
 
-    if (!conversation?.channel) {
+    if (!conversation) {
+      throw new Error('Conversa não encontrada');
+    }
+
+    const isInternalOnly = data.internalOnly === true;
+    const channel = conversation.channel;
+
+    if (!channel && !isInternalOnly) {
       throw new Error(
         'Conversa sem canal associado. Vincule um canal ao contato/conversa antes de enviar mensagens.'
       );
     }
 
-    // Garantir que channel não é null para TypeScript
-    const channel = conversation.channel;
-
-    const isInternalOnly = data.internalOnly === true;
-
     console.log('🔍 [MessageService] Verificando condições para envio:', {
-      channelType: channel.type,
-      hasInstanceId: !!channel.evolutionInstanceId,
-      instanceId: channel.evolutionInstanceId,
-      hasApiKey: !!channel.evolutionApiKey,
+      channelType: channel?.type || null,
+      hasInstanceId: !!channel?.evolutionInstanceId,
+      instanceId: channel?.evolutionInstanceId || null,
+      hasApiKey: !!channel?.evolutionApiKey,
       hasPhone: !!conversation.contact.phone,
       phone: conversation.contact.phone,
       messageType: data.type,
@@ -103,7 +105,7 @@ export class MessageService {
     });
 
     // Verificar se deve usar WhatsApp Official
-    const channelConfig: any = channel.config || {};
+    const channelConfig: any = channel?.config || {};
     const hasChannelOfficialConfig =
       channelConfig.provider === 'whatsapp_official' &&
       !!channelConfig.phoneNumberId &&
@@ -118,6 +120,7 @@ export class MessageService {
 
     const shouldUseWhatsAppOfficial =
       !isInternalOnly &&
+      !!channel &&
       channel.type === 'WHATSAPP' &&
       !!conversation.contact.phone &&
       (hasChannelOfficialConfig || hasGlobalEnvOfficial);
@@ -403,6 +406,7 @@ export class MessageService {
         throw error;
       }
     } else if (
+      !!channel &&
       channel.type === 'WHATSAPP' &&
       channel.evolutionInstanceId &&
       channel.evolutionApiKey &&
@@ -690,17 +694,18 @@ export class MessageService {
       }
     } else if (!isInternalOnly) {
       const reasons = [];
-      if (channel.type !== 'WHATSAPP') reasons.push('não é WhatsApp');
-      if (!channel.evolutionInstanceId) reasons.push('sem instanceId');
-      if (!channel.evolutionApiKey) reasons.push('sem API key');
+      if (!channel) reasons.push('sem canal associado');
+      if (channel && channel.type !== 'WHATSAPP') reasons.push('não é WhatsApp');
+      if (!channel?.evolutionInstanceId) reasons.push('sem instanceId');
+      if (!channel?.evolutionApiKey) reasons.push('sem API key');
       if (!conversation.contact.phone) reasons.push('sem telefone do contato');
       
       console.log('ℹ️ [MessageService] Mensagem NÃO será enviada via Evolution API:', {
         reasons: reasons.length > 0 ? reasons.join(', ') : 'condição não satisfeita',
-        channelType: channel.type,
-        hasInstanceId: !!channel.evolutionInstanceId,
-        instanceId: channel.evolutionInstanceId,
-        hasApiKey: !!channel.evolutionApiKey,
+        channelType: channel?.type || null,
+        hasInstanceId: !!channel?.evolutionInstanceId,
+        instanceId: channel?.evolutionInstanceId || null,
+        hasApiKey: !!channel?.evolutionApiKey,
         hasPhone: !!conversation.contact.phone,
         phone: conversation.contact.phone,
       });
@@ -751,6 +756,18 @@ export class MessageService {
       metadata.listHeaderText = data.metadata.listHeaderText;
       metadata.listFooterText = data.metadata.listFooterText;
       metadata.listSectionTitle = data.metadata.listSectionTitle;
+      if (data.metadata.taskNotification) {
+        metadata.taskNotification = data.metadata.taskNotification;
+      }
+      if (data.metadata.noteNotification) {
+        metadata.noteNotification = data.metadata.noteNotification;
+      }
+      if (data.metadata.source) {
+        metadata.source = data.metadata.source;
+      }
+    }
+    if (isInternalOnly) {
+      metadata.internalOnly = true;
     }
 
     // Se userId vier como string vazia (caso de mensagens de bot), converter para null
