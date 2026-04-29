@@ -111,11 +111,16 @@ export class ConversationController {
         return;
       }
 
-      const conversation = await conversationService.updateConversation(id, {
-        assignedToId,
-        status,
-        priority,
-      });
+      const validateSector = req.user?.role !== 'ADMIN';
+      const conversation = await conversationService.updateConversation(
+        id,
+        {
+          assignedToId,
+          status,
+          priority,
+        },
+        validateSector,
+      );
 
       res.json(conversation);
     } catch (error: any) {
@@ -135,7 +140,12 @@ export class ConversationController {
         return res.status(400).json({ error: 'ID do usuário é obrigatório' });
       }
 
-      const conversation = await conversationService.assignConversation(id, userId);
+      const validateSector = req.user?.role !== 'ADMIN';
+      const conversation = await conversationService.assignConversation(
+        id,
+        userId,
+        validateSector,
+      );
       res.json(conversation);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
