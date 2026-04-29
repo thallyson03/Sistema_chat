@@ -243,6 +243,17 @@ export default function Conversations() {
   /** Mensagens novas enquanto o usuário não está no fim do scroll (seta + contador). */
   const [newMessagesBelowCount, setNewMessagesBelowCount] = useState(0);
   const MESSAGES_PAGE_SIZE = 50;
+  const BOT_ACTIVE_BLOCK_MESSAGE =
+    'Para interagir com o cliente, desative o bot desta conversa primeiro.';
+
+  const ensureBotDisabledForManualInteraction = () => {
+    if (!selectedConversation) return false;
+    if (selectedConversation.inBot) {
+      alert(BOT_ACTIVE_BLOCK_MESSAGE);
+      return false;
+    }
+    return true;
+  };
 
   // Atualizar o ref sempre que a conversa selecionada mudar
   useEffect(() => {
@@ -824,6 +835,7 @@ export default function Conversations() {
   ) => {
     e.preventDefault();
     if (!selectedConversation || sending) return;
+    if (!ensureBotDisabledForManualInteraction()) return;
 
     // Se há um template pendente e não estamos enviando mídia, envia como template
     if (
@@ -928,6 +940,10 @@ export default function Conversations() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedConversation) return;
+    if (!ensureBotDisabledForManualInteraction()) {
+      e.target.value = '';
+      return;
+    }
 
     setUploadingFile(true);
     try {
@@ -980,6 +996,7 @@ export default function Conversations() {
   };
 
   const startRecording = async () => {
+    if (!ensureBotDisabledForManualInteraction()) return;
     try {
       // Verificar se a API está disponível
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -1121,6 +1138,10 @@ export default function Conversations() {
             
             if (!selectedConversation) {
               throw new Error('Nenhuma conversa selecionada para envio de áudio');
+            }
+            if (selectedConversation.inBot) {
+              alert(BOT_ACTIVE_BLOCK_MESSAGE);
+              return;
             }
 
             // Enviar mensagem de áudio (incluindo mimetype)
@@ -2695,6 +2716,7 @@ export default function Conversations() {
               >
                 {/* Botão Respostas Rápidas */}
                 <IconButton
+                  type="button"
                   onClick={() => setShowQuickReplies(true)}
                   icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">bolt</span>}
                   tooltip="Respostas rápidas"
@@ -2703,6 +2725,7 @@ export default function Conversations() {
 
                 {/* Botão Emoji */}
                 <IconButton
+                  type="button"
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                   icon={<span className="text-2xl">😊</span>}
                   tooltip="Emojis"
@@ -2711,6 +2734,7 @@ export default function Conversations() {
 
                 {/* Botão Upload */}
                 <IconButton
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingFile || sending}
                   icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">attach_file</span>}
@@ -2728,6 +2752,7 @@ export default function Conversations() {
                 {/* Botão Gravar Áudio */}
                 {!recording ? (
                   <IconButton
+                    type="button"
                     onClick={startRecording}
                     disabled={sending || uploadingFile}
                     icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">mic</span>}
