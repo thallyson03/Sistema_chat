@@ -2552,7 +2552,10 @@ export default function Conversations() {
                                 <div className="text-xs font-semibold uppercase tracking-wide opacity-90">
                                   Pesquisa de satisfação
                                 </div>
-                                <p>{message.content}</p>
+                                <p>
+                                  {message.user?.name ? `${message.user.name}: ` : ''}
+                                  {message.content}
+                                </p>
                                 {message.metadata?.variant === 'interactive_list' && (
                                   <p className="text-xs opacity-80">
                                     No WhatsApp do cliente: botão &quot;Dar nota&quot; e lista de 1 a 5
@@ -2566,7 +2569,7 @@ export default function Conversations() {
                                 )}
                               </div>
                             ) : (
-                              message.content
+                              `${message.user?.name ? `${message.user.name}: ` : ''}${message.content}`
                             )}
 
                             {Array.isArray(message.metadata?.buttons) &&

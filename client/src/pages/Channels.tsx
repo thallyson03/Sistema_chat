@@ -600,7 +600,7 @@ export default function Channels() {
           }}
         >
           <div
-            className="relative w-full max-w-lg rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 p-6 shadow-forest-glow backdrop-blur-xl"
+            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 p-6 shadow-forest-glow backdrop-blur-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -625,7 +625,14 @@ export default function Channels() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateOrUpdateChannel} className="space-y-4">
+            <form
+              onSubmit={handleCreateOrUpdateChannel}
+              className="space-y-4 overflow-y-auto pr-1"
+              style={{
+                scrollbarWidth: 'thin',
+                maxHeight: 'calc(90vh - 110px)',
+              }}
+            >
               <div>
                 <label className="mb-1 block text-xs font-semibold text-on-surface">
                   Nome do canal

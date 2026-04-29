@@ -212,15 +212,16 @@ export class ConversationService {
       });
     }
 
-    // Regra de negócio: conversa só aparece na lista principal
-    // quando houver mensagem "real" (não apenas notificação interna).
+    // Regra de negócio: ocultar apenas conversas que tenham
+    // somente mensagens internas de sistema (task/note/etc).
+    // Qualquer mensagem não-interna mantém a conversa visível em /conversations.
     andConditions.push({
       messages: {
         some: {
           OR: [
             { userId: { not: null } }, // mensagem de agente
-            { metadata: { path: ['fromBot'], not: true } }, // cliente/entrada normal
-            { metadata: { path: ['internalOnly'], not: true } }, // bot externo / não-interno
+            { metadata: null }, // mensagens antigas/sem metadata
+            { metadata: { path: ['internalOnly'], equals: false } }, // mensagem normal com metadata
           ],
         },
       },

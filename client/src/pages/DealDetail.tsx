@@ -2691,6 +2691,7 @@ export default function DealDetail() {
                     ) : (
                       message.content && (
                         <p className="m-0 whitespace-pre-wrap break-words text-sm">
+                          {message.user?.name ? `${message.user.name}: ` : ''}
                           {message.content}
                         </p>
                       )
