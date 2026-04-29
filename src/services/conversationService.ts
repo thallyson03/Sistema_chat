@@ -212,24 +212,11 @@ export class ConversationService {
       });
     }
 
-    // Regra de negócio: ocultar apenas conversas que tenham
-    // somente mensagens internas de sistema (task/note/etc).
-    // Qualquer mensagem não-interna mantém a conversa visível em /conversations.
-    andConditions.push({
-      messages: {
-        some: {
-          OR: [
-            { userId: { not: null } }, // mensagem de agente
-            { metadata: null }, // mensagens antigas/sem metadata
-            {
-              NOT: {
-                metadata: { path: ['internalOnly'], equals: true },
-              },
-            }, // qualquer mensagem que não seja internalOnly=true
-          ],
-        },
-      },
-    });
+    // HOTFIX Prisma 5.22:
+    // filtros JSON em metadata dentro de relation filter (messages.some)
+    // estão causando erro de validação "Argument `metadata` is missing"
+    // em produção. Para estabilizar /api/conversations, removemos aqui
+    // o filtro por metadata.
 
     if (andConditions.length > 0) {
       where.AND = andConditions;
