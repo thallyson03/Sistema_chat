@@ -221,7 +221,7 @@ export class ConversationService {
           OR: [
             { userId: { not: null } }, // mensagem de agente
             { metadata: null }, // mensagens antigas/sem metadata
-            { metadata: { path: ['internalOnly'], equals: false } }, // mensagem normal com metadata
+            { metadata: { path: ['internalOnly'], not: true } }, // qualquer mensagem que não seja internalOnly=true
           ],
         },
       },
