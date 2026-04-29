@@ -5,6 +5,7 @@ import { BotService } from '../services/botService';
 import { ConversationDistributionService } from '../services/conversationDistributionService';
 import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
+import { JourneyExecutionService } from '../services/journeyExecutionService';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 
@@ -12,6 +13,7 @@ const webhookService = new WebhookService();
 const botService = new BotService();
 const conversationService = new ConversationService();
 const satisfactionSurveyService = new SatisfactionSurveyService();
+const journeyExecutionService = new JourneyExecutionService();
 
 // io será injetado via função
 let io: any = null;
@@ -529,6 +531,10 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
             channel: true,
           },
         });
+        await journeyExecutionService.processEvent('contact_created', {
+          contactId: contact.id,
+          channelId: contact.channelId,
+        });
       }
     } else if (profileName && profileName.trim().length > 0 && contact.name !== profileName) {
       // Se o contato já existe e temos um profile.name mais "bonito",
@@ -583,6 +589,11 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
           lastMessageAt: timestamp,
           lastCustomerMessageAt: timestamp,
         },
+      });
+      await journeyExecutionService.processEvent('conversation_created', {
+        contactId: contact.id,
+        channelId: contact.channelId,
+        conversationId: conversation.id,
       });
     } else {
       // Atualizar timestamps e reabrir conversa automaticamente com nova mensagem do cliente
@@ -775,6 +786,12 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         externalId: messageId,
         metadata: Object.keys(mediaMeta).length > 0 ? mediaMeta : undefined,
       },
+    });
+    await journeyExecutionService.processEvent('message_received', {
+      contactId: contact.id,
+      channelId: contact.channelId,
+      conversationId: conversation.id,
+      messageContent,
     });
 
     console.log('[WhatsAppOfficial] ✅ Mensagem salva:', {
@@ -1205,6 +1222,10 @@ async function handleNewMessage(data: any) {
           metadata: {},
         },
       });
+      await journeyExecutionService.processEvent('contact_created', {
+        contactId: contact.id,
+        channelId: contact.channelId,
+      });
       console.log('✅ [handleNewMessage] Contato criado:', contact.id);
     } else {
       // Garantir que phone é um número válido antes de atualizar
@@ -1297,6 +1318,11 @@ async function handleNewMessage(data: any) {
             },
           },
         },
+      });
+      await journeyExecutionService.processEvent('conversation_created', {
+        contactId: contact.id,
+        channelId: channel.id,
+        conversationId: conversation.id,
       });
 
       // Distribuir conversa automaticamente para um usuário disponível
@@ -1498,6 +1524,14 @@ async function handleNewMessage(data: any) {
           metadata: fullMetadata,
         },
       });
+      if (!fromMe) {
+        await journeyExecutionService.processEvent('message_received', {
+          contactId: contact.id,
+          channelId: channel.id,
+          conversationId: conversation.id,
+          messageContent,
+        });
+      }
       
       console.log('✅ [handleNewMessage] Mensagem criada com sucesso:', {
         messageId: createdMessage.id,

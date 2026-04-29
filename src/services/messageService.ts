@@ -339,9 +339,21 @@ export class MessageService {
           const messageType = String(data.type || 'TEXT').toUpperCase();
           const buttons = Array.isArray(data.buttons) ? data.buttons : [];
           const interactiveType = String(data.metadata?.interactiveType || '').toLowerCase();
+          const templateName = String(data.metadata?.templateName || '').trim();
+          const templateLanguage = String(data.metadata?.templateLanguage || 'pt_BR').trim();
+          const templateComponents = Array.isArray(data.metadata?.templateComponents)
+            ? data.metadata.templateComponents
+            : undefined;
 
           // Somente mensagens de texto podem ser interativas (button/list)
-          if (messageType === 'TEXT' && buttons.length > 0) {
+          if (messageType === 'TEXT' && templateName) {
+            result = await whatsappService.sendTemplateMessage({
+              to: formattedPhone,
+              templateName,
+              language: templateLanguage || 'pt_BR',
+              components: templateComponents,
+            });
+          } else if (messageType === 'TEXT' && buttons.length > 0) {
             const shouldSendList =
               interactiveType === 'list' ||
               buttons.length > 3 ||
@@ -756,6 +768,15 @@ export class MessageService {
       metadata.listHeaderText = data.metadata.listHeaderText;
       metadata.listFooterText = data.metadata.listFooterText;
       metadata.listSectionTitle = data.metadata.listSectionTitle;
+      if (data.metadata.templateName) {
+        metadata.templateName = data.metadata.templateName;
+      }
+      if (data.metadata.templateLanguage) {
+        metadata.templateLanguage = data.metadata.templateLanguage;
+      }
+      if (data.metadata.templateComponents) {
+        metadata.templateComponents = data.metadata.templateComponents;
+      }
       if (data.metadata.taskNotification) {
         metadata.taskNotification = data.metadata.taskNotification;
       }

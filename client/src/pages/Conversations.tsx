@@ -159,7 +159,7 @@ function conversationFromDetailApi(raw: Record<string, unknown>): Conversation {
 const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'ALL', label: 'Todos' },
   { value: 'OPEN', label: 'Abertos' },
-  { value: 'WAITING', label: 'Fila' },
+  { value: 'WAITING', label: 'Aguardando atendimento' },
   { value: 'CLOSED', label: 'Fechadas' },
   { value: 'ARCHIVED', label: 'Arquivadas' },
   { value: 'BOT', label: 'Bot' },
@@ -1606,7 +1606,7 @@ export default function Conversations() {
                       {selectedConversation.status === 'OPEN'
                         ? 'Aberta'
                         : selectedConversation.status === 'WAITING'
-                        ? 'Fila'
+                        ? 'Aguardando atendimento'
                         : selectedConversation.status === 'CLOSED'
                         ? 'Fechada'
                         : 'Arquivada'}

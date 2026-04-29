@@ -30,6 +30,7 @@ interface Flow {
 interface BotMeta {
   id: string;
   name: string;
+  channelId?: string;
   publishedVersion?: string;
   hasPendingChanges?: boolean;
 }
@@ -1688,6 +1689,8 @@ export default function BotFlowBuilderVisual() {
   const [users, setUsers] = useState<UserOption[]>([]);
   const [pipelines, setPipelines] = useState<any[]>([]);
   const [selectedBlockType, setSelectedBlockType] = useState<string>('condition');
+  const [whatsAppTemplates, setWhatsAppTemplates] = useState<Array<{ name: string; language?: string; status?: string }>>([]);
+  const [loadingWhatsAppTemplates, setLoadingWhatsAppTemplates] = useState(false);
 
   const markBotAsPending = useCallback(() => {
     setBotMeta((prev) => (prev ? { ...prev, hasPendingChanges: true } : prev));
@@ -1831,6 +1834,42 @@ export default function BotFlowBuilderVisual() {
       setLoading(false);
     }
   };
+
+  const fetchWhatsAppTemplates = useCallback(async () => {
+    if (!botMeta?.channelId) {
+      setWhatsAppTemplates([]);
+      return;
+    }
+    try {
+      setLoadingWhatsAppTemplates(true);
+      const response = await api.get('/api/whatsapp/templates', {
+        params: {
+          channelId: botMeta.channelId,
+          limit: 200,
+        },
+      });
+      const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+      const normalized = rows
+        .map((row: any) => ({
+          name: String(row?.name || ''),
+          language: String(row?.language || row?.languageCode || 'pt_BR'),
+          status: String(row?.status || ''),
+        }))
+        .filter((row: any) => row.name);
+      setWhatsAppTemplates(normalized);
+    } catch (error) {
+      console.error('Erro ao carregar templates WhatsApp:', error);
+      setWhatsAppTemplates([]);
+    } finally {
+      setLoadingWhatsAppTemplates(false);
+    }
+  }, [botMeta?.channelId]);
+
+  useEffect(() => {
+    if (showStepModal && stepFormData.type === 'MESSAGE') {
+      fetchWhatsAppTemplates();
+    }
+  }, [showStepModal, stepFormData.type, fetchWhatsAppTemplates]);
 
   const handlePublishBot = async () => {
     if (!botId) return;
@@ -2683,6 +2722,9 @@ export default function BotFlowBuilderVisual() {
             listHeaderText: config?.listHeaderText || '',
             listFooterText: config?.listFooterText || '',
             listSectionTitle: config?.listSectionTitle || 'Opções',
+            useTemplate: !!config?.useTemplate,
+            templateName: config?.templateName || '',
+            templateLanguage: config?.templateLanguage || 'pt_BR',
           }
         : config;
     if (
@@ -2729,6 +2771,15 @@ export default function BotFlowBuilderVisual() {
 
       if (stepFormData.type === 'AUDIO' && !audioUrl) {
         alert('Configure o áudio antes de salvar o step.');
+        return;
+      }
+
+      if (
+        stepFormData.type === 'MESSAGE' &&
+        stepFormData.config?.useTemplate &&
+        !String(stepFormData.config?.templateName || '').trim()
+      ) {
+        alert('Selecione um template de mensagem antes de salvar o bloco.');
         return;
       }
 
@@ -2842,13 +2893,20 @@ export default function BotFlowBuilderVisual() {
       }
 
       // Criar ou atualizar resposta se for tipo MESSAGE ou mídia
-      if (stepFormData.type === 'MESSAGE' && stepFormData.content) {
+      if (
+        stepFormData.type === 'MESSAGE' &&
+        (stepFormData.content || (stepFormData.config?.useTemplate && stepFormData.config?.templateName))
+      ) {
         try {
           const interactiveType = String(stepFormData.config?.interactiveType || 'buttons');
           const messageButtons = Array.isArray(stepFormData.buttons) ? stepFormData.buttons : [];
           await api.post('/api/bots/responses', {
             type: 'TEXT',
-            content: stepFormData.content,
+            content:
+              stepFormData.content ||
+              (stepFormData.config?.useTemplate
+                ? `[Template] ${stepFormData.config?.templateName || ''}`
+                : ''),
             buttons: messageButtons,
             metadata: {
               interactiveType,
@@ -2856,6 +2914,12 @@ export default function BotFlowBuilderVisual() {
               listHeaderText: stepFormData.config?.listHeaderText || undefined,
               listFooterText: stepFormData.config?.listFooterText || undefined,
               listSectionTitle: stepFormData.config?.listSectionTitle || undefined,
+              templateName: stepFormData.config?.useTemplate
+                ? stepFormData.config?.templateName || undefined
+                : undefined,
+              templateLanguage: stepFormData.config?.useTemplate
+                ? stepFormData.config?.templateLanguage || 'pt_BR'
+                : undefined,
             },
             flowStepId: stepId,
             intentId: null,
@@ -4086,6 +4150,89 @@ export default function BotFlowBuilderVisual() {
             {stepFormData.type === 'MESSAGE' && (
               <>
                 <div style={{ marginBottom: '18px', color: '#e5e7eb' }}>
+                  <div
+                    style={{
+                      marginBottom: '10px',
+                      padding: '10px',
+                      backgroundColor: '#1f252d',
+                      borderRadius: '8px',
+                      border: '1px solid #2a3340',
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        color: '#4ade80',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        marginBottom: '8px',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!stepFormData.config?.useTemplate}
+                        onChange={(e) =>
+                          setStepFormData({
+                            ...stepFormData,
+                            config: {
+                              ...stepFormData.config,
+                              useTemplate: e.target.checked,
+                              templateName: e.target.checked
+                                ? stepFormData.config?.templateName || ''
+                                : '',
+                              templateLanguage: e.target.checked
+                                ? stepFormData.config?.templateLanguage || 'pt_BR'
+                                : 'pt_BR',
+                            },
+                          })
+                        }
+                      />
+                      Enviar template WhatsApp (opcional)
+                    </label>
+                    {stepFormData.config?.useTemplate && (
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        <select
+                          value={stepFormData.config?.templateName || ''}
+                          onChange={(e) => {
+                            const selected = whatsAppTemplates.find((tpl) => tpl.name === e.target.value);
+                            setStepFormData({
+                              ...stepFormData,
+                              config: {
+                                ...stepFormData.config,
+                                templateName: e.target.value,
+                                templateLanguage: selected?.language || stepFormData.config?.templateLanguage || 'pt_BR',
+                              },
+                            });
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            border: '1px solid #2a3340',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            backgroundColor: '#0f1419',
+                            color: '#e5e7eb',
+                          }}
+                        >
+                          <option value="">
+                            {loadingWhatsAppTemplates ? 'Carregando templates...' : 'Selecione um template'}
+                          </option>
+                          {whatsAppTemplates
+                            .filter((tpl) => !tpl.status || tpl.status === 'APPROVED')
+                            .map((tpl) => (
+                              <option key={`${tpl.name}-${tpl.language || 'pt_BR'}`} value={tpl.name}>
+                                {tpl.name} ({tpl.language || 'pt_BR'})
+                              </option>
+                            ))}
+                        </select>
+                        <small style={{ color: '#9ca3af' }}>
+                          O template será usado no envio para WhatsApp Official.
+                        </small>
+                      </div>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                     <div style={{ color: '#4ade80', fontSize: '11px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
                       Conteúdo da Mensagem
@@ -4955,10 +5102,10 @@ export default function BotFlowBuilderVisual() {
                   })}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' }}
                 >
-                  <option value="OPEN">OPEN</option>
-                  <option value="WAITING">WAITING</option>
-                  <option value="CLOSED">CLOSED</option>
-                  <option value="ARCHIVED">ARCHIVED</option>
+                  <option value="OPEN">Aberto</option>
+                  <option value="WAITING">Aguardando atendimento</option>
+                  <option value="CLOSED">Fechado</option>
+                  <option value="ARCHIVED">Arquivado</option>
                 </select>
               </div>
             )}

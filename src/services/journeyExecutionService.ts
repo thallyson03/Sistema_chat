@@ -4,10 +4,93 @@ import { MessageService } from './messageService';
 const messageService = new MessageService();
 
 export class JourneyExecutionService {
+  private readonly MAX_SYNC_DELAY_MS = 30_000;
+
+  private parseNodeConfig(config: any): Record<string, any> {
+    if (!config) return {};
+    if (typeof config === 'string') {
+      try {
+        return JSON.parse(config);
+      } catch {
+        return {};
+      }
+    }
+    if (typeof config === 'object') return config;
+    return {};
+  }
+
+  /**
+   * Processa eventos de runtime e dispara jornadas compatíveis
+   */
+  async processEvent(
+    eventType: 'contact_created' | 'conversation_created' | 'message_received' | 'tag_added' | 'list_added',
+    payload: {
+      contactId: string;
+      channelId?: string | null;
+      conversationId?: string | null;
+      tagName?: string | null;
+      listId?: string | null;
+      messageContent?: string | null;
+    },
+  ) {
+    try {
+      if (!payload.contactId) return;
+
+      const activeJourneys = await prisma.journey.findMany({
+        where: { status: 'ACTIVE' },
+        include: {
+          nodes: {
+            where: { type: 'TRIGGER' },
+            select: { id: true, config: true },
+          },
+        },
+      });
+
+      for (const journey of activeJourneys) {
+        const triggerNode = journey.nodes[0];
+        if (!triggerNode) continue;
+
+        const config = this.parseNodeConfig(triggerNode.config);
+        const triggerType = String(config.triggerType || 'manual');
+
+        if (triggerType === 'manual') continue;
+
+        const configuredChannelId = String(config.channelId || '').trim();
+        if (configuredChannelId && payload.channelId && configuredChannelId !== payload.channelId) {
+          continue;
+        }
+        if (configuredChannelId && !payload.channelId) {
+          continue;
+        }
+
+        const shouldRun = await this.checkTrigger(triggerNode, payload.contactId, eventType, {
+          ...payload,
+          ...config,
+        });
+        if (!shouldRun) continue;
+
+        await this.executeJourneyForContact(journey.id, payload.contactId, {
+          eventType,
+          channelId: payload.channelId || null,
+          conversationId: payload.conversationId || null,
+          tagName: payload.tagName || null,
+          listId: payload.listId || null,
+          messageContent: payload.messageContent || null,
+        });
+      }
+    } catch (error: any) {
+      console.error('[JourneyExecution] Erro ao processar evento de trigger:', error?.message || error);
+    }
+  }
+
   /**
    * Executa uma jornada para um contato específico
    */
-  async executeJourneyForContact(journeyId: string, contactId: string) {
+  async executeJourneyForContact(
+    journeyId: string,
+    contactId: string,
+    initialContext: Record<string, any> = {},
+  ) {
     try {
       // Verificar se já existe uma execução pendente para este contato nesta jornada
       const existingExecution = await (prisma as any).journeyExecution.findFirst({
@@ -78,7 +161,7 @@ export class JourneyExecutionService {
       }
 
       // Executar fluxo começando pelo trigger
-      await this.executeNode(triggerNode, journey, contact, {}, execution.id);
+      await this.executeNode(triggerNode, journey, contact, initialContext || {}, execution.id);
       
       // Buscar execução atualizada para pegar o número correto de mensagens
       const updatedExecution = await (prisma as any).journeyExecution.findUnique({
@@ -133,7 +216,7 @@ export class JourneyExecutionService {
     contact: any,
     context: Record<string, any>,
     executionId: string
-  ) {
+  ): Promise<{ halt: boolean }> {
     console.log(`[JourneyExecution] Executando nó ${node.id} (${node.type}): ${node.label}`);
 
     try {
@@ -150,6 +233,9 @@ export class JourneyExecutionService {
       
       console.log(`[JourneyExecution] Config do nó ${node.id}:`, JSON.stringify(config, null, 2));
 
+      let selectedEdges: any[] | null = null;
+      let shouldHaltFlow = false;
+
       switch (node.type) {
         case 'TRIGGER':
           // Trigger apenas inicia o fluxo, não faz nada
@@ -159,40 +245,110 @@ export class JourneyExecutionService {
           await this.executeAction(node, config, contact, context, executionId);
           break;
 
-        case 'CONDITION':
-          // Condições serão avaliadas ao decidir qual edge seguir
+        case 'CONDITION': {
+          const conditionResult = await this.evaluateCondition(node, contact, context);
+          selectedEdges = this.selectConditionEdges(journey, node.id, conditionResult);
           break;
+        }
 
         case 'CONTROL':
           if (config.controlType === 'delay') {
-            // Delay será implementado com agendamento futuro
             const delayMs = this.calculateDelay(config.delayValue, config.delayUnit);
-            console.log(`[JourneyExecution] Delay de ${delayMs}ms configurado`);
-            // TODO: Implementar agendamento
+            const effectiveDelay = Math.max(0, Math.min(delayMs, this.MAX_SYNC_DELAY_MS));
+            if (effectiveDelay > 0) {
+              await new Promise((resolve) => setTimeout(resolve, effectiveDelay));
+            }
+          } else if (config.controlType === 'split') {
+            selectedEdges = this.selectSplitEdges(journey, node.id, config);
+          } else if (config.controlType === 'wait_event') {
+            const expectedEventType = String(config.eventType || '').trim();
+            const currentEventType = String(context.eventType || '').trim();
+            if (expectedEventType && currentEventType !== expectedEventType) {
+              shouldHaltFlow = true;
+            }
+          } else if (config.controlType === 'loop') {
+            selectedEdges = this.selectLoopEdges(journey, node.id, config, context);
+            const loopDelayMs = Number(context.__pendingLoopDelayMs || 0);
+            if (loopDelayMs > 0) {
+              await new Promise((resolve) => setTimeout(resolve, loopDelayMs));
+              context.__pendingLoopDelayMs = 0;
+            }
+          } else if (config.controlType === 'stop') {
+            shouldHaltFlow = true;
           }
           break;
       }
 
+      if (shouldHaltFlow) {
+        return { halt: true };
+      }
+
       // Encontrar próximos nós conectados
-      const outgoingEdges = journey.edges.filter((e: any) => e.sourceNodeId === node.id);
+      const outgoingEdges = selectedEdges || journey.edges.filter((e: any) => e.sourceNodeId === node.id);
       
       for (const edge of outgoingEdges) {
         const nextNode = journey.nodes.find((n: any) => n.id === edge.targetNodeId);
         if (nextNode) {
-          // Se for condição, avaliar antes de seguir
-          if (nextNode.type === 'CONDITION') {
-            const shouldFollow = this.evaluateCondition(nextNode, contact, context);
-            if (shouldFollow) {
-              await this.executeNode(nextNode, journey, contact, context, executionId);
-            }
-          } else {
-            await this.executeNode(nextNode, journey, contact, context, executionId);
+          const childResult = await this.executeNode(nextNode, journey, contact, context, executionId);
+          if (childResult.halt) {
+            return { halt: true };
           }
         }
       }
+      return { halt: false };
     } catch (error: any) {
       console.error(`[JourneyExecution] Erro ao executar nó ${node.id}:`, error);
+      return { halt: false };
     }
+  }
+
+  private selectConditionEdges(journey: any, nodeId: string, conditionResult: boolean): any[] {
+    const outgoingEdges = journey.edges.filter((e: any) => e.sourceNodeId === nodeId);
+    if (outgoingEdges.length <= 1) return outgoingEdges;
+
+    const trueEdge = outgoingEdges.find((edge: any) =>
+      /^(true|sim|yes|1)$/i.test(String(edge.label || '').trim()),
+    );
+    const falseEdge = outgoingEdges.find((edge: any) =>
+      /^(false|nao|não|no|0)$/i.test(String(edge.label || '').trim()),
+    );
+
+    if (conditionResult && trueEdge) return [trueEdge];
+    if (!conditionResult && falseEdge) return [falseEdge];
+
+    return [conditionResult ? outgoingEdges[0] : outgoingEdges[1] || outgoingEdges[0]];
+  }
+
+  private selectSplitEdges(journey: any, nodeId: string, config: any): any[] {
+    const outgoingEdges = journey.edges.filter((e: any) => e.sourceNodeId === nodeId);
+    if (outgoingEdges.length <= 1) return outgoingEdges;
+
+    const percentA = Number(config.splitPercent || 50);
+    const clampedA = Math.max(0, Math.min(100, Number.isFinite(percentA) ? percentA : 50));
+    const random = Math.random() * 100;
+    return [random < clampedA ? outgoingEdges[0] : outgoingEdges[1] || outgoingEdges[0]];
+  }
+
+  private selectLoopEdges(journey: any, nodeId: string, config: any, context: Record<string, any>): any[] {
+    const outgoingEdges = journey.edges.filter((e: any) => e.sourceNodeId === nodeId);
+    if (outgoingEdges.length === 0) return [];
+    if (!context.__loopState) context.__loopState = {};
+
+    const maxCount = Math.max(1, Number(config.loopCount || 1));
+    const currentCount = Number(context.__loopState[nodeId] || 0);
+    const willLoop = currentCount < maxCount - 1;
+    context.__loopState[nodeId] = currentCount + 1;
+
+    if (willLoop) {
+      const loopDelay = this.calculateDelay(config.loopDelay || 0, config.loopDelayUnit || 'minutes');
+      const effectiveDelay = Math.max(0, Math.min(loopDelay, this.MAX_SYNC_DELAY_MS));
+      if (effectiveDelay > 0) {
+        // Delay síncrono curto para evitar bloquear execução por longos períodos.
+          context.__pendingLoopDelayMs = effectiveDelay;
+      }
+      return [outgoingEdges[0]];
+    }
+    return [outgoingEdges[1] || outgoingEdges[0]];
   }
 
   /**
@@ -214,18 +370,307 @@ export class JourneyExecutionService {
         break;
 
       case 'add_tag':
-        // TODO: Implementar adição de tag
-        console.log(`[JourneyExecution] Adicionar tag: ${config.tagName}`);
+        await this.executeAddTag(config, contact);
         break;
 
       case 'remove_tag':
-        // TODO: Implementar remoção de tag
-        console.log(`[JourneyExecution] Remover tag: ${config.tagName}`);
+        await this.executeRemoveTag(config, contact);
+        break;
+
+      case 'update_field':
+        await this.executeUpdateField(config, contact);
+        break;
+
+      case 'add_to_list':
+        await this.executeAddToList(config, contact);
+        break;
+
+      case 'remove_from_list':
+        await this.executeRemoveFromList(config, contact);
+        break;
+
+      case 'assign_to_user':
+        await this.executeAssignToUser(config, contact);
+        break;
+
+      case 'move_to_pipeline':
+        await this.executeMoveToPipeline(config, contact);
         break;
 
       default:
         console.log(`[JourneyExecution] Tipo de ação não implementado: ${actionType}`);
     }
+  }
+
+  private async getLatestConversationForContact(contactId: string) {
+    return prisma.conversation.findFirst({
+      where: { contactId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        channelId: true,
+        contactId: true,
+        assignedToId: true,
+      },
+    });
+  }
+
+  private async executeAddTag(config: any, contact: any): Promise<void> {
+    const tagName = String(config.tagName || '').trim();
+    if (!tagName) {
+      console.warn('[JourneyExecution] add_tag ignorado: tagName não configurada');
+      return;
+    }
+
+    const conversation = await this.getLatestConversationForContact(contact.id);
+    if (!conversation) {
+      console.warn(`[JourneyExecution] add_tag ignorado: contato ${contact.id} sem conversa`);
+      return;
+    }
+
+    const existingTag = await prisma.tag.findFirst({
+      where: { name: { equals: tagName, mode: 'insensitive' } },
+      select: { id: true, name: true },
+    });
+    const tag =
+      existingTag ||
+      (await prisma.tag.create({
+        data: { name: tagName },
+        select: { id: true, name: true },
+      }));
+
+    await prisma.conversationTag.upsert({
+      where: {
+        conversationId_tagId: {
+          conversationId: conversation.id,
+          tagId: tag.id,
+        },
+      },
+      update: {},
+      create: {
+        conversationId: conversation.id,
+        tagId: tag.id,
+      },
+    });
+
+    await this.processEvent('tag_added', {
+      contactId: contact.id,
+      channelId: conversation.channelId,
+      conversationId: conversation.id,
+      tagName: tag.name,
+    });
+  }
+
+  private async executeRemoveTag(config: any, contact: any): Promise<void> {
+    const tagName = String(config.tagName || '').trim();
+    if (!tagName) {
+      console.warn('[JourneyExecution] remove_tag ignorado: tagName não configurada');
+      return;
+    }
+
+    const conversation = await this.getLatestConversationForContact(contact.id);
+    if (!conversation) {
+      console.warn(`[JourneyExecution] remove_tag ignorado: contato ${contact.id} sem conversa`);
+      return;
+    }
+
+    const tag = await prisma.tag.findFirst({
+      where: { name: { equals: tagName, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (!tag) return;
+
+    await prisma.conversationTag.deleteMany({
+      where: {
+        conversationId: conversation.id,
+        tagId: tag.id,
+      },
+    });
+  }
+
+  private async executeUpdateField(config: any, contact: any): Promise<void> {
+    const fieldName = String(config.fieldName || '').trim();
+    if (!fieldName) {
+      console.warn('[JourneyExecution] update_field ignorado: fieldName não configurado');
+      return;
+    }
+
+    const fallbackValue = config.value !== undefined ? config.value : config.fieldValue;
+    const fieldValue = fallbackValue === undefined || fallbackValue === null ? '' : String(fallbackValue);
+
+    if (fieldName === 'name' || fieldName === 'phone' || fieldName === 'email') {
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: { [fieldName]: fieldValue || null },
+      });
+      return;
+    }
+
+    const currentContact = await prisma.contact.findUnique({
+      where: { id: contact.id },
+      select: { metadata: true },
+    });
+    const metadata =
+      currentContact?.metadata && typeof currentContact.metadata === 'object'
+        ? { ...(currentContact.metadata as Record<string, any>) }
+        : {};
+    metadata[fieldName] = fieldValue;
+
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { metadata },
+    });
+  }
+
+  private async executeAddToList(config: any, contact: any): Promise<void> {
+    const listId = String(config.listId || '').trim();
+    if (!listId) {
+      console.warn('[JourneyExecution] add_to_list ignorado: listId não configurado');
+      return;
+    }
+
+    await prisma.contactListMember.upsert({
+      where: {
+        listId_contactId: {
+          listId,
+          contactId: contact.id,
+        },
+      },
+      update: {},
+      create: {
+        listId,
+        contactId: contact.id,
+      },
+    });
+
+    await this.processEvent('list_added', {
+      contactId: contact.id,
+      channelId: contact.channelId || null,
+      listId,
+    });
+  }
+
+  private async executeRemoveFromList(config: any, contact: any): Promise<void> {
+    const listId = String(config.listId || '').trim();
+    if (!listId) {
+      console.warn('[JourneyExecution] remove_from_list ignorado: listId não configurado');
+      return;
+    }
+
+    await prisma.contactListMember.deleteMany({
+      where: {
+        listId,
+        contactId: contact.id,
+      },
+    });
+  }
+
+  private async executeAssignToUser(config: any, contact: any): Promise<void> {
+    const userId = String(config.userId || config.assignedToId || '').trim();
+    if (!userId) {
+      console.warn('[JourneyExecution] assign_to_user ignorado: userId não configurado');
+      return;
+    }
+
+    const conversation = await this.getLatestConversationForContact(contact.id);
+    if (!conversation) {
+      console.warn(`[JourneyExecution] assign_to_user ignorado: contato ${contact.id} sem conversa`);
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isActive: true },
+    });
+    if (!user || !user.isActive) {
+      console.warn(`[JourneyExecution] assign_to_user ignorado: usuário ${userId} inválido/inativo`);
+      return;
+    }
+
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { assignedToId: user.id },
+    });
+  }
+
+  private async executeMoveToPipeline(config: any, contact: any): Promise<void> {
+    const pipelineId = String(config.pipelineId || '').trim();
+    const explicitStageId = String(config.stageId || '').trim();
+    if (!pipelineId && !explicitStageId) {
+      console.warn('[JourneyExecution] move_to_pipeline ignorado: pipelineId/stageId não configurados');
+      return;
+    }
+
+    const currentDeal = await prisma.deal.findFirst({
+      where: { contactId: contact.id, status: 'OPEN' },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        pipelineId: true,
+        stageId: true,
+        assignedToId: true,
+        contactId: true,
+        conversationId: true,
+        name: true,
+        value: true,
+        currency: true,
+        probability: true,
+      },
+    });
+
+    let targetStageId = explicitStageId;
+    let targetPipelineId = pipelineId;
+
+    if (explicitStageId) {
+      const stage = await prisma.pipelineStage.findUnique({
+        where: { id: explicitStageId },
+        select: { id: true, pipelineId: true, isActive: true },
+      });
+      if (!stage || !stage.isActive) {
+        console.warn(`[JourneyExecution] move_to_pipeline ignorado: stage inválida ${explicitStageId}`);
+        return;
+      }
+      targetStageId = stage.id;
+      targetPipelineId = stage.pipelineId;
+    } else {
+      const firstStage = await prisma.pipelineStage.findFirst({
+        where: { pipelineId: targetPipelineId, isActive: true },
+        orderBy: { order: 'asc' },
+        select: { id: true, pipelineId: true },
+      });
+      if (!firstStage) {
+        console.warn(`[JourneyExecution] move_to_pipeline ignorado: pipeline ${targetPipelineId} sem etapa ativa`);
+        return;
+      }
+      targetStageId = firstStage.id;
+      targetPipelineId = firstStage.pipelineId;
+    }
+
+    if (currentDeal) {
+      await prisma.deal.update({
+        where: { id: currentDeal.id },
+        data: {
+          pipelineId: targetPipelineId,
+          stageId: targetStageId,
+        },
+      });
+      return;
+    }
+
+    const conversation = await this.getLatestConversationForContact(contact.id);
+    await prisma.deal.create({
+      data: {
+        contactId: contact.id,
+        conversationId: conversation?.id || null,
+        pipelineId: targetPipelineId,
+        stageId: targetStageId,
+        assignedToId: conversation?.assignedToId || null,
+        name: String(contact.name || '').trim() || 'Lead sem nome',
+        value: null,
+        currency: 'BRL',
+        probability: 0,
+      },
+    });
   }
 
   /**
@@ -286,19 +731,151 @@ export class JourneyExecutionService {
   /**
    * Avalia uma condição
    */
-  private evaluateCondition(node: any, contact: any, context: Record<string, any>): boolean {
-    const config = node.config || {};
+  private async evaluateCondition(node: any, contact: any, context: Record<string, any>): Promise<boolean> {
+    const config = this.parseNodeConfig(node.config || {});
     const conditionType = config.conditionType;
     const operator = config.operator || 'equals';
-    const value = config.value;
+    const rawValue = config.value ?? config.fieldValue ?? '';
 
-    // Implementação básica - pode ser expandida
+    const compare = (left: any, right: any): boolean => {
+      const l = left === undefined || left === null ? '' : String(left).toLowerCase();
+      const r = right === undefined || right === null ? '' : String(right).toLowerCase();
+      switch (operator) {
+        case 'equals':
+          return l === r;
+        case 'not_equals':
+          return l !== r;
+        case 'contains':
+          return l.includes(r);
+        case 'not_contains':
+          return !l.includes(r);
+        default:
+          return l === r;
+      }
+    };
+
     switch (conditionType) {
-      case 'has_tag':
-        // TODO: Verificar se contato tem tag
-        return true; // Placeholder
-      default:
+      case 'has_tag': {
+        const tagName = String(config.tagName || rawValue || '').trim();
+        if (!tagName) return false;
+        const conversation = await this.getLatestConversationForContact(contact.id);
+        if (!conversation) return false;
+        const tag = await prisma.tag.findFirst({
+          where: { name: { equals: tagName, mode: 'insensitive' } },
+          select: { id: true },
+        });
+        if (!tag) return false;
+        const relation = await prisma.conversationTag.findUnique({
+          where: {
+            conversationId_tagId: {
+              conversationId: conversation.id,
+              tagId: tag.id,
+            },
+          },
+          select: { tagId: true },
+        });
+        return !!relation;
+      }
+      case 'has_field':
+      case 'field_equals':
+      case 'field_contains': {
+        const fieldName = String(config.fieldName || '').trim();
+        if (!fieldName) return false;
+        const metadata = contact.metadata && typeof contact.metadata === 'object' ? contact.metadata : {};
+        const left =
+          fieldName === 'name' || fieldName === 'phone' || fieldName === 'email'
+            ? (contact as any)[fieldName]
+            : (metadata as any)[fieldName];
+        const effectiveOperator =
+          conditionType === 'field_contains' ? 'contains' : conditionType === 'field_equals' ? 'equals' : operator;
+        const prev = operator;
+        (config as any).__tmpOperator = effectiveOperator;
+        const res = (() => {
+          const l = left === undefined || left === null ? '' : String(left).toLowerCase();
+          const r = rawValue === undefined || rawValue === null ? '' : String(rawValue).toLowerCase();
+          switch (effectiveOperator) {
+            case 'equals':
+              return l === r;
+            case 'not_equals':
+              return l !== r;
+            case 'contains':
+              return l.includes(r);
+            case 'not_contains':
+              return !l.includes(r);
+            default:
+              return compare(left, rawValue);
+          }
+        })();
+        (config as any).__tmpOperator = prev;
+        return res;
+      }
+      case 'message_received': {
+        const eventType = String(context.eventType || '').trim();
+        if (eventType !== 'message_received') return false;
+        const expected = String(config.value || config.messageText || '').trim();
+        if (!expected) return true;
+        const incomingContent = String(context.messageContent || '').trim();
+        return incomingContent.toLowerCase().includes(expected.toLowerCase());
+      }
+      case 'in_list': {
+        const listId = String(config.listId || '').trim();
+        if (!listId) return false;
+        const member = await prisma.contactListMember.findUnique({
+          where: {
+            listId_contactId: {
+              listId,
+              contactId: contact.id,
+            },
+          },
+          select: { id: true },
+        });
+        return !!member;
+      }
+      case 'date_time': {
+        const comparison = String(config.dateComparison || 'before');
+        const now = new Date();
+        if (comparison === 'between') {
+          const start = config.dateStartValue || config.dateValue;
+          const end = config.dateEndValue;
+          if (!start || !end) return false;
+          const startDate = new Date(start);
+          const endDate = new Date(end);
+          return now >= startDate && now <= endDate;
+        }
+        const dateValue = config.dateValue;
+        if (!dateValue) return false;
+        const target = new Date(dateValue);
+        if (Number.isNaN(target.getTime())) return false;
+        if (comparison === 'after') return now > target;
+        return now < target;
+      }
+      case 'in_pipeline': {
+        const pipelineId = String(config.pipelineId || '').trim();
+        const stageId = String(config.stageId || '').trim();
+        const deal = await prisma.deal.findFirst({
+          where: { contactId: contact.id, status: 'OPEN' },
+          orderBy: { createdAt: 'desc' },
+          select: { pipelineId: true, stageId: true },
+        });
+        if (!deal) return false;
+        if (pipelineId && deal.pipelineId !== pipelineId) return false;
+        if (stageId && deal.stageId !== stageId) return false;
         return true;
+      }
+      case 'if_then': {
+        const source = String(config.fieldName || config.leftValue || '').trim();
+        if (!source) return false;
+        const metadata = contact.metadata && typeof contact.metadata === 'object' ? contact.metadata : {};
+        const left =
+          source === 'name' || source === 'phone' || source === 'email'
+            ? (contact as any)[source]
+            : source.startsWith('context.')
+            ? context[source.replace(/^context\./, '')]
+            : (metadata as any)[source];
+        return compare(left, rawValue);
+      }
+      default:
+        return false;
     }
   }
 
@@ -361,7 +938,7 @@ export class JourneyExecutionService {
    * Verifica se um contato deve entrar em uma jornada baseado no trigger
    */
   async checkTrigger(triggerNode: any, contactId: string, eventType: string, eventData?: any): Promise<boolean> {
-    const config = triggerNode.config || {};
+    const config = this.parseNodeConfig(triggerNode.config);
     const triggerType = config.triggerType;
 
     switch (triggerType) {
@@ -375,10 +952,14 @@ export class JourneyExecutionService {
         return eventType === 'message_received';
       
       case 'tag_added':
-        return eventType === 'tag_added' && eventData?.tagName === config.tagName;
+        if (eventType !== 'tag_added') return false;
+        if (!config.tagName) return true;
+        return String(eventData?.tagName || '').trim().toLowerCase() === String(config.tagName).trim().toLowerCase();
       
       case 'list_added':
-        return eventType === 'list_added' && eventData?.listId === config.listId;
+        if (eventType !== 'list_added') return false;
+        if (!config.listId) return true;
+        return eventData?.listId === config.listId;
       
       case 'manual':
         return false; // Manual precisa ser acionado via API

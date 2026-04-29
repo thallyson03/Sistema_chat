@@ -287,7 +287,7 @@ export default function Layout() {
                     isPaused
                       ? 'Retomar atendimento'
                       : openAssignedConversationsCount > 0
-                        ? `Pausa bloqueada: ${openAssignedConversationsCount} atendimento(s) em aberto (OPEN/WAITING). Transfira ou finalize antes.`
+                        ? `Pausa bloqueada: ${openAssignedConversationsCount} atendimento(s) em aberto (Aberto/Aguardando atendimento). Transfira ou finalize antes.`
                         : 'Pausar atendimento'
                   }
                 >

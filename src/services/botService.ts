@@ -1,6 +1,7 @@
 import prisma from '../config/database';
 import { MessageService } from './messageService';
 import { BotVariableService } from './botVariableService';
+import { JourneyExecutionService } from './journeyExecutionService';
 import vm from 'vm';
 import axios from 'axios';
 import { resolvePublicAppBaseUrl } from '../utils/publicBaseUrl';
@@ -48,6 +49,8 @@ export interface CreateFlowData {
 }
 
 export class BotService {
+  private readonly journeyExecutionService = new JourneyExecutionService();
+
   private messageService: MessageService;
   private variableService: BotVariableService;
 
@@ -1068,6 +1071,10 @@ export class BotService {
             },
           });
         } else {
+          const conversation = await prisma.conversation.findUnique({
+            where: { id: session.conversationId },
+            select: { contactId: true, channelId: true },
+          });
           for (const tag of finalTags) {
             await prisma.conversationTag.upsert({
               where: {
@@ -1082,6 +1089,14 @@ export class BotService {
                 tagId: tag.id,
               },
             });
+            if (conversation?.contactId) {
+              await this.journeyExecutionService.processEvent('tag_added', {
+                contactId: conversation.contactId,
+                channelId: conversation.channelId,
+                conversationId: session.conversationId,
+                tagName: tag.name,
+              });
+            }
           }
         }
 

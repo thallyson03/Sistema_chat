@@ -78,6 +78,8 @@ export default function Journeys() {
   const [newJourneyName, setNewJourneyName] = useState('');
   const [stats, setStats] = useState<JourneyStats | null>(null);
   const [, setLoadingStats] = useState(false);
+  const [manualContactId, setManualContactId] = useState('');
+  const [executingManual, setExecutingManual] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -461,6 +463,28 @@ export default function Journeys() {
     }
   };
 
+  const handleManualExecute = async () => {
+    if (!selectedJourney) {
+      alert('Selecione uma jornada.');
+      return;
+    }
+    const contactId = manualContactId.trim();
+    if (!contactId) {
+      alert('Informe o ID do contato para disparo manual.');
+      return;
+    }
+
+    setExecutingManual(true);
+    try {
+      await api.post(`/api/journeys/${selectedJourney.id}/execute`, { contactId });
+      alert('Disparo manual executado com sucesso.');
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Erro ao executar disparo manual');
+    } finally {
+      setExecutingManual(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-[calc(100vh-60px)] items-center justify-center bg-surface text-on-surface-variant font-body">
@@ -668,6 +692,25 @@ export default function Journeys() {
           </div>
 
           <div className="pointer-events-auto flex flex-shrink-0 gap-2">
+            {selectedJourney && (
+              <div className="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container px-2 py-1.5">
+                <input
+                  type="text"
+                  value={manualContactId}
+                  onChange={(e) => setManualContactId(e.target.value)}
+                  placeholder="ID do contato"
+                  className="w-44 rounded border border-outline-variant bg-surface-container-highest px-2 py-1 text-xs text-on-surface placeholder:text-on-surface-variant focus:border-[#66dd8b]/50 focus:outline-none"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleManualExecute}
+                  disabled={executingManual || !manualContactId.trim()}
+                >
+                  {executingManual ? 'Disparando...' : 'Disparo manual'}
+                </Button>
+              </div>
+            )}
             {selectedJourney && selectedJourney.status === 'ACTIVE' && (
               <div className="flex items-center gap-2 rounded-lg border border-[#66dd8b]/30 bg-emerald-500/10 px-3 py-2">
                 <span className="text-sm font-semibold text-[#66dd8b]">✓ Jornada Ativa</span>
