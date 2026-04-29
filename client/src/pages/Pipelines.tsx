@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import PipelineAutomationModal from '../components/PipelineAutomationModal';
@@ -81,10 +81,36 @@ export default function Pipelines() {
   const [showAutomationModal, setShowAutomationModal] = useState(false);
   const [draggedDeal, setDraggedDeal] = useState<{ dealId: string; stageId: string } | null>(null);
   const [selectedDealIds, setSelectedDealIds] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [showPipelineDropdown, setShowPipelineDropdown] = useState(false);
+  const [responsibleFilter, setResponsibleFilter] = useState<'ALL' | 'UNASSIGNED' | string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | Deal['status']>('ALL');
+  const [stageFilter, setStageFilter] = useState<'ALL' | string>('ALL');
+  const filterPanelRef = useRef<HTMLDivElement>(null);
+  const pipelineDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchPipelines();
   }, []);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (showFilterPanel && filterPanelRef.current && !filterPanelRef.current.contains(target)) {
+        setShowFilterPanel(false);
+      }
+      if (
+        showPipelineDropdown &&
+        pipelineDropdownRef.current &&
+        !pipelineDropdownRef.current.contains(target)
+      ) {
+        setShowPipelineDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showFilterPanel, showPipelineDropdown]);
 
   const fetchPipelines = async () => {
     try {
@@ -117,8 +143,47 @@ export default function Pipelines() {
   const handlePipelineSelect = async (pipeline: Pipeline) => {
     setSelectedPipeline(pipeline);
     setSelectedDealIds([]);
+    setStageFilter('ALL');
+    setShowPipelineDropdown(false);
     await fetchPipelineDetails(pipeline.id);
   };
+
+  const availableResponsibleOptions = useMemo(() => {
+    if (!selectedPipeline) return [];
+    const map = new Map<string, string>();
+    selectedPipeline.stages.forEach((stage) => {
+      (stage.deals || []).forEach((deal) => {
+        if (deal.assignedTo?.id && deal.assignedTo?.name) {
+          map.set(deal.assignedTo.id, deal.assignedTo.name);
+        }
+      });
+    });
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [selectedPipeline]);
+
+  const filteredStages = useMemo(() => {
+    if (!selectedPipeline) return [];
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    return selectedPipeline.stages
+      .filter((stage) => stage.isActive)
+      .sort((a, b) => a.order - b.order)
+      .map((stage) => {
+        const deals = (stage.deals || []).filter((deal) => {
+          if (stageFilter !== 'ALL' && stage.id !== stageFilter) return false;
+          if (statusFilter !== 'ALL' && deal.status !== statusFilter) return false;
+          if (responsibleFilter === 'UNASSIGNED' && deal.assignedTo?.id) return false;
+          if (responsibleFilter !== 'ALL' && responsibleFilter !== 'UNASSIGNED' && deal.assignedTo?.id !== responsibleFilter) return false;
+          if (normalizedSearch) {
+            const haystack = `${deal.name} ${deal.contact?.name || ''} ${deal.contact?.phone || ''}`.toLowerCase();
+            if (!haystack.includes(normalizedSearch)) return false;
+          }
+          return true;
+        });
+        return { ...stage, deals };
+      });
+  }, [selectedPipeline, searchTerm, responsibleFilter, statusFilter, stageFilter]);
 
   const handleDragStart = (dealId: string, stageId: string) => {
     setDraggedDeal({ dealId, stageId });
@@ -201,9 +266,37 @@ export default function Pipelines() {
   return (
     <div className="flex h-[calc(100vh-60px)] flex-col bg-surface px-5 py-5 font-body text-on-surface">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-primary/60">CRM</p>
-          <h1 className="m-0 font-headline text-3xl font-bold text-on-surface">Pipeline de Vendas</h1>
+        <div className="relative" ref={pipelineDropdownRef}>
+          <button
+            type="button"
+            onClick={() => setShowPipelineDropdown((prev) => !prev)}
+            className="flex items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface transition hover:bg-surface-container"
+          >
+            <span className="material-symbols-outlined text-base text-primary-fixed-dim">account_tree</span>
+            <span>{selectedPipeline?.name || 'Selecionar pipeline'}</span>
+            <span className="material-symbols-outlined text-base text-on-surface-variant">
+              {showPipelineDropdown ? 'expand_less' : 'expand_more'}
+            </span>
+          </button>
+          {showPipelineDropdown && (
+            <div className="absolute left-0 z-30 mt-2 min-w-[260px] rounded-xl border border-outline-variant bg-surface-container-high p-1 shadow-forest-glow">
+              {pipelines.map((pipeline) => (
+                <button
+                  key={pipeline.id}
+                  type="button"
+                  onClick={() => handlePipelineSelect(pipeline)}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
+                    selectedPipeline?.id === pipeline.id
+                      ? 'bg-primary/15 font-semibold text-primary-fixed-dim'
+                      : 'text-on-surface-variant hover:bg-surface-container'
+                  }`}
+                >
+                  <span>{pipeline.name}</span>
+                  <span className="text-xs text-on-surface-variant">({pipeline._count?.deals || 0})</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {selectedPipeline && (
@@ -237,24 +330,108 @@ export default function Pipelines() {
         </div>
       </div>
 
-      {/* Lista de Pipelines */}
-      {pipelines.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2.5 rounded-xl border border-outline-variant bg-surface-container-low p-3">
-          {pipelines.map((pipeline) => (
-            <button
-              key={pipeline.id}
-              onClick={() => handlePipelineSelect(pipeline)}
-              className={`rounded-lg border px-3.5 py-2 text-sm transition ${
-                selectedPipeline?.id === pipeline.id
-                  ? 'border-primary/40 bg-primary/15 font-semibold text-primary-fixed-dim'
-                  : 'border-outline-variant bg-surface-container-highest text-on-surface-variant hover:bg-surface-container'
-              }`}
-            >
-              {pipeline.name} ({pipeline._count?.deals || 0})
-            </button>
-          ))}
+      <div className="mb-4 rounded-xl border border-outline-variant bg-surface-container-low p-3">
+        <div className="relative" ref={filterPanelRef}>
+          <button
+            type="button"
+            onClick={() => setShowFilterPanel((prev) => !prev)}
+            className="flex w-full items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2.5 text-left text-sm text-on-surface-variant transition hover:bg-surface-container"
+          >
+            <span className="material-symbols-outlined text-base">search</span>
+            <span className="flex-1">{searchTerm ? `Busca: ${searchTerm}` : 'Busca e filtro'}</span>
+            <span className="material-symbols-outlined text-base">
+              {showFilterPanel ? 'expand_less' : 'expand_more'}
+            </span>
+          </button>
+
+          {showFilterPanel && (
+            <div className="absolute left-0 right-0 z-20 mt-2 rounded-xl border border-outline-variant bg-surface-container-high p-3 shadow-forest-glow">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Buscar
+                  </label>
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Lead, contato, telefone..."
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Responsável
+                  </label>
+                  <select
+                    value={responsibleFilter}
+                    onChange={(e) => setResponsibleFilter(e.target.value as any)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  >
+                    <option value="ALL">Todos</option>
+                    <option value="UNASSIGNED">Sem responsável</option>
+                    {availableResponsibleOptions.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Status
+                  </label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  >
+                    <option value="ALL">Todos</option>
+                    <option value="OPEN">Abertos</option>
+                    <option value="WON">Ganhos</option>
+                    <option value="LOST">Perdidos</option>
+                    <option value="ABANDONED">Abandonados</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Etapa
+                  </label>
+                  <select
+                    value={stageFilter}
+                    onChange={(e) => setStageFilter(e.target.value)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  >
+                    <option value="ALL">Todas</option>
+                    {(selectedPipeline?.stages || [])
+                      .filter((s) => s.isActive)
+                      .sort((a, b) => a.order - b.order)
+                      .map((stage) => (
+                        <option key={stage.id} value={stage.id}>
+                          {stage.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setResponsibleFilter('ALL');
+                    setStatusFilter('ALL');
+                    setStageFilter('ALL');
+                  }}
+                  className="rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-xs font-semibold text-on-surface-variant transition hover:bg-surface-container"
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Barra de ações em massa para deals selecionados */}
       {selectedPipeline && selectedDealIds.length > 0 && (
@@ -274,10 +451,7 @@ export default function Pipelines() {
       {/* Visualização do Pipeline (Kanban) */}
       {selectedPipeline && (
         <div className="flex flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4">
-          {selectedPipeline.stages
-            .filter((stage) => stage.isActive)
-            .sort((a, b) => a.order - b.order)
-            .map((stage) => (
+          {filteredStages.map((stage) => (
               <div
                 key={stage.id}
                 onDragOver={handleDragOver}

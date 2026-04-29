@@ -187,9 +187,6 @@ export default function QuickReplies() {
     <div className="font-body text-on-surface">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-primary/60">
-            Messaging Assets
-          </p>
           <h1 className="m-0 font-headline text-2xl font-bold text-on-surface">
             Templates & Respostas Rápidas
           </h1>

@@ -164,6 +164,7 @@ const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'ARCHIVED', label: 'Arquivadas' },
   { value: 'BOT', label: 'Bot' },
 ];
+const PRIMARY_STATUS_FILTER_VALUES = new Set(['ALL', 'OPEN', 'CLOSED']);
 
 export default function Conversations() {
   // Base da API (mesma usada pelo axios)
@@ -191,6 +192,7 @@ export default function Conversations() {
   const [recording, setRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [showMoreStatusFilters, setShowMoreStatusFilters] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferSectorStep, setTransferSectorStep] = useState<
     | null
@@ -233,6 +235,7 @@ export default function Conversations() {
   >(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const moreStatusFiltersRef = useRef<HTMLDivElement>(null);
   const statusFilterRef = useRef<string>('ALL');
   const fetchConversationsRef = useRef<(filterOverride?: string) => Promise<void>>(async () => {});
   const conversationsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -245,6 +248,12 @@ export default function Conversations() {
   const MESSAGES_PAGE_SIZE = 50;
   const BOT_ACTIVE_BLOCK_MESSAGE =
     'Para interagir com o cliente, desative o bot desta conversa primeiro.';
+  const primaryStatusFilters = STATUS_FILTER_OPTIONS.filter((opt) =>
+    PRIMARY_STATUS_FILTER_VALUES.has(opt.value),
+  );
+  const secondaryStatusFilters = STATUS_FILTER_OPTIONS.filter(
+    (opt) => !PRIMARY_STATUS_FILTER_VALUES.has(opt.value),
+  );
 
   const ensureBotDisabledForManualInteraction = () => {
     if (!selectedConversation) return false;
@@ -259,6 +268,21 @@ export default function Conversations() {
   useEffect(() => {
     currentConversationIdRef.current = selectedConversation?.id || null;
   }, [selectedConversation]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        showMoreStatusFilters &&
+        moreStatusFiltersRef.current &&
+        !moreStatusFiltersRef.current.contains(event.target as Node)
+      ) {
+        setShowMoreStatusFilters(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showMoreStatusFilters]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -1473,8 +1497,8 @@ export default function Conversations() {
               Nova
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {STATUS_FILTER_OPTIONS.map((opt) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {primaryStatusFilters.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
@@ -1488,6 +1512,41 @@ export default function Conversations() {
                 {opt.label}
               </button>
             ))}
+            <div className="relative" ref={moreStatusFiltersRef}>
+              <button
+                type="button"
+                onClick={() => setShowMoreStatusFilters((prev) => !prev)}
+                className={`rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                  secondaryStatusFilters.some((opt) => opt.value === statusFilter)
+                    ? 'bg-emerald-900/40 text-primary ring-1 ring-primary/20'
+                    : 'text-on-surface-variant hover:bg-surface-container'
+                }`}
+                title="Mais filtros"
+              >
+                ...
+              </button>
+              {showMoreStatusFilters && (
+                <div className="absolute right-0 z-30 mt-2 min-w-[220px] rounded-xl border border-primary/15 bg-surface-container-high p-1 shadow-forest-glow backdrop-blur-xl">
+                  {secondaryStatusFilters.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(opt.value);
+                        setShowMoreStatusFilters(false);
+                      }}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                        statusFilter === opt.value
+                          ? 'bg-emerald-900/40 text-primary'
+                          : 'text-on-surface-variant hover:bg-surface-container'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1538,7 +1597,7 @@ export default function Conversations() {
                         {(conv.channel?.name || 'Sem canal')} • {conv.contact.phone || 'Sem telefone'}
                       </p>
                       <p className="mb-1 truncate text-[11px] text-primary-fixed-dim">
-                        Responsável: {conv.assignedTo?.name || 'Fila'}
+                        Responsável: {conv.assignedTo?.name || 'Aguardando atendimento'}
                       </p>
                       {conv.lastMessage && (
                         <p className="mb-2 truncate text-xs text-outline">
@@ -1556,7 +1615,15 @@ export default function Conversations() {
                     </div>
                     <div className="ml-1 flex flex-col items-end gap-2">
                       <span className="whitespace-nowrap rounded-full bg-primary-container px-2 py-0.5 text-[10px] font-bold text-on-secondary-container">
-                        {conv.status}
+                        {conv.status === 'OPEN'
+                          ? 'Aberta'
+                          : conv.status === 'WAITING'
+                          ? 'Aguardando atendimento'
+                          : conv.status === 'CLOSED'
+                          ? 'Fechada'
+                          : conv.status === 'ARCHIVED'
+                          ? 'Arquivada'
+                          : conv.status}
                       </span>
                     </div>
                   </div>
@@ -3000,7 +3067,7 @@ export default function Conversations() {
                     }}
                     className="mb-3 w-full rounded-lg border-2 border-primary/40 bg-primary/10 p-3 text-left transition hover:bg-primary/15"
                   >
-                    <div className="text-sm font-bold text-on-surface">Fila do setor</div>
+                    <div className="text-sm font-bold text-on-surface">Aguardando atendimento do setor</div>
                     <div className="mt-0.5 text-xs text-on-surface-variant">
                       Conversa fica no setor sem atribuir a ninguém (distribuição pode pegar depois).
                     </div>
