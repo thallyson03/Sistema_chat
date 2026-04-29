@@ -2690,10 +2690,14 @@ export default function DealDetail() {
                       <NoteNotificationCard note={noteData} />
                     ) : (
                       message.content && (
-                        <p className="m-0 whitespace-pre-wrap break-words text-sm">
-                          {message.user?.name ? `${message.user.name}: ` : ''}
-                          {message.content}
-                        </p>
+                        <div className="space-y-1 whitespace-pre-wrap break-words text-sm">
+                          {message.user?.name && (
+                            <div className="text-xs font-semibold leading-tight text-black">
+                              {message.user.name}
+                            </div>
+                          )}
+                          <p className="m-0">{message.content}</p>
+                        </div>
                       )
                     )}
                     <span
