@@ -3,10 +3,9 @@ import { authenticateToken } from '../middleware/auth';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import * as XLSX from 'xlsx';
-import { JourneyExecutionService } from '../services/journeyExecutionService';
+import { dispatchJourneyEvent } from '../services/journeyEventDispatcher';
 
 const router = Router();
-const journeyExecutionService = new JourneyExecutionService();
 
 // Todas as rotas precisam de autenticação
 router.use(authenticateToken);
@@ -55,7 +54,7 @@ router.post('/', async (req: AuthRequest, res) => {
       },
     });
 
-    await journeyExecutionService.processEvent('contact_created', {
+    await dispatchJourneyEvent('contact_created', {
       contactId: contact.id,
       channelId: contact.channelId,
     });

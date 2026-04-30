@@ -1,6 +1,6 @@
 import prisma from '../config/database';
 import { DealStatus } from '@prisma/client';
-import { JourneyExecutionService } from './journeyExecutionService';
+import { dispatchJourneyEvent } from './journeyEventDispatcher';
 
 export interface CreateDealData {
   pipelineId: string;
@@ -52,8 +52,6 @@ export interface CalendarTaskFilters {
 }
 
 export class DealService {
-  private readonly journeyExecutionService = new JourneyExecutionService();
-
   async createDeal(data: CreateDealData) {
     // Verificar se já existe um deal para esta conversa (se conversationId foi fornecido)
     if (data.conversationId) {
@@ -519,7 +517,7 @@ export class DealService {
       select: { contactId: true, channelId: true },
     });
     if (conversation?.contactId) {
-      await this.journeyExecutionService.processEvent('tag_added', {
+      await dispatchJourneyEvent('tag_added', {
         contactId: conversation.contactId,
         channelId: conversation.channelId,
         conversationId: deal.conversationId,

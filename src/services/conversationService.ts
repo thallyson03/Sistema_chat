@@ -1,7 +1,7 @@
 import prisma from '../config/database';
 import { ConversationStatus, Priority } from '@prisma/client';
 import { ConversationDistributionService } from './conversationDistributionService';
-import { JourneyExecutionService } from './journeyExecutionService';
+import { dispatchJourneyEvent } from './journeyEventDispatcher';
 
 export interface ConversationFilters {
   channelId?: string;
@@ -18,8 +18,6 @@ interface ConversationViewer {
 }
 
 export class ConversationService {
-  private readonly journeyExecutionService = new JourneyExecutionService();
-
   private async buildVisibilityWhere(viewer?: ConversationViewer) {
     // Chamadas internas do serviço (sem viewer) não devem ser bloqueadas.
     if (!viewer) {
@@ -130,7 +128,7 @@ export class ConversationService {
       },
     });
 
-    await this.journeyExecutionService.processEvent('conversation_created', {
+    await dispatchJourneyEvent('conversation_created', {
       contactId: conversation.contactId,
       channelId: conversation.channelId,
       conversationId: conversation.id,

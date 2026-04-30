@@ -190,6 +190,7 @@ logger.info('phase1 queue mode', {
   webhookQueueEnabled: phase1Flags.webhookQueueEnabled,
   messageQueueEnabled: phase1Flags.messageQueueEnabled,
   botQueueEnabled: phase1Flags.botQueueEnabled,
+  journeyQueueEnabled: phase1Flags.journeyQueueEnabled,
 });
 
 // Rotas da API

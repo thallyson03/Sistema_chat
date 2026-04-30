@@ -5,7 +5,7 @@ import { BotService } from '../services/botService';
 import { ConversationDistributionService } from '../services/conversationDistributionService';
 import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
-import { JourneyExecutionService } from '../services/journeyExecutionService';
+import { dispatchJourneyEvent } from '../services/journeyEventDispatcher';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { phase1Flags } from '../config/phase1Flags';
@@ -17,7 +17,6 @@ const webhookService = new WebhookService();
 const botService = new BotService();
 const conversationService = new ConversationService();
 const satisfactionSurveyService = new SatisfactionSurveyService();
-const journeyExecutionService = new JourneyExecutionService();
 
 // io será injetado via função
 let io: any = null;
@@ -512,7 +511,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
             channel: true,
           },
         });
-        await journeyExecutionService.processEvent('contact_created', {
+        await dispatchJourneyEvent('contact_created', {
           contactId: contact.id,
           channelId: contact.channelId,
         });
@@ -571,7 +570,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
           lastCustomerMessageAt: timestamp,
         },
       });
-      await journeyExecutionService.processEvent('conversation_created', {
+      await dispatchJourneyEvent('conversation_created', {
         contactId: contact.id,
         channelId: contact.channelId,
         conversationId: conversation.id,
@@ -768,7 +767,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         metadata: Object.keys(mediaMeta).length > 0 ? mediaMeta : undefined,
       },
     });
-    await journeyExecutionService.processEvent('message_received', {
+    await dispatchJourneyEvent('message_received', {
       contactId: contact.id,
       channelId: contact.channelId,
       conversationId: conversation.id,
@@ -1185,7 +1184,7 @@ async function handleNewMessage(data: any) {
           metadata: {},
         },
       });
-      await journeyExecutionService.processEvent('contact_created', {
+      await dispatchJourneyEvent('contact_created', {
         contactId: contact.id,
         channelId: contact.channelId,
       });
@@ -1282,7 +1281,7 @@ async function handleNewMessage(data: any) {
           },
         },
       });
-      await journeyExecutionService.processEvent('conversation_created', {
+      await dispatchJourneyEvent('conversation_created', {
         contactId: contact.id,
         channelId: channel.id,
         conversationId: conversation.id,
@@ -1488,7 +1487,7 @@ async function handleNewMessage(data: any) {
         },
       });
       if (!fromMe) {
-        await journeyExecutionService.processEvent('message_received', {
+        await dispatchJourneyEvent('message_received', {
           contactId: contact.id,
           channelId: channel.id,
           conversationId: conversation.id,
