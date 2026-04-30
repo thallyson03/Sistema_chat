@@ -32,7 +32,7 @@ interface AutomationConfig {
   [key: string]: any;
 }
 
-class PipelineAutomationService {
+export class PipelineAutomationService {
   private botService: BotService;
   private messageService: MessageService;
 
@@ -88,6 +88,15 @@ class PipelineAutomationService {
    * @param triggerType Tipo de trigger que disparou a automação
    */
   async handleStageEnter(dealId: string, stageId: string, isNewDeal: boolean = false, triggerType?: string) {
+    if (phase1Flags.pipelineAutomationQueueEnabled) {
+      const { pipelineAutomationQueue } = await import('../queues/pipelineAutomation.queue');
+      await pipelineAutomationQueue.enqueue(dealId, stageId, isNewDeal, triggerType);
+      return;
+    }
+    await this.handleStageEnterInline(dealId, stageId, isNewDeal, triggerType);
+  }
+
+  async handleStageEnterInline(dealId: string, stageId: string, isNewDeal: boolean = false, triggerType?: string) {
     console.log(`[PipelineAutomation] Processando automações para deal ${dealId} na etapa ${stageId} (novo: ${isNewDeal})`);
 
     // Buscar deal com informações necessárias
