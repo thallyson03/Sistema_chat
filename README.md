@@ -190,6 +190,18 @@ Contribuições são bem-vindas! Sinta-se à vontade para abrir issues e pull re
 
 MIT
 
+## 📈 Baseline de performance (Fase 0)
+
+- Guia completo: `docs/phase0-baseline.md`
+- Script de carga (k6): `scripts/load/phase0-conversations.js`
+
+Comandos:
+
+```bash
+npm run perf:phase0:quick
+npm run perf:phase0
+```
+
 
 
 

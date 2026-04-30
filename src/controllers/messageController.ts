@@ -2,6 +2,10 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { MessageService } from '../services/messageService';
 import { ConversationService } from '../services/conversationService';
+import { phase1Flags } from '../config/phase1Flags';
+import { messageSendQueue } from '../queues/messageSend.queue';
+import { idempotencyService } from '../services/idempotencyService';
+import crypto from 'crypto';
 
 const messageService = new MessageService();
 const conversationService = new ConversationService();
@@ -58,8 +62,7 @@ export class MessageController {
         mimetype,
       });
 
-      console.log('🚀 [MessageController] Chamando messageService.sendMessage...');
-      const message = await messageService.sendMessage({
+      const sendPayload = {
         conversationId,
         userId: req.user.id,
         content: content || caption || '',
@@ -68,7 +71,37 @@ export class MessageController {
         fileName,
         caption,
         mimetype, // Passar mimetype do arquivo para usar no envio
-      });
+      };
+
+      if (phase1Flags.messageQueueEnabled) {
+        const dedupeKey = crypto
+          .createHash('sha256')
+          .update(
+            JSON.stringify({
+              conversationId,
+              userId: req.user.id,
+              content: sendPayload.content,
+              type,
+              mediaUrl,
+              fileName,
+              caption,
+            }),
+          )
+          .digest('hex');
+
+        if (
+          phase1Flags.messageIdempotencyEnabled &&
+          !idempotencyService.register(`message:${dedupeKey}`, 60_000)
+        ) {
+          return res.status(202).json({ queued: true, deduped: true });
+        }
+
+        await messageSendQueue.enqueue(sendPayload, dedupeKey);
+        return res.status(202).json({ queued: true });
+      }
+
+      console.log('🚀 [MessageController] Chamando messageService.sendMessage...');
+      const message = await messageService.sendMessage(sendPayload);
 
       console.log('[MessageController] Mensagem criada com sucesso:', message.id);
       

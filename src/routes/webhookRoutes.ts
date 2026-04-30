@@ -8,6 +8,9 @@ import { SatisfactionSurveyService } from '../services/satisfactionSurveyService
 import { JourneyExecutionService } from '../services/journeyExecutionService';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { phase1Flags } from '../config/phase1Flags';
+import { webhookIngestQueue } from '../queues/webhookIngest.queue';
+import { idempotencyService } from '../services/idempotencyService';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -329,51 +332,28 @@ router.post('/whatsapp', webhookReceiveLimiter, async (req: Request, res: Respon
       console.warn('[WebhookWhatsApp] ⚠️ WHATSAPP_APP_SECRET não configurado. Assinatura não será validada.');
     }
 
-    // WhatsApp Official envia eventos em req.body.entry[]
-    const entries = req.body.entry || [];
-    
-    console.log(`[WhatsAppOfficial] 📦 Processando ${entries.length} entrada(s)`);
+    const dedupeKey = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(req.body))
+      .digest('hex');
 
-    if (entries.length === 0) {
-      console.warn('[WhatsAppOfficial] ⚠️ Nenhuma entrada encontrada no webhook');
+    if (
+      phase1Flags.webhookIdempotencyEnabled &&
+      !idempotencyService.register(`webhook:wa:${dedupeKey}`, 5 * 60_000)
+    ) {
+      return res.status(200).json({ received: true, deduped: true });
     }
 
-    for (const entry of entries) {
-      const changes = entry.changes || [];
-      console.log(`[WhatsAppOfficial] 📦 Processando ${changes.length} mudança(s) na entrada`);
-      
-      for (const change of changes) {
-        if (change.value) {
-          const value = change.value;
-          console.log('[WhatsAppOfficial] 🔍 Valor da mudança:', {
-            hasMessages: !!value.messages,
-            hasStatuses: !!value.statuses,
-            messageCount: value.messages?.length || 0,
-            statusCount: value.statuses?.length || 0,
-          });
-
-          // Processar mensagens recebidas
-          if (value.messages && Array.isArray(value.messages)) {
-            console.log(`[WhatsAppOfficial] 📩 Processando ${value.messages.length} mensagem(ns)`);
-            for (const message of value.messages) {
-              await handleWhatsAppOfficialMessage(message, value);
-            }
-          } else {
-            console.log('[WhatsAppOfficial] ℹ️ Nenhuma mensagem encontrada neste evento');
-          }
-
-          // Processar status de mensagens (delivered, read, etc.)
-          if (value.statuses && Array.isArray(value.statuses)) {
-            console.log(`[WhatsAppOfficial] 📊 Processando ${value.statuses.length} status`);
-            for (const status of value.statuses) {
-              await handleWhatsAppOfficialStatus(status);
-            }
-          }
-        } else {
-          console.warn('[WhatsAppOfficial] ⚠️ Mudança sem valor:', change);
-        }
-      }
+    if (phase1Flags.webhookQueueEnabled) {
+      await webhookIngestQueue.enqueue({
+        provider: 'whatsapp_official',
+        payload: req.body,
+        dedupeKey,
+      });
+      return res.status(200).json({ received: true, queued: true });
     }
+
+    await processWhatsAppOfficialWebhookPayload(req.body);
 
     // WhatsApp Official requer resposta 200 para confirmar recebimento
     console.log('[WhatsAppOfficial] ✅ Webhook processado com sucesso');
@@ -967,55 +947,28 @@ router.post('/evolution', webhookReceiveLimiter, async (req: Request, res: Respo
     }
     console.log('📨 ============================================');
 
-    // Evolution API pode enviar eventos de diferentes formas
-    // Verificar múltiplos formatos possíveis
-    const eventType = event.event || 
-                     event.eventName || 
-                     event.eventType ||
-                     event.data?.event ||
-                     event.data?.eventName ||
-                     event.data?.eventType ||
-                     (event.eventName ? event.eventName : null);
+    const dedupeKey = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(event))
+      .digest('hex');
 
-    // A instância pode estar no root do evento OU dentro de data
-    const instanceName = event.instance || event.data?.instance || event.instanceName || event.data?.instanceName;
-    
-    const eventData = event.data || event;
-    
-    // Adicionar instanceName ao eventData se não estiver presente
-    if (instanceName && !eventData.instance && !eventData.instanceName) {
-      eventData.instance = instanceName;
-      eventData.instanceName = instanceName;
+    if (
+      phase1Flags.webhookIdempotencyEnabled &&
+      !idempotencyService.register(`webhook:evolution:${dedupeKey}`, 5 * 60_000)
+    ) {
+      return res.status(200).json({ received: true, deduped: true });
     }
 
-    console.log('📨 Event Type detectado:', eventType);
-    console.log('📨 Instance Name:', instanceName);
-    console.log('📨 Event Data keys:', Object.keys(eventData));
-
-    // Processar diferentes tipos de eventos
-    // Evolution API pode enviar: MESSAGES_UPSERT, messages.upsert, etc.
-    const normalizedEventType = (eventType || '').toLowerCase();
-    
-    if (normalizedEventType.includes('message') && normalizedEventType.includes('upsert')) {
-      console.log('📨 Processando como MESSAGES_UPSERT');
-      await handleNewMessage(eventData);
-    } else if (normalizedEventType.includes('connection') && normalizedEventType.includes('update')) {
-      console.log('📨 Processando como CONNECTION_UPDATE');
-      await handleConnectionUpdate(eventData);
-    } else if (normalizedEventType.includes('qrcode')) {
-      console.log('📨 Processando como QRCODE_UPDATED');
-      await handleQRCodeUpdate(eventData);
-    } else {
-      // Tentar processar como mensagem se tiver estrutura de mensagem
-      console.log('📨 Tentando detectar tipo de evento automaticamente...');
-      if (eventData.messages || event.messages || eventData.message || event.message) {
-        console.log('📨 Estrutura de mensagem detectada, processando como mensagem');
-        await handleNewMessage(eventData);
-      } else {
-        console.log('⚠️ Tipo de evento não reconhecido:', eventType);
-        console.log('⚠️ Estrutura do evento:', JSON.stringify(event, null, 2).substring(0, 500));
-      }
+    if (phase1Flags.webhookQueueEnabled) {
+      await webhookIngestQueue.enqueue({
+        provider: 'evolution',
+        payload: event,
+        dedupeKey,
+      });
+      return res.status(200).json({ received: true, queued: true });
     }
+
+    await processEvolutionWebhookPayload(event);
 
     res.status(200).json({ received: true });
   } catch (error: any) {
@@ -1758,21 +1711,7 @@ router.post('/webhook', webhookReceiveLimiter, async (req: Request, res: Respons
     console.log('📨 Webhook recebido (rota alternativa /webhook)');
     console.log('📨 Event:', event.event || event.eventName);
     
-    // Processar diferentes tipos de eventos (mesma lógica do /evolution)
-    const eventType = event.event || event.eventName || event.data?.event;
-    const eventData = event.data || event;
-
-    if (eventType === 'messages.upsert' || event.event === 'messages.upsert') {
-      await handleNewMessage(eventData);
-    } else if (eventType === 'connection.update' || event.event === 'connection.update') {
-      await handleConnectionUpdate(eventData);
-    } else if (eventType === 'qrcode.updated' || event.event === 'qrcode.updated') {
-      await handleQRCodeUpdate(eventData);
-    } else {
-      if (eventData.messages || event.messages) {
-        await handleNewMessage(eventData);
-      }
-    }
+    await processEvolutionWebhookPayload(event);
 
     res.status(200).json({ received: true });
   } catch (error: any) {
@@ -1782,3 +1721,94 @@ router.post('/webhook', webhookReceiveLimiter, async (req: Request, res: Respons
 });
 
 export default router;
+
+export async function processWhatsAppOfficialWebhookPayload(payload: any): Promise<void> {
+  const entries = payload?.entry || [];
+
+  console.log(`[WhatsAppOfficial] 📦 Processando ${entries.length} entrada(s)`);
+
+  if (entries.length === 0) {
+    console.warn('[WhatsAppOfficial] ⚠️ Nenhuma entrada encontrada no webhook');
+  }
+
+  for (const entry of entries) {
+    const changes = entry.changes || [];
+    console.log(`[WhatsAppOfficial] 📦 Processando ${changes.length} mudança(s) na entrada`);
+
+    for (const change of changes) {
+      if (change.value) {
+        const value = change.value;
+        console.log('[WhatsAppOfficial] 🔍 Valor da mudança:', {
+          hasMessages: !!value.messages,
+          hasStatuses: !!value.statuses,
+          messageCount: value.messages?.length || 0,
+          statusCount: value.statuses?.length || 0,
+        });
+
+        if (value.messages && Array.isArray(value.messages)) {
+          console.log(`[WhatsAppOfficial] 📩 Processando ${value.messages.length} mensagem(ns)`);
+          for (const message of value.messages) {
+            await handleWhatsAppOfficialMessage(message, value);
+          }
+        } else {
+          console.log('[WhatsAppOfficial] ℹ️ Nenhuma mensagem encontrada neste evento');
+        }
+
+        if (value.statuses && Array.isArray(value.statuses)) {
+          console.log(`[WhatsAppOfficial] 📊 Processando ${value.statuses.length} status`);
+          for (const status of value.statuses) {
+            await handleWhatsAppOfficialStatus(status);
+          }
+        }
+      } else {
+        console.warn('[WhatsAppOfficial] ⚠️ Mudança sem valor:', change);
+      }
+    }
+  }
+}
+
+export async function processEvolutionWebhookPayload(event: any): Promise<void> {
+  const eventType =
+    event.event ||
+    event.eventName ||
+    event.eventType ||
+    event.data?.event ||
+    event.data?.eventName ||
+    event.data?.eventType ||
+    (event.eventName ? event.eventName : null);
+
+  const instanceName =
+    event.instance || event.data?.instance || event.instanceName || event.data?.instanceName;
+  const eventData = event.data || event;
+
+  if (instanceName && !eventData.instance && !eventData.instanceName) {
+    eventData.instance = instanceName;
+    eventData.instanceName = instanceName;
+  }
+
+  console.log('📨 Event Type detectado:', eventType);
+  console.log('📨 Instance Name:', instanceName);
+  console.log('📨 Event Data keys:', Object.keys(eventData));
+
+  const normalizedEventType = (eventType || '').toLowerCase();
+
+  if (normalizedEventType.includes('message') && normalizedEventType.includes('upsert')) {
+    console.log('📨 Processando como MESSAGES_UPSERT');
+    await handleNewMessage(eventData);
+  } else if (normalizedEventType.includes('connection') && normalizedEventType.includes('update')) {
+    console.log('📨 Processando como CONNECTION_UPDATE');
+    await handleConnectionUpdate(eventData);
+  } else if (normalizedEventType.includes('qrcode')) {
+    console.log('📨 Processando como QRCODE_UPDATED');
+    await handleQRCodeUpdate(eventData);
+  } else {
+    console.log('📨 Tentando detectar tipo de evento automaticamente...');
+    if (eventData.messages || event.messages || eventData.message || event.message) {
+      console.log('📨 Estrutura de mensagem detectada, processando como mensagem');
+      await handleNewMessage(eventData);
+    } else {
+      console.log('⚠️ Tipo de evento não reconhecido:', eventType);
+      console.log('⚠️ Estrutura do evento:', JSON.stringify(event, null, 2).substring(0, 500));
+    }
+  }
+}

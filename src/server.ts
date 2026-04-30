@@ -44,6 +44,12 @@ import { pipelineAutomationService } from './services/pipelineAutomationService'
 import { runMediaPersistJobTick } from './services/mediaPersistJob';
 import { runMediaConversionWorkerTick } from './services/mediaConversionWorker';
 import { ConversationDistributionService } from './services/conversationDistributionService';
+import { webhookIngestQueue } from './queues/webhookIngest.queue';
+import {
+  processWhatsAppOfficialWebhookPayload,
+  processEvolutionWebhookPayload,
+} from './routes/webhookRoutes';
+import { phase1Flags } from './config/phase1Flags';
 whatsappOfficial.init();
 
 const app = express();
@@ -175,6 +181,15 @@ io.on('connection', (socket) => {
 setSocketIO(io);
 setMessageSocketIO(io);
 setMessageServiceSocketIO(io);
+webhookIngestQueue.registerHandlers({
+  processWhatsAppOfficial: processWhatsAppOfficialWebhookPayload,
+  processEvolution: processEvolutionWebhookPayload,
+});
+logger.info('phase1 queue mode', {
+  useBullMQ: phase1Flags.useBullMQ,
+  webhookQueueEnabled: phase1Flags.webhookQueueEnabled,
+  messageQueueEnabled: phase1Flags.messageQueueEnabled,
+});
 
 // Rotas da API
 app.use('/api/auth', authRoutes);
