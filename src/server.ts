@@ -189,6 +189,7 @@ logger.info('phase1 queue mode', {
   useBullMQ: phase1Flags.useBullMQ,
   webhookQueueEnabled: phase1Flags.webhookQueueEnabled,
   messageQueueEnabled: phase1Flags.messageQueueEnabled,
+  botQueueEnabled: phase1Flags.botQueueEnabled,
 });
 
 // Rotas da API

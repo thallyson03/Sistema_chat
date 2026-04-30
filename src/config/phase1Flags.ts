@@ -7,6 +7,7 @@ function asBool(value: string | undefined, fallback = false): boolean {
 export const phase1Flags = {
   webhookQueueEnabled: asBool(process.env.WEBHOOK_QUEUE_ENABLED, false),
   messageQueueEnabled: asBool(process.env.MESSAGE_QUEUE_ENABLED, false),
+  botQueueEnabled: asBool(process.env.BOT_QUEUE_ENABLED, false),
   webhookIdempotencyEnabled: asBool(process.env.WEBHOOK_IDEMPOTENCY_ENABLED, true),
   messageIdempotencyEnabled: asBool(process.env.MESSAGE_IDEMPOTENCY_ENABLED, true),
   useBullMQ: asBool(process.env.USE_BULLMQ, false),

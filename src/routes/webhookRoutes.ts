@@ -11,6 +11,7 @@ import rateLimit from 'express-rate-limit';
 import { phase1Flags } from '../config/phase1Flags';
 import { webhookIngestQueue } from '../queues/webhookIngest.queue';
 import { idempotencyService } from '../services/idempotencyService';
+import { botProcessQueue } from '../queues/botProcess.queue';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -801,12 +802,21 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
           }
         }
 
-        await botService.processMessage(normalizedInput, conversation.id, {
-          messageType,
-          mediaUrl,
-          mediaId,
-          provider: 'whatsapp_official',
-        });
+        if (phase1Flags.botQueueEnabled) {
+          await botProcessQueue.enqueue(normalizedInput, conversation.id, {
+            messageType,
+            mediaUrl,
+            mediaId,
+            provider: 'whatsapp_official',
+          });
+        } else {
+          await botService.processMessage(normalizedInput, conversation.id, {
+            messageType,
+            mediaUrl,
+            mediaId,
+            provider: 'whatsapp_official',
+          });
+        }
       } catch (botError: any) {
         console.error('[WhatsAppOfficial] ❌ Erro ao processar com bot:', botError);
       }
@@ -1511,13 +1521,20 @@ async function handleNewMessage(data: any) {
             }
           }
 
-          const botResult = await botService.processMessage(messageContent, conversation.id, {
-            messageType,
-            provider: 'evolution',
-          });
-          if (botResult) {
-            console.log('🤖 [handleNewMessage] Bot processou mensagem:', botResult);
-            // Se o bot respondeu, não precisa emitir para n8n (ou pode emitir também)
+          if (phase1Flags.botQueueEnabled) {
+            await botProcessQueue.enqueue(messageContent, conversation.id, {
+              messageType,
+              provider: 'evolution',
+            });
+          } else {
+            const botResult = await botService.processMessage(messageContent, conversation.id, {
+              messageType,
+              provider: 'evolution',
+            });
+            if (botResult) {
+              console.log('🤖 [handleNewMessage] Bot processou mensagem:', botResult);
+              // Se o bot respondeu, não precisa emitir para n8n (ou pode emitir também)
+            }
           }
         } catch (botError: any) {
           console.error('❌ [handleNewMessage] Erro ao processar com bot:', botError.message);

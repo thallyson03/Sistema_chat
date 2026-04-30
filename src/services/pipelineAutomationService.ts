@@ -2,6 +2,8 @@ import prisma from '../config/database';
 import { PipelineAutomationType, MessageType } from '@prisma/client';
 import { BotService } from './botService';
 import { MessageService } from './messageService';
+import { phase1Flags } from '../config/phase1Flags';
+import { botProcessQueue } from '../queues/botProcess.queue';
 
 interface AutomationConfig {
   botId?: string;
@@ -379,10 +381,17 @@ class PipelineAutomationService {
     // Isso garante que ações de automação (ex: mover lead no pipeline) rodem
     // mesmo quando o contato ainda não iniciou conversa.
     try {
-      await this.botService.processMessage('', conversationId, {
-        messageType: 'text',
-        source: 'pipeline_automation',
-      } as any);
+      if (phase1Flags.botQueueEnabled) {
+        await botProcessQueue.enqueue('', conversationId, {
+          messageType: 'text',
+          source: 'pipeline_automation',
+        } as any);
+      } else {
+        await this.botService.processMessage('', conversationId, {
+          messageType: 'text',
+          source: 'pipeline_automation',
+        } as any);
+      }
       console.log(
         `[PipelineAutomation] Execução automática do bot disparada para deal ${deal.id} (conversation ${conversationId})`,
       );
