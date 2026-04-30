@@ -836,10 +836,10 @@ export class MessageService {
       status: message.status,
     });
 
-    // Para mensagens disparadas pelo bot/automação, emitir evento em tempo real aqui.
-    // Esses envios não passam pelo MessageController, então sem este emit a UI pode
-    // demorar para refletir a bolha mesmo com entrega imediata ao destinatário.
-    if (io && data.fromBot) {
+    // Emitir evento em tempo real para qualquer mensagem persistida.
+    // Isso cobre o fluxo síncrono e também o assíncrono (fila/BullMQ), onde
+    // o MessageController retorna 202 e não possui o messageId imediatamente.
+    if (io) {
       try {
         io.to(`conversation_${data.conversationId}`).emit('new_message', {
           conversationId: data.conversationId,
