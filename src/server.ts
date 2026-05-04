@@ -28,6 +28,7 @@ import campaignRoutes from './routes/campaignRoutes';
 import journeyRoutes from './routes/journeyRoutes';
 import whatsappTemplateRoutes from './routes/whatsappTemplateRoutes';
 import contactListRoutes from './routes/contactListRoutes';
+import opsRoutes from './routes/opsRoutes';
 import { setSocketIO as setMessageSocketIO } from './controllers/messageController';
 import { setMessageServiceSocketIO } from './services/messageService';
 import { logger } from './utils/logger';
@@ -213,6 +214,7 @@ app.use('/api/contact-lists', contactListRoutes); // Rotas de listas de contatos
 app.use('/api/campaigns', campaignRoutes); // Rotas de campanhas
 app.use('/api/journeys', journeyRoutes); // Rotas de jornadas / automações
 app.use('/api/whatsapp/templates', whatsappTemplateRoutes); // Gestão de templates WhatsApp Official
+app.use('/api/ops', opsRoutes);
 app.use('/api/webhooks', webhookRoutes);
 // Rota alternativa para compatibilidade com webhooks antigos
 app.use('/webhooks', webhookRoutes);

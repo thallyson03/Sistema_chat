@@ -1,5 +1,6 @@
 import { JobsOptions, Queue, Worker } from 'bullmq';
 import { phase1Flags } from '../config/phase1Flags';
+import { queueMetricsService } from '../services/queueMetricsService';
 import { getBullRedisConnection } from './redisConnection';
 
 type WebhookProvider = 'whatsapp_official' | 'evolution';
@@ -48,7 +49,17 @@ class WebhookIngestQueue {
       { connection },
     );
 
+    this.worker.on('completed', () => {
+      queueMetricsService.incrementProcessed(this.queueName);
+    });
+
     this.worker.on('failed', (job, error) => {
+      queueMetricsService.incrementFailed(this.queueName);
+      const maxAttempts = Number(job?.opts?.attempts || this.maxAttempts);
+      const attemptsMade = Number(job?.attemptsMade || 0);
+      if (attemptsMade < maxAttempts) {
+        queueMetricsService.incrementRetried(this.queueName);
+      }
       console.error('[WebhookIngestQueue] BullMQ job falhou:', {
         jobId: job?.id,
         dedupeKey: job?.data?.dedupeKey,
@@ -66,6 +77,7 @@ class WebhookIngestQueue {
 
   async enqueue(job: Omit<WebhookIngestJob, 'attempt'>): Promise<void> {
     this.initializeBullIfNeeded();
+    queueMetricsService.incrementEnqueued(this.queueName);
 
     if (phase1Flags.useBullMQ && this.queue) {
       const options: JobsOptions = {
@@ -114,7 +126,9 @@ class WebhookIngestQueue {
       } else {
         await this.handlers.processEvolution(job.payload);
       }
+      queueMetricsService.incrementProcessed(this.queueName);
     } catch (error: any) {
+      queueMetricsService.incrementFailed(this.queueName);
       if (job.attempt + 1 >= this.maxAttempts) {
         console.error('[WebhookIngestQueue] job falhou após tentativas máximas:', {
           provider: job.provider,
@@ -126,11 +140,26 @@ class WebhookIngestQueue {
 
       const nextAttempt = job.attempt + 1;
       const delayMs = Math.min(30_000, 500 * 2 ** nextAttempt);
+      queueMetricsService.incrementRetried(this.queueName);
       setTimeout(() => {
         this.jobs.push({ ...job, attempt: nextAttempt });
         this.kick();
       }, delayMs);
     }
+  }
+
+  async getStats(): Promise<Record<string, any>> {
+    const base = {
+      mode: phase1Flags.useBullMQ ? 'bullmq' : 'memory',
+      inMemoryPending: this.jobs.length,
+    };
+
+    if (phase1Flags.useBullMQ && this.queue) {
+      const counts = await this.queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
+      return { ...base, bullmq: counts };
+    }
+
+    return base;
   }
 }
 

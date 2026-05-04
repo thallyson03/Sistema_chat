@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { phase1Flags } from '../config/phase1Flags';
 import { BotService } from '../services/botService';
 import { idempotencyService } from '../services/idempotencyService';
+import { queueMetricsService } from '../services/queueMetricsService';
 import { getBullRedisConnection } from './redisConnection';
 
 type BotProcessJob = {
@@ -36,7 +37,17 @@ class BotProcessQueue {
       { connection },
     );
 
+    this.worker.on('completed', () => {
+      queueMetricsService.incrementProcessed(this.queueName);
+    });
+
     this.worker.on('failed', (job, error) => {
+      queueMetricsService.incrementFailed(this.queueName);
+      const maxAttempts = Number(job?.opts?.attempts || this.maxAttempts);
+      const attemptsMade = Number(job?.attemptsMade || 0);
+      if (attemptsMade < maxAttempts) {
+        queueMetricsService.incrementRetried(this.queueName);
+      }
       console.error('[BotProcessQueue] BullMQ job falhou:', {
         jobId: job?.id,
         dedupeKey: job?.data?.dedupeKey,
@@ -63,6 +74,7 @@ class BotProcessQueue {
 
     const job: BotProcessJob = { messageContent, conversationId, inputMeta, dedupeKey };
     this.initializeBullIfNeeded();
+    queueMetricsService.incrementEnqueued(this.queueName);
 
     if (phase1Flags.useBullMQ && this.queue) {
       const options: JobsOptions = {
@@ -93,7 +105,9 @@ class BotProcessQueue {
         const job = this.jobs.shift()!;
         try {
           await this.botService.processMessage(job.messageContent, job.conversationId, job.inputMeta);
+          queueMetricsService.incrementProcessed(this.queueName);
         } catch (error: any) {
+          queueMetricsService.incrementFailed(this.queueName);
           console.error('[BotProcessQueue] job em memória falhou:', error?.message || error);
         }
       }
@@ -101,6 +115,20 @@ class BotProcessQueue {
       this.processing = false;
       if (this.jobs.length > 0) this.kick();
     }
+  }
+
+  async getStats(): Promise<Record<string, any>> {
+    const base = {
+      mode: phase1Flags.useBullMQ ? 'bullmq' : 'memory',
+      inMemoryPending: this.jobs.length,
+    };
+
+    if (phase1Flags.useBullMQ && this.queue) {
+      const counts = await this.queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
+      return { ...base, bullmq: counts };
+    }
+
+    return base;
   }
 }
 
