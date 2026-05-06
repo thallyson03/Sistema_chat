@@ -580,10 +580,9 @@ export class MessageService {
               // Converter áudio local para base64 antes de enviar para Evolution (solução solicitada)
               let audioMedia = fullMediaUrl;
               try {
-                // IMPORTANTE: Sempre converter arquivos locais para base64
-                // Isso garante que o WhatsApp hospede o áudio e ele nunca "some"
-                // Detectar se é um arquivo local servido pelo próprio backend
-                // Verificar se a URL contém /api/media/file/ (indicando arquivo local)
+                // IMPORTANTE: Sempre converter o áudio para base64.
+                // Prioriza leitura local (quando existir), mas faz fallback para download HTTP
+                // (object storage / URL pública) para não depender de uploads/ em produção.
                 const isLocalFile = fullMediaUrl.includes('/api/media/file/');
 
                 console.log('🔍 [MessageService] Verificando se é arquivo local para conversão base64:', {
@@ -635,24 +634,37 @@ export class MessageService {
                         base64Preview: base64.substring(0, 50) + '...',
                       });
                     } else {
-                      console.warn('⚠️ [MessageService] Arquivo de áudio não encontrado para conversão base64:', {
+                      console.warn('⚠️ [MessageService] Arquivo local ausente, usando fallback HTTP para base64:', {
                         filePath,
                         uploadDir,
                         dirExists: fs.existsSync(uploadDir),
                       });
-                      throw new Error(`Arquivo de áudio não encontrado: ${filePath}`);
+                      const response = await axios.get(fullMediaUrl, {
+                        responseType: 'arraybuffer',
+                        timeout: 25000,
+                      });
+                      const buffer = Buffer.from(response.data);
+                      audioMedia = buffer.toString('base64');
                     }
                   } else {
                     console.warn('⚠️ [MessageService] Não foi possível extrair o nome do arquivo de áudio para base64 a partir da URL:', {
                       fullMediaUrl,
                     });
-                    throw new Error(`Não foi possível extrair o nome do arquivo da URL: ${fullMediaUrl}`);
+                    const response = await axios.get(fullMediaUrl, {
+                      responseType: 'arraybuffer',
+                      timeout: 25000,
+                    });
+                    const buffer = Buffer.from(response.data);
+                    audioMedia = buffer.toString('base64');
                   }
                 } else {
-                  // Se não for arquivo local, não podemos converter para base64
-                  // Isso não deveria acontecer para áudios, pois sempre devem ser locais
-                  console.error('❌ [MessageService] Áudio não é arquivo local! URL:', fullMediaUrl);
-                  throw new Error('Áudio deve ser um arquivo local para conversão em base64. URLs externas não são suportadas.');
+                  console.log('ℹ️ [MessageService] Áudio remoto detectado, convertendo via download HTTP para base64.');
+                  const response = await axios.get(fullMediaUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 25000,
+                  });
+                  const buffer = Buffer.from(response.data);
+                  audioMedia = buffer.toString('base64');
                 }
               } catch (base64Error: any) {
                 console.error('❌ [MessageService] Erro ao converter áudio local para base64:', {

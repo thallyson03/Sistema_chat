@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import rateLimit from 'express-rate-limit';
 import { authenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
@@ -94,6 +95,11 @@ function getMediaObjectKey(filename: string): string {
 
 function getPublicMediaUrlForFilename(filename: string): string {
   return objectStorageService.buildPublicUrl(getMediaObjectKey(filename));
+}
+
+function isLocalMediaFallbackEnabled(): boolean {
+  const raw = String(process.env.MEDIA_LOCAL_FALLBACK_ENABLED || 'false').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 }
 
 // Rota para upload de arquivos
@@ -206,6 +212,17 @@ router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('fil
           objectKey,
           url: uploadedUrl,
         });
+        if (!isLocalMediaFallbackEnabled()) {
+          try {
+            fs.unlinkSync(finalFilePath);
+            console.log('[Media] 🧹 Arquivo local removido (storage consolidado):', finalFilename);
+          } catch (removeErr: any) {
+            console.warn('[Media] ⚠️ Falha ao remover arquivo local após upload:', {
+              filename: finalFilename,
+              error: removeErr?.message || removeErr,
+            });
+          }
+        }
       } catch (storageError: any) {
         console.error('[Media] ❌ Falha ao enviar arquivo para object storage, mantendo URL local:', {
           error: storageError?.message || storageError,
@@ -318,25 +335,69 @@ router.get('/download/:messageId', async (req: Request, res: Response) => {
     const metadata = message.metadata as any;
     const mediaUrl = metadata?.mediaUrl as string | undefined;
 
-    if (!mediaUrl || !mediaUrl.startsWith('/api/media/file/')) {
-      // Se não for arquivo local, usar fluxo padrão
+    if (!mediaUrl) {
+      return res.status(404).json({ error: 'Mídia não encontrada para a mensagem' });
+    }
+
+    const tempFilesToCleanup: string[] = [];
+    let oggPath: string;
+    let mp3Path: string;
+    let mp3Filename: string;
+    let shouldCleanupMp3AfterSend = false;
+
+    if (mediaUrl.startsWith('/api/media/file/')) {
+      const originalFilename = mediaUrl.replace('/api/media/file/', '').split('?')[0];
+      if (!isSafeFilename(originalFilename)) {
+        return res.status(400).json({ error: 'Nome de arquivo inválido' });
+      }
+
+      const localPath = path.resolve(uploadDir, originalFilename);
+      if (!fs.existsSync(localPath)) {
+        console.warn('[MediaDownload] ⚠️ Arquivo local ausente para download MP3; usando fallback HTTP.');
+        const fallbackUrl =
+          typeof metadata?.mediaMetadata?.originalUrl === 'string'
+            ? metadata.mediaMetadata.originalUrl
+            : typeof mediaUrl === 'string' && /^https?:\/\//i.test(mediaUrl)
+              ? mediaUrl
+              : null;
+        if (!fallbackUrl) {
+          return res.status(404).json({ error: 'Arquivo de áudio não encontrado' });
+        }
+        const response = await axios.get(fallbackUrl, {
+          responseType: 'arraybuffer',
+          timeout: 30000,
+        });
+        const tempOggPath = path.join(os.tmpdir(), `audio-${messageId}-${Date.now()}.ogg`);
+        fs.writeFileSync(tempOggPath, Buffer.from(response.data));
+        tempFilesToCleanup.push(tempOggPath);
+        oggPath = tempOggPath;
+      } else {
+        oggPath = localPath;
+      }
+
+      const baseName = originalFilename.replace(/\.(ogg|webm|mp3)$/i, '');
+      mp3Filename = `${baseName}.mp3`;
+      mp3Path = path.resolve(uploadDir, mp3Filename);
+      if (!fs.existsSync(path.dirname(mp3Path))) {
+        fs.mkdirSync(path.dirname(mp3Path), { recursive: true });
+      }
+    } else if (/^https?:\/\//i.test(mediaUrl)) {
+      const tempBase = path.join(os.tmpdir(), `audio-${messageId}-${Date.now()}`);
+      const tempOggPath = `${tempBase}.ogg`;
+      const tempMp3Path = `${tempBase}.mp3`;
+      const response = await axios.get(mediaUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+      });
+      fs.writeFileSync(tempOggPath, Buffer.from(response.data));
+      tempFilesToCleanup.push(tempOggPath, tempMp3Path);
+      oggPath = tempOggPath;
+      mp3Path = tempMp3Path;
+      mp3Filename = `${messageId}.mp3`;
+      shouldCleanupMp3AfterSend = true;
+    } else {
       return res.redirect(`/api/media/${messageId}`);
     }
-
-    const originalFilename = mediaUrl.replace('/api/media/file/', '');
-    if (!isSafeFilename(originalFilename)) {
-      return res.status(400).json({ error: 'Nome de arquivo inválido' });
-    }
-
-    const oggPath = path.resolve(uploadDir, originalFilename);
-    if (!fs.existsSync(oggPath)) {
-      console.error('[MediaDownload] ❌ Arquivo OGG original não encontrado para conversão MP3:', oggPath);
-      return res.status(404).json({ error: 'Arquivo de áudio não encontrado' });
-    }
-
-    const baseName = originalFilename.replace(/\.(ogg|webm|mp3)$/i, '');
-    const mp3Filename = `${baseName}.mp3`;
-    const mp3Path = path.resolve(uploadDir, mp3Filename);
 
     try {
       if (!fs.existsSync(mp3Path)) {
@@ -355,10 +416,26 @@ router.get('/download/:messageId', async (req: Request, res: Response) => {
       res.setHeader('Content-Length', stats.size.toString());
       res.setHeader('Cache-Control', 'public, max-age=31536000');
       res.setHeader('Access-Control-Allow-Origin', '*');
-
-      return res.sendFile(mp3Path);
+      return res.sendFile(mp3Path, (sendErr) => {
+        if (sendErr) return;
+        if (shouldCleanupMp3AfterSend) {
+          try {
+            if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path);
+          } catch (_) {}
+        }
+        for (const tempFile of tempFilesToCleanup) {
+          try {
+            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+          } catch (_) {}
+        }
+      });
     } catch (error: any) {
       console.error('[MediaDownload] ❌ Erro ao converter/servir MP3:', error.message);
+      for (const tempFile of tempFilesToCleanup) {
+        try {
+          if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+        } catch (_) {}
+      }
       return res.status(500).json({ error: 'Erro ao converter áudio para MP3' });
     }
   } catch (error: any) {
@@ -760,11 +837,10 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           const filename = `${messageId}-${Date.now()}${safeExt}`;
           const filePath = path.join(uploadDir, filename);
 
-          fs.writeFileSync(filePath, buffer);
-
           let persistedMediaUrl = `/api/media/file/${filename}`;
           let storageKey: string | null = null;
-          if (objectStorageService.isEnabled()) {
+          const canUseObjectStorage = objectStorageService.isEnabled();
+          if (canUseObjectStorage) {
             try {
               storageKey = getMediaObjectKey(filename);
               persistedMediaUrl = await objectStorageService.uploadBuffer({
@@ -782,8 +858,13 @@ router.get('/:messageId', async (req: Request, res: Response) => {
             }
           }
 
-          console.log('[Media] 💾 Mídia oficial salva em cache local:', {
+          if (!canUseObjectStorage || isLocalMediaFallbackEnabled()) {
+            fs.writeFileSync(filePath, buffer);
+          }
+
+          console.log('[Media] 💾 Persistência de mídia oficial concluída:', {
             filename,
+            localCached: !canUseObjectStorage || isLocalMediaFallbackEnabled(),
             filePath,
             size: buffer.length,
             contentType,
@@ -1163,11 +1244,10 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         const filename = `${messageId}-${Date.now()}${safeExt}`;
         const filePath = path.join(uploadDir, filename);
 
-        fs.writeFileSync(filePath, buffer);
-
         let persistedMediaUrl = `/api/media/file/${filename}`;
         let storageKey: string | null = null;
-        if (objectStorageService.isEnabled()) {
+        const canUseObjectStorage = objectStorageService.isEnabled();
+        if (canUseObjectStorage) {
           try {
             storageKey = getMediaObjectKey(filename);
             persistedMediaUrl = await objectStorageService.uploadBuffer({
@@ -1183,6 +1263,10 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           } catch (storageError: any) {
             console.error('[Media] ❌ Erro ao persistir mídia Evolution no object storage:', storageError?.message || storageError);
           }
+        }
+
+        if (!canUseObjectStorage || isLocalMediaFallbackEnabled()) {
+          fs.writeFileSync(filePath, buffer);
         }
 
         const newMetadata: any = {
@@ -1202,7 +1286,11 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           data: { metadata: newMetadata },
         });
 
-        console.log('[Media] 💾 Mídia Evolution salva em cache local:', { messageId, filename });
+        console.log('[Media] 💾 Persistência de mídia Evolution concluída:', {
+          messageId,
+          filename,
+          localCached: !canUseObjectStorage || isLocalMediaFallbackEnabled(),
+        });
       } catch (evoCacheErr: any) {
         console.error('[Media] ❌ Erro ao salvar cache local (Evolution):', evoCacheErr.message);
       }

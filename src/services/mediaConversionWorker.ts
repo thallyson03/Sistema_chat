@@ -14,6 +14,11 @@ export async function runMediaConversionWorkerTick(): Promise<void> {
   if (process.env.MEDIA_CONVERSION_WORKER_ENABLED === 'false') {
     return;
   }
+  const localFallbackEnabled =
+    String(process.env.MEDIA_LOCAL_FALLBACK_ENABLED || 'false').trim().toLowerCase() === 'true';
+  if (!localFallbackEnabled) {
+    return;
+  }
 
   const batchSize = Math.min(
     20,
