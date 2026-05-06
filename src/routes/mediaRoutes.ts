@@ -372,6 +372,13 @@ router.get('/download/:messageId', async (req: Request, res: Response) => {
     const metadata = message.metadata as any;
     const mediaUrl = metadata?.mediaUrl as string | undefined;
 
+    if (!mediaUrl && metadata?.mediaDeletedAt) {
+      return res.status(410).json({
+        error: 'Mídia removida pela política de retenção',
+        mediaDeletedAt: metadata.mediaDeletedAt,
+      });
+    }
+
     if (!mediaUrl) {
       return res.status(404).json({ error: 'Mídia não encontrada para a mensagem' });
     }
@@ -531,6 +538,12 @@ router.get('/:messageId', async (req: Request, res: Response) => {
     console.log('[Media] ============================================');
 
     if (!mediaUrl) {
+      if (metadata?.mediaDeletedAt) {
+        return res.status(410).json({
+          error: 'Mídia removida pela política de retenção',
+          mediaDeletedAt: metadata.mediaDeletedAt,
+        });
+      }
       console.error('[Media] ❌ URL de mídia não encontrada no metadata:', JSON.stringify(metadata, null, 2));
       return res.status(404).json({ error: 'URL de mídia não encontrada' });
     }

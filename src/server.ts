@@ -45,6 +45,7 @@ import { WebhookService } from './services/webhookService';
 import { pipelineAutomationService } from './services/pipelineAutomationService';
 import { runMediaPersistJobTick } from './services/mediaPersistJob';
 import { runMediaConversionWorkerTick } from './services/mediaConversionWorker';
+import { runMediaRetentionJobTick } from './services/mediaRetentionJob';
 import { ConversationDistributionService } from './services/conversationDistributionService';
 import { webhookIngestQueue } from './queues/webhookIngest.queue';
 import {
@@ -437,5 +438,38 @@ httpServer.listen(PORT, () => {
         },
       );
     }, 10_000);
+  }
+
+  // Job em background: retenção de mídia (storage-first), com dry-run opcional.
+  if (process.env.MEDIA_RETENTION_ENABLED === 'true') {
+    const mediaRetentionJobMs = Math.max(
+      60_000,
+      Number(process.env.MEDIA_RETENTION_INTERVAL_MS) || 60 * 60 * 1000,
+    );
+    logger.info('media retention scheduler configured', {
+      intervalSeconds: mediaRetentionJobMs / 1000,
+      dryRun: String(process.env.MEDIA_RETENTION_DRY_RUN || 'true').trim().toLowerCase() !== 'false',
+      retentionDays: Math.max(1, Number(process.env.MEDIA_RETENTION_DAYS) || 120),
+    });
+
+    setInterval(() => {
+      void distributedLockService.runWithPgAdvisoryLock(
+        91005,
+        'media-retention-job',
+        async () => {
+          await runMediaRetentionJobTick();
+        },
+      );
+    }, mediaRetentionJobMs);
+
+    setTimeout(() => {
+      void distributedLockService.runWithPgAdvisoryLock(
+        91005,
+        'media-retention-job-first-run',
+        async () => {
+          await runMediaRetentionJobTick();
+        },
+      );
+    }, 25_000);
   }
 });
