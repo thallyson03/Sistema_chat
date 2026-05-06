@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import rateLimit, { Options } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import type { Request } from 'express';
 
 function asInt(value: string | undefined, fallback: number): number {
@@ -19,18 +19,12 @@ function requestIdentity(req: Request): string {
   return req.ip || 'unknown-ip';
 }
 
-function buildLimiter(opts: Options) {
-  return rateLimit({
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: requestIdentity,
-    ...opts,
-  });
-}
-
 const defaultWindowMs = asInt(process.env.INTERNAL_RATE_LIMIT_WINDOW_MS, 60_000);
 
-export const internalApiLimiter = buildLimiter({
+export const internalApiLimiter = rateLimit({
+  keyGenerator: requestIdentity,
+  standardHeaders: true,
+  legacyHeaders: false,
   windowMs: defaultWindowMs,
   max: asInt(process.env.INTERNAL_RATE_LIMIT_MAX, 300),
   message: {
@@ -39,7 +33,10 @@ export const internalApiLimiter = buildLimiter({
   skip: (req) => req.path === '/health',
 });
 
-export const internalHeavyReadLimiter = buildLimiter({
+export const internalHeavyReadLimiter = rateLimit({
+  keyGenerator: requestIdentity,
+  standardHeaders: true,
+  legacyHeaders: false,
   windowMs: defaultWindowMs,
   max: asInt(process.env.INTERNAL_HEAVY_READ_RATE_LIMIT_MAX, 120),
   message: {
