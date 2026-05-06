@@ -1,4 +1,5 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const supportedProviders = new Set(['minio', 's3', 'r2']);
 
@@ -91,6 +92,22 @@ class ObjectStorageService {
     );
 
     return this.buildPublicUrl(params.objectKey);
+  }
+
+  async getSignedReadUrl(objectKey: string, expiresInSeconds = 300): Promise<string> {
+    if (!this.isEnabled()) {
+      throw new Error('[ObjectStorage] Storage não está habilitado/configurado.');
+    }
+
+    const client = this.getClient();
+    return getSignedUrl(
+      client,
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+      }),
+      { expiresIn: Math.max(60, Math.floor(expiresInSeconds)) },
+    );
   }
 
   private getClient(): S3Client {

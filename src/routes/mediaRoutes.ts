@@ -97,6 +97,43 @@ function getPublicMediaUrlForFilename(filename: string): string {
   return objectStorageService.buildPublicUrl(getMediaObjectKey(filename));
 }
 
+function getSignedMediaUrlForObjectKey(objectKey: string): Promise<string> {
+  const ttl = Number(process.env.MEDIA_SIGNED_URL_TTL_SECONDS || 300);
+  return objectStorageService.getSignedReadUrl(objectKey, ttl);
+}
+
+function extractObjectKeyFromMediaUrl(mediaUrl: string): string | null {
+  try {
+    const parsed = new URL(mediaUrl);
+    const rawPath = parsed.pathname.replace(/^\/+/, '');
+    if (!rawPath) return null;
+    const bucket = objectStorageService.getBucket();
+    if (bucket && rawPath.startsWith(`${bucket}/`)) {
+      return rawPath.slice(bucket.length + 1);
+    }
+    return rawPath;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function resolveSignedMediaUrl(metadata: any, mediaUrl: string): Promise<string | null> {
+  if (!objectStorageService.isEnabled()) return null;
+  const storageKey =
+    (typeof metadata?.mediaMetadata?.storageKey === 'string' && metadata.mediaMetadata.storageKey.trim()) ||
+    extractObjectKeyFromMediaUrl(mediaUrl);
+  if (!storageKey) return null;
+  try {
+    return await getSignedMediaUrlForObjectKey(storageKey);
+  } catch (error: any) {
+    console.warn('[Media] ⚠️ Falha ao gerar URL assinada, usando URL pública como fallback:', {
+      storageKey,
+      error: error?.message || error,
+    });
+    return objectStorageService.buildPublicUrl(storageKey);
+  }
+}
+
 function isLocalMediaFallbackEnabled(): boolean {
   const raw = String(process.env.MEDIA_LOCAL_FALLBACK_ENABLED || 'false').trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
@@ -245,7 +282,7 @@ router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('fil
 });
 
 // Rota para servir arquivos enviados (público para Evolution API poder baixar)
-router.get('/file/:filename', (req: Request, res: Response) => {
+router.get('/file/:filename', async (req: Request, res: Response) => {
   const filename = req.params.filename;
 
   if (!isSafeFilename(filename)) {
@@ -264,7 +301,7 @@ router.get('/file/:filename', (req: Request, res: Response) => {
   if (!fs.existsSync(filePath)) {
     if (objectStorageService.isEnabled()) {
       try {
-        const storageUrl = getPublicMediaUrlForFilename(filename);
+        const storageUrl = await getSignedMediaUrlForObjectKey(getMediaObjectKey(filename));
         console.warn('[Media] ⚠️ Arquivo local ausente, redirecionando para object storage:', {
           filename,
           storageUrl,
@@ -506,6 +543,11 @@ router.get('/:messageId', async (req: Request, res: Response) => {
       (isHttpMediaUrl && !hasGraphMediaId && !mediaMetadata?.mediaKey);
 
     if (isPersistedObjectUrl) {
+      const signedUrl = await resolveSignedMediaUrl(metadata, mediaUrl);
+      if (signedUrl) {
+        console.log('[Media] ☁️ Mídia persistida em object storage, redirecionando URL assinada.');
+        return res.redirect(signedUrl);
+      }
       console.log('[Media] ☁️ Mídia persistida em object storage, redirecionando URL pública.');
       return res.redirect(mediaUrl);
     }
@@ -560,7 +602,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         let objectStorageFallback: string | null = null;
         if (objectStorageService.isEnabled()) {
           try {
-            objectStorageFallback = getPublicMediaUrlForFilename(filename);
+            objectStorageFallback = await getSignedMediaUrlForObjectKey(getMediaObjectKey(filename));
           } catch (_) {
             objectStorageFallback = null;
           }
