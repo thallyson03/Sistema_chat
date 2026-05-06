@@ -100,6 +100,23 @@ export class MessageController {
         return res.status(202).json({ queued: true });
       }
 
+      if (
+        phase1Flags.providerQueueFallbackEnabled &&
+        (await messageService.shouldDeferToQueue(conversationId))
+      ) {
+        const fallbackKey = crypto
+          .createHash('sha256')
+          .update(
+            JSON.stringify({
+              ...sendPayload,
+              fallback: true,
+            }),
+          )
+          .digest('hex');
+        await messageSendQueue.enqueue(sendPayload, fallbackKey);
+        return res.status(202).json({ queued: true, deferredByProviderBreaker: true });
+      }
+
       console.log('🚀 [MessageController] Chamando messageService.sendMessage...');
       const message = await messageService.sendMessage(sendPayload);
 

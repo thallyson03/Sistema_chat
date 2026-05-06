@@ -12,6 +12,8 @@ import { phase1Flags } from '../config/phase1Flags';
 import { webhookIngestQueue } from '../queues/webhookIngest.queue';
 import { idempotencyService } from '../services/idempotencyService';
 import { botProcessQueue } from '../queues/botProcess.queue';
+import { emitConversationDelta, emitMessageStatus } from '../utils/realtimeEvents';
+import { hybridCacheService } from '../services/hybridCacheService';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -20,6 +22,11 @@ const satisfactionSurveyService = new SatisfactionSurveyService();
 
 // io será injetado via função
 let io: any = null;
+
+function invalidateConversationMetricsCache(): void {
+  void hybridCacheService.invalidateByPrefix('conversation:stats:');
+  void hybridCacheService.invalidateByPrefix('conversation:unread-count:');
+}
 
 export function setSocketIO(socketIO: any) {
   io = socketIO;
@@ -633,15 +640,13 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         });
         if (result.handled) {
           if (io) {
-            io.to(`conversation_${conversation.id}`).emit('new_message', {
+            emitConversationDelta(io, 'new_message', {
               conversationId: conversation.id,
               messageId: result.messageId,
             });
-            io.emit('new_message', {
+            emitConversationDelta(io, 'conversation_updated', {
               conversationId: conversation.id,
-              messageId: result.messageId,
             });
-            io.emit('conversation_updated');
           }
           return;
         }
@@ -723,15 +728,13 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
         });
         if (result.handled) {
           if (io) {
-            io.to(`conversation_${conversation.id}`).emit('new_message', {
+            emitConversationDelta(io, 'new_message', {
               conversationId: conversation.id,
               messageId: result.messageId,
             });
-            io.emit('new_message', {
+            emitConversationDelta(io, 'conversation_updated', {
               conversationId: conversation.id,
-              messageId: result.messageId,
             });
-            io.emit('conversation_updated');
           }
           return;
         }
@@ -773,6 +776,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       conversationId: conversation.id,
       messageContent,
     });
+    invalidateConversationMetricsCache();
 
     console.log('[WhatsAppOfficial] ✅ Mensagem salva:', {
       messageId: createdMessage.id,
@@ -857,19 +861,15 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
 
     // Emitir evento via Socket.IO
     if (io) {
-      // Evento específico da sala da conversa (usado por outras telas/detalhes)
-      io.to(`conversation_${conversation.id}`).emit('new_message', {
+      emitConversationDelta(io, 'new_message', {
         conversationId: conversation.id,
+        channelId: contact.channelId,
         messageId: createdMessage.id,
       });
-
-      // Evento global para lista de conversas e tela principal de conversas
-      io.emit('new_message', {
+      emitConversationDelta(io, 'conversation_updated', {
         conversationId: conversation.id,
-        messageId: createdMessage.id,
+        channelId: contact.channelId,
       });
-
-      io.emit('conversation_updated');
     }
   } catch (error: any) {
     console.error('[WhatsAppOfficial] ❌ Erro ao processar mensagem:', error);
@@ -920,12 +920,7 @@ async function handleWhatsAppOfficialStatus(status: any) {
       // Emitir atualização em tempo real para refletir o check no chat sem refresh.
       if (io && affectedMessages.length > 0) {
         for (const msg of affectedMessages) {
-          io.to(`conversation_${msg.conversationId}`).emit('message_status', {
-            conversationId: msg.conversationId,
-            messageId: msg.id,
-            status: mappedStatus,
-          });
-          io.emit('message_status', {
+          emitMessageStatus(io, {
             conversationId: msg.conversationId,
             messageId: msg.id,
             status: mappedStatus,
@@ -1440,12 +1435,12 @@ async function handleNewMessage(data: any) {
         });
         if (result.handled) {
           if (io) {
-            io.emit('new_message', {
+            emitConversationDelta(io, 'new_message', {
               conversationId: conversation.id,
               channelId: channel.id,
               messageId: result.messageId,
             });
-            io.emit('conversation_updated', {
+            emitConversationDelta(io, 'conversation_updated', {
               conversationId: conversation.id,
               channelId: channel.id,
             });
@@ -1494,6 +1489,7 @@ async function handleNewMessage(data: any) {
           messageContent,
         });
       }
+      invalidateConversationMetricsCache();
       
       console.log('✅ [handleNewMessage] Mensagem criada com sucesso:', {
         messageId: createdMessage.id,
@@ -1566,12 +1562,12 @@ async function handleNewMessage(data: any) {
       // Emitir evento via Socket.IO se disponível
       if (io) {
         try {
-          io.emit('new_message', {
+          emitConversationDelta(io, 'new_message', {
             conversationId: conversation.id,
             channelId: channel.id,
             messageId: createdMessage.id,
           });
-          io.emit('conversation_updated', {
+          emitConversationDelta(io, 'conversation_updated', {
             conversationId: conversation.id,
             channelId: channel.id,
           });

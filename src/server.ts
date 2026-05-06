@@ -33,6 +33,7 @@ import { setSocketIO as setMessageSocketIO } from './controllers/messageControll
 import { setMessageServiceSocketIO } from './services/messageService';
 import { logger } from './utils/logger';
 import { distributedLockService } from './services/distributedLockService';
+import { internalApiLimiter, internalHeavyReadLimiter } from './middleware/internalRateLimit';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -92,7 +93,8 @@ io.use((socket, next) => {
       return next(new Error('Socket indisponível: JWT_SECRET não configurado'));
     }
 
-    jwt.verify(token, jwtSecret);
+    const decoded = jwt.verify(token, jwtSecret) as any;
+    (socket as any).data.userId = decoded?.id || null;
     return next();
   } catch (error) {
     return next(new Error('Socket não autenticado: token inválido'));
@@ -173,6 +175,31 @@ app.get('/health', (req, res) => {
 io.on('connection', (socket) => {
   console.log('Cliente conectado:', socket.id);
 
+  const userId = (socket as any).data?.userId;
+  if (userId) {
+    socket.join(`user_${userId}`);
+  }
+
+  socket.on('subscribe_conversation', (conversationId: string) => {
+    if (!conversationId) return;
+    socket.join(`conversation_${conversationId}`);
+  });
+
+  socket.on('unsubscribe_conversation', (conversationId: string) => {
+    if (!conversationId) return;
+    socket.leave(`conversation_${conversationId}`);
+  });
+
+  socket.on('subscribe_channel', (channelId: string) => {
+    if (!channelId) return;
+    socket.join(`channel_${channelId}`);
+  });
+
+  socket.on('unsubscribe_channel', (channelId: string) => {
+    if (!channelId) return;
+    socket.leave(`channel_${channelId}`);
+  });
+
   socket.on('disconnect', () => {
     console.log('Cliente desconectado:', socket.id);
   });
@@ -193,35 +220,37 @@ logger.info('phase1 queue mode', {
   botQueueEnabled: phase1Flags.botQueueEnabled,
   journeyQueueEnabled: phase1Flags.journeyQueueEnabled,
   pipelineAutomationQueueEnabled: phase1Flags.pipelineAutomationQueueEnabled,
+  realtimeScopedEventsEnabled: phase1Flags.realtimeScopedEventsEnabled,
+  providerQueueFallbackEnabled: phase1Flags.providerQueueFallbackEnabled,
 });
 
 // Rotas da API
 app.use('/api/auth', authRoutes);
-app.use('/api/channels', channelRoutes);
-app.use('/api/conversations', conversationRoutes);
-app.use('/api/messages', messageRoutes);
+app.use('/api/channels', internalApiLimiter, channelRoutes);
+app.use('/api/conversations', internalApiLimiter, internalHeavyReadLimiter, conversationRoutes);
+app.use('/api/messages', internalApiLimiter, internalHeavyReadLimiter, messageRoutes);
 app.use('/api/media', mediaRoutes);
-app.use('/api/quick-replies', quickReplyRoutes);
-app.use('/api/sectors', sectorRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/ticket-portal', ticketPortalRoutes);
-app.use('/api/external-dashboard', externalDashboardRoutes);
-app.use('/api/pipelines', pipelineRoutes);
+app.use('/api/quick-replies', internalApiLimiter, quickReplyRoutes);
+app.use('/api/sectors', internalApiLimiter, sectorRoutes);
+app.use('/api/users', internalApiLimiter, userRoutes);
+app.use('/api/ticket-portal', internalApiLimiter, internalHeavyReadLimiter, ticketPortalRoutes);
+app.use('/api/external-dashboard', internalApiLimiter, internalHeavyReadLimiter, externalDashboardRoutes);
+app.use('/api/pipelines', internalApiLimiter, internalHeavyReadLimiter, pipelineRoutes);
 app.use('/api/public/pipelines', publicPipelineRoutes); // API pública para pipelines
-app.use('/api/contacts', contactImportRoutes); // Rotas de importação de contatos (deve vir antes)
-app.use('/api/contacts', contactRoutes); // Rotas de contatos
-app.use('/api/contact-lists', contactListRoutes); // Rotas de listas de contatos
-app.use('/api/campaigns', campaignRoutes); // Rotas de campanhas
-app.use('/api/journeys', journeyRoutes); // Rotas de jornadas / automações
-app.use('/api/whatsapp/templates', whatsappTemplateRoutes); // Gestão de templates WhatsApp Official
-app.use('/api/ops', opsRoutes);
+app.use('/api/contacts', internalApiLimiter, contactImportRoutes); // Rotas de importação de contatos (deve vir antes)
+app.use('/api/contacts', internalApiLimiter, internalHeavyReadLimiter, contactRoutes); // Rotas de contatos
+app.use('/api/contact-lists', internalApiLimiter, internalHeavyReadLimiter, contactListRoutes); // Rotas de listas de contatos
+app.use('/api/campaigns', internalApiLimiter, internalHeavyReadLimiter, campaignRoutes); // Rotas de campanhas
+app.use('/api/journeys', internalApiLimiter, internalHeavyReadLimiter, journeyRoutes); // Rotas de jornadas / automações
+app.use('/api/whatsapp/templates', internalApiLimiter, internalHeavyReadLimiter, whatsappTemplateRoutes); // Gestão de templates WhatsApp Official
+app.use('/api/ops', internalApiLimiter, internalHeavyReadLimiter, opsRoutes);
 app.use('/api/webhooks', webhookRoutes);
 // Rota alternativa para compatibilidade com webhooks antigos
 app.use('/webhooks', webhookRoutes);
 app.use('/api/whatsapp', webhookRoutes);
 // Rotas para n8n e bots
-app.use('/api/webhooks/n8n', n8nWebhookRoutes);
-app.use('/api/bots', botRoutes);
+app.use('/api/webhooks/n8n', internalApiLimiter, internalHeavyReadLimiter, n8nWebhookRoutes);
+app.use('/api/bots', internalApiLimiter, internalHeavyReadLimiter, botRoutes);
 
 // SPA (Vite build) — Coolify / produção com um único domínio
 const clientDistPath = path.join(__dirname, '../client/dist');

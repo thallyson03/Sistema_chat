@@ -303,6 +303,9 @@ export default function ConversationDetail() {
 
     socket.on('connect', () => {
       console.log('✅ [ConversationDetail] Conectado ao Socket.IO');
+      if (id) {
+        socket.emit('subscribe_conversation', id);
+      }
     });
 
     socket.on('new_message', async (data: { conversationId: string; channelId: string }) => {
@@ -329,6 +332,9 @@ export default function ConversationDetail() {
 
     // Limpar conexão ao desmontar componente
     return () => {
+      if (id) {
+        socket.emit('unsubscribe_conversation', id);
+      }
       socket.disconnect();
     };
   }, [id]);

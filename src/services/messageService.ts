@@ -9,6 +9,9 @@ import os from 'os';
 import path from 'path';
 import { convertOggToMp3, convertWebmToOgg } from '../utils/audioConverter';
 import { resolvePublicAppBaseUrl } from '../utils/publicBaseUrl';
+import { emitConversationDelta } from '../utils/realtimeEvents';
+import { hybridCacheService } from './hybridCacheService';
+import { providerResilienceService } from './providerResilienceService';
 
 // io será injetado via função (mensagens de bot/automação precisam refletir em tempo real no chat)
 let io: any = null;
@@ -30,9 +33,33 @@ export interface SendMessageData {
   internalOnly?: boolean; // Se true, NÃO envia para canais externos (somente CRM)
   buttons?: Array<any>; // Botões interativos (especialmente para WhatsApp Official)
   metadata?: Record<string, any>; // Metadados auxiliares (interactiveType, list config, etc)
+  skipQueueFallback?: boolean;
 }
 
 export class MessageService {
+  async shouldDeferToQueue(conversationId: string): Promise<boolean> {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { channel: true },
+    });
+    if (!conversation?.channel) return false;
+
+    const channelConfig: any = conversation.channel.config || {};
+    const isMetaChannel =
+      conversation.channel.type === 'WHATSAPP' &&
+      channelConfig.provider === 'whatsapp_official' &&
+      !!channelConfig.phoneNumberId &&
+      !!channelConfig.token;
+    const isEvolutionChannel =
+      conversation.channel.type === 'WHATSAPP' &&
+      !!conversation.channel.evolutionInstanceId &&
+      !!conversation.channel.evolutionApiKey;
+
+    if (isMetaChannel && providerResilienceService.isOpen('meta')) return true;
+    if (isEvolutionChannel && providerResilienceService.isOpen('evolution')) return true;
+    return false;
+  }
+
   async sendMessage(data: SendMessageData) {
     console.log('🚀 [MessageService] sendMessage chamado:', {
       conversationId: data.conversationId,
@@ -830,6 +857,9 @@ export class MessageService {
       data: updateData,
     });
 
+    void hybridCacheService.invalidateByPrefix('conversation:stats:');
+    void hybridCacheService.invalidateByPrefix('conversation:unread-count:');
+
     console.log('✅ [MessageService] Mensagem salva e conversa atualizada:', {
       messageId: message.id,
       conversationId: data.conversationId,
@@ -841,16 +871,14 @@ export class MessageService {
     // o MessageController retorna 202 e não possui o messageId imediatamente.
     if (io) {
       try {
-        io.to(`conversation_${data.conversationId}`).emit('new_message', {
+        emitConversationDelta(io, 'new_message', {
           conversationId: data.conversationId,
+          channelId: conversation.channelId,
           messageId: message.id,
         });
-        io.emit('new_message', {
+        emitConversationDelta(io, 'conversation_updated', {
           conversationId: data.conversationId,
-          messageId: message.id,
-        });
-        io.emit('conversation_updated', {
-          conversationId: data.conversationId,
+          channelId: conversation.channelId,
         });
       } catch (socketError) {
         console.error('[MessageService] Erro ao emitir Socket.IO para mensagem do bot:', socketError);

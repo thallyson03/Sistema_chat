@@ -3,13 +3,13 @@ import { AuthRequest } from '../middleware/auth';
 import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
 import { DashboardPerformanceService } from '../services/dashboardPerformanceService';
+import { hybridCacheService } from '../services/hybridCacheService';
 import { getSocketIO } from '../routes/webhookRoutes';
-import { TtlCache } from '../utils/ttlCache';
+import { emitConversationDelta } from '../utils/realtimeEvents';
 
 const conversationService = new ConversationService();
 const satisfactionSurveyService = new SatisfactionSurveyService();
 const dashboardPerformanceService = new DashboardPerformanceService();
-const metricsCache = new TtlCache();
 
 export class ConversationController {
   private getMetricsTtlMs() {
@@ -208,15 +208,11 @@ export class ConversationController {
 
       const io = getSocketIO();
       if (io) {
-        io.to(`conversation_${id}`).emit('new_message', {
+        emitConversationDelta(io, 'new_message', {
           conversationId: id,
           messageId: message.id,
         });
-        io.emit('new_message', {
-          conversationId: id,
-          messageId: message.id,
-        });
-        io.emit('conversation_updated');
+        emitConversationDelta(io, 'conversation_updated', { conversationId: id });
       }
 
       res.status(201).json({ message });
@@ -228,7 +224,12 @@ export class ConversationController {
   async getUnreadCount(req: AuthRequest, res: Response) {
     try {
       const userId = req.user?.id;
-      const count = await conversationService.getUnreadCount(userId, req.user);
+      const cacheKey = this.buildMetricsCacheKey('conversation:unread-count', req);
+      const count = await hybridCacheService.getOrSet(
+        cacheKey,
+        this.getMetricsTtlMs(),
+        () => conversationService.getUnreadCount(userId, req.user),
+      );
       res.json({ count });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -238,7 +239,7 @@ export class ConversationController {
   async getStats(req: AuthRequest, res: Response) {
     try {
       const cacheKey = this.buildMetricsCacheKey('conversation:stats', req);
-      const stats = await metricsCache.getOrSet(
+      const stats = await hybridCacheService.getOrSet(
         cacheKey,
         this.getMetricsTtlMs(),
         () => conversationService.getStats(req.user),
@@ -266,7 +267,7 @@ export class ConversationController {
       }
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
-      const data = await metricsCache.getOrSet(
+      const data = await hybridCacheService.getOrSet(
         cacheKey,
         this.getMetricsTtlMs(),
         () =>
@@ -292,7 +293,7 @@ export class ConversationController {
       const days = parseInt(String(req.query.days || '30'), 10);
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
-      const data = await metricsCache.getOrSet(
+      const data = await hybridCacheService.getOrSet(
         cacheKey,
         this.getMetricsTtlMs(),
         () =>
@@ -317,7 +318,7 @@ export class ConversationController {
       const days = parseInt(String(req.query.days || '30'), 10);
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
-      const data = await metricsCache.getOrSet(
+      const data = await hybridCacheService.getOrSet(
         cacheKey,
         this.getMetricsTtlMs(),
         () =>

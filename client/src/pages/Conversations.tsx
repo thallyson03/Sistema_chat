@@ -351,6 +351,10 @@ export default function Conversations() {
 
     socket.on('connect', () => {
       console.log('✅ Conectado ao Socket.IO');
+      const activeConversationId = currentConversationIdRef.current;
+      if (activeConversationId) {
+        socket.emit('subscribe_conversation', activeConversationId);
+      }
     });
 
     socket.on('new_message', async (data: { conversationId: string; messageId?: string }) => {
@@ -452,6 +456,24 @@ export default function Conversations() {
       }
     };
   }, [queueConversationsRefresh]);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    const conversationId = selectedConversation?.id;
+    if (!socket || !conversationId) return;
+
+    socket.emit('subscribe_conversation', conversationId);
+    if (selectedConversation.channelId) {
+      socket.emit('subscribe_channel', selectedConversation.channelId);
+    }
+
+    return () => {
+      socket.emit('unsubscribe_conversation', conversationId);
+      if (selectedConversation.channelId) {
+        socket.emit('unsubscribe_channel', selectedConversation.channelId);
+      }
+    };
+  }, [selectedConversation?.id, selectedConversation?.channelId]);
 
   // Buscar usuário atual para poder assumir conversas do bot
   useEffect(() => {

@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { providerResilienceService } from '../services/providerResilienceService';
 
 class EvolutionApiClient {
   private client: AxiosInstance;
@@ -11,7 +12,7 @@ class EvolutionApiClient {
     
     this.client = axios.create({
       baseURL: this.baseURL,
-      timeout: 30000,
+      timeout: Number(process.env.EVOLUTION_TIMEOUT_MS || 12000),
       headers: {
         'Content-Type': 'application/json',
       },
@@ -251,12 +252,14 @@ class EvolutionApiClient {
       console.log('[EvolutionAPI] Payload:', JSON.stringify(payload, null, 2));
       console.log('[EvolutionAPI] Headers: { apikey: "***masked***", "Content-Type": "application/json" }');
 
-      const response = await this.client.post(
-        `/message/sendText/${instanceName}`,
-        payload,
-        {
-          headers: this.getHeaders(apiKey),
-        }
+      const response = await providerResilienceService.execute('evolution', 'sendText', async () =>
+        this.client.post(
+          `/message/sendText/${instanceName}`,
+          payload,
+          {
+            headers: this.getHeaders(apiKey),
+          }
+        )
       );
 
       console.log('[EvolutionAPI] ✅ Mensagem enviada com sucesso:', {
@@ -295,15 +298,16 @@ class EvolutionApiClient {
         caption: caption || '',
       };
 
-      const response = await this.client.post(
-        `/message/sendMedia/${instanceName}`,
-        payload,
-        {
-          headers: this.getHeaders(apiKey),
-        }
-      );
-
-      return response.data;
+      return await providerResilienceService.execute('evolution', 'sendImage', async () => {
+        const response = await this.client.post(
+          `/message/sendMedia/${instanceName}`,
+          payload,
+          {
+            headers: this.getHeaders(apiKey),
+          }
+        );
+        return response.data;
+      });
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || 
@@ -323,15 +327,16 @@ class EvolutionApiClient {
         caption: caption || '',
       };
 
-      const response = await this.client.post(
-        `/message/sendMedia/${instanceName}`,
-        payload,
-        {
-          headers: this.getHeaders(apiKey),
-        }
-      );
-
-      return response.data;
+      return await providerResilienceService.execute('evolution', 'sendVideo', async () => {
+        const response = await this.client.post(
+          `/message/sendMedia/${instanceName}`,
+          payload,
+          {
+            headers: this.getHeaders(apiKey),
+          }
+        );
+        return response.data;
+      });
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || 
@@ -382,12 +387,14 @@ class EvolutionApiClient {
       }, null, 2));
 
       // Usar /message/sendWhatsAppAudio conforme documentação
-      const response = await this.client.post(
-        `/message/sendWhatsAppAudio/${instanceName}`,
-        payload,
-        {
-          headers: this.getHeaders(apiKey),
-        }
+      const response = await providerResilienceService.execute('evolution', 'sendAudio', async () =>
+        this.client.post(
+          `/message/sendWhatsAppAudio/${instanceName}`,
+          payload,
+          {
+            headers: this.getHeaders(apiKey),
+          }
+        )
       );
 
       console.log('[EvolutionAPI] ✅ Áudio enviado com sucesso:', {
@@ -427,15 +434,16 @@ class EvolutionApiClient {
         caption: caption || '',
       };
 
-      const response = await this.client.post(
-        `/message/sendMedia/${instanceName}`,
-        payload,
-        {
-          headers: this.getHeaders(apiKey),
-        }
-      );
-
-      return response.data;
+      return await providerResilienceService.execute('evolution', 'sendDocument', async () => {
+        const response = await this.client.post(
+          `/message/sendMedia/${instanceName}`,
+          payload,
+          {
+            headers: this.getHeaders(apiKey),
+          }
+        );
+        return response.data;
+      });
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || 

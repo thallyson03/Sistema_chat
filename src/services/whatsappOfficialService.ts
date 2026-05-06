@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
+import { providerResilienceService } from './providerResilienceService';
 
 interface WhatsAppConfig {
   token: string;
@@ -76,7 +77,7 @@ export class WhatsAppOfficialService {
         'Authorization': `Bearer ${config.token}`,
         'Content-Type': 'application/json',
       },
-      timeout: 30000,
+      timeout: Number(process.env.META_TIMEOUT_MS || 12000),
     });
   }
 
@@ -90,18 +91,20 @@ export class WhatsAppOfficialService {
         textLength: params.text.length,
       });
 
-      const response = await this.client.post(
-        `/${this.phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: this.formatPhoneNumber(params.to),
-          type: 'text',
-          text: {
-            preview_url: false,
-            body: params.text,
-          },
-        }
+      const response = await providerResilienceService.execute('meta', 'sendTextMessage', async () =>
+        this.client.post(
+          `/${this.phoneNumberId}/messages`,
+          {
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: this.formatPhoneNumber(params.to),
+            type: 'text',
+            text: {
+              preview_url: false,
+              body: params.text,
+            },
+          }
+        )
       );
 
       console.log('[WhatsAppOfficial] ✅ Mensagem enviada:', {
@@ -147,7 +150,7 @@ export class WhatsAppOfficialService {
         throw new Error('Nenhum botão válido para envio interativo');
       }
 
-      const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
+      const response = await providerResilienceService.execute('meta', 'sendInteractiveButtons', async () => this.client.post(`/${this.phoneNumberId}/messages`, {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to,
@@ -157,7 +160,7 @@ export class WhatsAppOfficialService {
           body: { text: params.bodyText || '' },
           action: { buttons },
         },
-      });
+      }));
 
       return {
         success: true,
@@ -202,7 +205,7 @@ export class WhatsAppOfficialService {
         throw new Error('Lista interativa sem opções válidas');
       }
 
-      const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
+      const response = await providerResilienceService.execute('meta', 'sendInteractiveList', async () => this.client.post(`/${this.phoneNumberId}/messages`, {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to,
@@ -217,7 +220,7 @@ export class WhatsAppOfficialService {
             sections: normalizedSections,
           },
         },
-      });
+      }));
 
       return {
         success: true,
@@ -267,9 +270,11 @@ export class WhatsAppOfficialService {
         payload.template.components = params.components;
       }
 
-      const response = await this.client.post(
-        `/${this.phoneNumberId}/messages`,
-        payload
+      const response = await providerResilienceService.execute('meta', 'sendTemplateMessage', async () =>
+        this.client.post(
+          `/${this.phoneNumberId}/messages`,
+          payload
+        )
       );
 
       console.log('[WhatsAppOfficial] ✅ Template enviado:', {
@@ -345,9 +350,11 @@ export class WhatsAppOfficialService {
         payload.audio.voice = params.voice;
       }
 
-      const response = await this.client.post(
-        `/${this.phoneNumberId}/messages`,
-        payload
+      const response = await providerResilienceService.execute('meta', 'sendMediaMessage', async () =>
+        this.client.post(
+          `/${this.phoneNumberId}/messages`,
+          payload
+        )
       );
 
       console.log('[WhatsAppOfficial] ✅ Mídia enviada:', {
@@ -562,17 +569,20 @@ export class WhatsAppOfficialService {
         type,
       });
 
-      const response = await axios.post(
-        `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/media`,
-        formData,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.token}`,
-            ...formData.getHeaders(),
-          },
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-        }
+      const response = await providerResilienceService.execute('meta', 'uploadMedia', async () =>
+        axios.post(
+          `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/media`,
+          formData,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.token}`,
+              ...formData.getHeaders(),
+            },
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            timeout: Number(process.env.META_TIMEOUT_MS || 12000),
+          }
+        )
       );
 
       console.log('[WhatsAppOfficial] ✅ Upload concluído:', {

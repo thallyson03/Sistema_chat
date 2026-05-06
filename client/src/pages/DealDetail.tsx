@@ -279,6 +279,13 @@ export default function DealDetail() {
         },
       });
 
+      socket.on('connect', () => {
+        socket.emit('subscribe_conversation', conversation.id);
+        if (conversation.channelId) {
+          socket.emit('subscribe_channel', conversation.channelId);
+        }
+      });
+
       socket.on('new_message', async (data: { conversationId: string; messageId?: string }) => {
         if (data.conversationId !== conversation.id) return;
         try {
@@ -332,6 +339,10 @@ export default function DealDetail() {
       });
 
       return () => {
+        socket.emit('unsubscribe_conversation', conversation.id);
+        if (conversation.channelId) {
+          socket.emit('unsubscribe_channel', conversation.channelId);
+        }
         socket.disconnect();
       };
     }
