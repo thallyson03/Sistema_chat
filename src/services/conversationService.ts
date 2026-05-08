@@ -864,21 +864,21 @@ export class ConversationService {
         : {};
     const baseWhere = {
       AND: [visibilityWhere, ownershipWhere],
-    } as const;
+    };
     const [total, groupedByStatus] = await Promise.all([
       prisma.conversation.count({ where: baseWhere }),
       prisma.conversation.groupBy({
         by: ['status'],
         where: baseWhere,
         _count: {
-          _all: true,
+          status: true,
         },
       }),
     ]);
 
     const counts = groupedByStatus.reduce(
       (acc, row) => {
-        acc[row.status] = row._count._all;
+        acc[row.status] = row._count.status || 0;
         return acc;
       },
       {} as Record<ConversationStatus, number>,
