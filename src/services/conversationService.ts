@@ -862,28 +862,30 @@ export class ConversationService {
           ? { assignedToId: viewer.id }
           : { id: '__no_access__' }
         : {};
-    const [total, open, waiting, closed] = await Promise.all([
-      prisma.conversation.count({
-        where: {
-          AND: [visibilityWhere, ownershipWhere],
-        },
-      }),
-      prisma.conversation.count({
-        where: {
-          AND: [visibilityWhere, ownershipWhere, { status: ConversationStatus.OPEN }],
-        },
-      }),
-      prisma.conversation.count({
-        where: {
-          AND: [visibilityWhere, ownershipWhere, { status: ConversationStatus.WAITING }],
-        },
-      }),
-      prisma.conversation.count({
-        where: {
-          AND: [visibilityWhere, ownershipWhere, { status: ConversationStatus.CLOSED }],
+    const baseWhere = {
+      AND: [visibilityWhere, ownershipWhere],
+    } as const;
+    const [total, groupedByStatus] = await Promise.all([
+      prisma.conversation.count({ where: baseWhere }),
+      prisma.conversation.groupBy({
+        by: ['status'],
+        where: baseWhere,
+        _count: {
+          _all: true,
         },
       }),
     ]);
+
+    const counts = groupedByStatus.reduce(
+      (acc, row) => {
+        acc[row.status] = row._count._all;
+        return acc;
+      },
+      {} as Record<ConversationStatus, number>,
+    );
+    const open = counts[ConversationStatus.OPEN] || 0;
+    const waiting = counts[ConversationStatus.WAITING] || 0;
+    const closed = counts[ConversationStatus.CLOSED] || 0;
 
     return {
       total,

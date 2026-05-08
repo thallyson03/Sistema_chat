@@ -12,6 +12,13 @@ const satisfactionSurveyService = new SatisfactionSurveyService();
 const dashboardPerformanceService = new DashboardPerformanceService();
 
 export class ConversationController {
+  private getConversationsListTtlMs() {
+    return Math.max(
+      1000,
+      Number(process.env.CONVERSATIONS_LIST_CACHE_TTL_MS) || 3000,
+    );
+  }
+
   private getMetricsTtlMs() {
     return Math.max(
       1000,
@@ -66,20 +73,12 @@ export class ConversationController {
 
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
-
-      console.log('[ConversationController] Buscando conversas:', {
-        filters,
-        limit,
-        offset,
-        userId: req.user?.id,
-      });
-
-      const result = await conversationService.getConversations(filters, limit, offset, req.user);
-
-      console.log('[ConversationController] Conversas encontradas:', {
-        total: result.total,
-        count: result.conversations.length,
-      });
+      const cacheKey = this.buildMetricsCacheKey('conversation:list', req);
+      const result = await hybridCacheService.getOrSet(
+        cacheKey,
+        this.getConversationsListTtlMs(),
+        () => conversationService.getConversations(filters, limit, offset, req.user),
+      );
 
       res.json(result);
     } catch (error: any) {
