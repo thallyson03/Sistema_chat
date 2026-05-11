@@ -1,3 +1,5 @@
+import { prometheusService } from './prometheusService';
+
 type QueueCounters = {
   enqueued: number;
   processed: number;
@@ -24,18 +26,22 @@ class QueueMetricsService {
 
   incrementEnqueued(queueName: string): void {
     this.ensureQueue(queueName).enqueued += 1;
+    this.syncPrometheus();
   }
 
   incrementProcessed(queueName: string): void {
     this.ensureQueue(queueName).processed += 1;
+    this.syncPrometheus();
   }
 
   incrementFailed(queueName: string): void {
     this.ensureQueue(queueName).failed += 1;
+    this.syncPrometheus();
   }
 
   incrementRetried(queueName: string): void {
     this.ensureQueue(queueName).retried += 1;
+    this.syncPrometheus();
   }
 
   snapshot(): QueueMetricsMap {
@@ -43,6 +49,10 @@ class QueueMetricsService {
       acc[queue] = { ...values };
       return acc;
     }, {});
+  }
+
+  private syncPrometheus(): void {
+    prometheusService.updateQueueCounters(this.snapshot());
   }
 }
 

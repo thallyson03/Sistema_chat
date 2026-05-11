@@ -1,0 +1,58 @@
+# Stack de observabilidade (Coolify: mesmo projeto "production" que o CRM).
+# Scrape do CRM via HTTPS publico (rede Docker separada do app).
+#
+# Variaveis (Coolify > Environment):
+#   CRM_METRICS_HOST=crm.chat.chatia.qzz.io   (padrao se omitido)
+#   CRM_METRICS_PORT=443                      (padrao)
+#   CRM_METRICS_BEARER_TOKEN=               (opcional; ver abaixo)
+#   CRM_SKIP_TLS_VERIFY=false               (true se certificado invalido)
+#   GRAFANA_ADMIN_USER / GRAFANA_ADMIN_PASSWORD / GRAFANA_ROOT_URL
+#
+# Bearer token: OBRIGATORIO no Prometheus somente se no BACKEND existir METRICS_AUTH_TOKEN.
+# Se o backend NAO tiver METRICS_AUTH_TOKEN, deixe CRM_METRICS_BEARER_TOKEN vazio.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    container_name: crm-prometheus
+    restart: unless-stopped
+    ports:
+      - '9090:9090'
+    environment:
+      CRM_METRICS_HOST: ${CRM_METRICS_HOST:-crm.chat.chatia.qzz.io}
+      CRM_METRICS_PORT: ${CRM_METRICS_PORT:-443}
+      CRM_METRICS_BEARER_TOKEN: ${CRM_METRICS_BEARER_TOKEN:-}
+      CRM_SKIP_TLS_VERIFY: ${CRM_SKIP_TLS_VERIFY:-false}
+    volumes:
+      - ./prometheus/entrypoint.sh:/etc/prometheus/entrypoint.sh:ro
+      - prometheus-data:/prometheus
+    entrypoint: ['/bin/sh', '/etc/prometheus/entrypoint.sh']
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: crm-grafana
+    restart: unless-stopped
+    ports:
+      - '3001:3000'
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - observability
+
+volumes:
+  prometheus-data:
+
+networks:
+  observability:
+    driver: bridge

@@ -34,6 +34,7 @@ import { setMessageServiceSocketIO } from './services/messageService';
 import { logger } from './utils/logger';
 import { distributedLockService } from './services/distributedLockService';
 import { internalApiLimiter, internalHeavyReadLimiter } from './middleware/internalRateLimit';
+import { prometheusService } from './services/prometheusService';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -115,6 +116,16 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   const startedAt = Date.now();
   res.on('finish', () => {
+    const routePath =
+      ((req.route && (req.route as any).path) as string | undefined) ||
+      (req.baseUrl ? `${req.baseUrl}${req.path}` : req.path) ||
+      req.path;
+    prometheusService.observeHttpRequest({
+      method: req.method,
+      route: routePath,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+    });
     logger.info('http request completed', {
       requestId: (req as any).requestId,
       method: req.method,
@@ -170,6 +181,26 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
   });
+});
+
+app.get('/metrics', async (req, res) => {
+  const metricsToken = process.env.METRICS_AUTH_TOKEN;
+  if (metricsToken) {
+    const auth = String(req.headers.authorization || '');
+    const expected = `Bearer ${metricsToken}`;
+    if (auth !== expected) {
+      return res.status(401).json({ error: 'unauthorized metrics access' });
+    }
+  }
+
+  try {
+    res.setHeader('Content-Type', prometheusService.getContentType());
+    const payload = await prometheusService.getMetricsText();
+    return res.status(200).send(payload);
+  } catch (error: any) {
+    logger.errorWithCause('failed to collect prometheus metrics', error);
+    return res.status(500).json({ error: 'failed to collect metrics' });
+  }
 });
 
 // Socket.IO - Configuração básica

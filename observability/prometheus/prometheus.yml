@@ -1,0 +1,28 @@
+# Exemplo para desenvolvimento local (sem entrypoint).
+# Em producao no Coolify, use observability/docker-compose.yml: o Prometheus
+# gera a config em runtime via prometheus/entrypoint.sh (HTTPS + CRM_METRICS_HOST).
+#
+# Exemplo local (ajuste o host):
+# global:
+#   scrape_interval: 15s
+# scrape_configs:
+#   - job_name: crm-backend
+#     scheme: https
+#     metrics_path: /metrics
+#     static_configs:
+#       - targets: ['crm.chat.chatia.qzz.io:443']
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: crm-backend
+    scheme: https
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['crm.chat.chatia.qzz.io:443']
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
