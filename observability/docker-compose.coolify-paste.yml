@@ -1,0 +1,100 @@
+# Coolify: cole este YAML inteiro no recurso "Docker Compose" (sem Git / sem volumes locais).
+# Prometheus gera a config na subida. Grafana: apos subir, adicione datasource Prometheus URL http://prometheus:9090
+#
+# Variaveis no Coolify (Environment do recurso):
+#   CRM_METRICS_HOST=crm.chat.chatia.qzz.io
+#   CRM_METRICS_PORT=443
+#   CRM_METRICS_BEARER_TOKEN=   (opcional; obrigatorio se no CRM existir METRICS_AUTH_TOKEN)
+#   CRM_SKIP_TLS_VERIFY=false   (true se certificado falhar)
+#   GRAFANA_ADMIN_USER=admin
+#   GRAFANA_ADMIN_PASSWORD=<senha>
+#   GRAFANA_ROOT_URL=https://seu-grafana.exemplo.com
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    restart: unless-stopped
+    ports:
+      - '9090:9090'
+    environment:
+      CRM_METRICS_HOST: ${CRM_METRICS_HOST:-crm.chat.chatia.qzz.io}
+      CRM_METRICS_PORT: ${CRM_METRICS_PORT:-443}
+      CRM_METRICS_BEARER_TOKEN: ${CRM_METRICS_BEARER_TOKEN:-}
+      CRM_SKIP_TLS_VERIFY: ${CRM_SKIP_TLS_VERIFY:-false}
+    volumes:
+      - prometheus-data:/prometheus
+    # Imagem oficial usa ENTRYPOINT=/bin/prometheus; sem isso o Compose passa /bin/sh como args do Prometheus.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        DATA_DIR=/prometheus
+        mkdir -p "$$DATA_DIR"
+        HOST="$${CRM_METRICS_HOST:-crm.chat.chatia.qzz.io}"
+        PORT="$${CRM_METRICS_PORT:-443}"
+        TOKEN="$${CRM_METRICS_BEARER_TOKEN:-}"
+        SKIP="$${CRM_SKIP_TLS_VERIFY:-false}"
+        OUT="$$DATA_DIR/prometheus.yml"
+        BEARER_FILE="$$DATA_DIR/metrics_bearer.txt"
+        if [ "$$SKIP" != "true" ] && [ "$$SKIP" != "false" ]; then
+          echo "CRM_SKIP_TLS_VERIFY must be true or false" >&2
+          exit 1
+        fi
+        TLS_INSECURE=false
+        if [ "$$SKIP" = "true" ]; then TLS_INSECURE=true; fi
+        {
+          echo "global:"
+          echo "  scrape_interval: 15s"
+          echo "  evaluation_interval: 15s"
+          echo ""
+          echo "scrape_configs:"
+          echo "  - job_name: crm-backend"
+          echo "    scheme: https"
+          echo "    metrics_path: /metrics"
+          echo "    tls_config:"
+          echo "      insecure_skip_verify: $$TLS_INSECURE"
+          if [ -n "$$TOKEN" ]; then
+            printf '%s' "$$TOKEN" > "$$BEARER_FILE"
+            chmod 600 "$$BEARER_FILE" 2>/dev/null || true
+            echo "    authorization:"
+            echo "      type: Bearer"
+            echo "      credentials_file: \"$$BEARER_FILE\""
+          fi
+          echo "    static_configs:"
+          echo "      - targets: ['$$HOST:$$PORT']"
+          echo ""
+          echo "  - job_name: prometheus"
+          echo "    static_configs:"
+          echo "      - targets: ['127.0.0.1:9090']"
+        } > "$$OUT"
+        exec /bin/prometheus \
+          --config.file="$$OUT" \
+          --storage.tsdb.path="$$DATA_DIR" \
+          --web.enable-lifecycle
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    restart: unless-stopped
+    ports:
+      - '3001:3000'
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - observability
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  observability:
+    driver: bridge

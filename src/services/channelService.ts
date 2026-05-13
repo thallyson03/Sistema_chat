@@ -1,6 +1,7 @@
 import prisma from '../config/database';
 import { Channel, ChannelType, ChannelStatus } from '@prisma/client';
 import { evolutionApi } from '../config/evolutionApi';
+import { toEvolutionInstanceName } from '../utils/evolutionInstanceName';
 
 export interface CreateChannelData {
   name: string;
@@ -71,6 +72,55 @@ export class ChannelService {
     }
 
     return next;
+  }
+
+  private isWhatsAppOfficialConfig(config: any): boolean {
+    return config?.provider === 'whatsapp_official';
+  }
+
+  private resolveEvolutionApiKey(storedKey?: string | null): string | undefined {
+    if (storedKey && storedKey !== ChannelService.SECRET_MASK) {
+      return storedKey;
+    }
+    return process.env.EVOLUTION_API_KEY || undefined;
+  }
+
+  private async provisionEvolutionInstance(
+    channelName: string,
+    apiKey: string
+  ): Promise<{ instanceId: string; instanceToken?: string | null }> {
+    const instanceName = toEvolutionInstanceName(channelName);
+    console.log('[ChannelService] Provisionando instância Evolution:', {
+      channelName,
+      instanceName,
+    });
+
+    const evolutionResponse = await evolutionApi.createInstance(instanceName, apiKey, true);
+    const instanceId = evolutionResponse.instance?.instanceName || instanceName;
+    const instanceToken = evolutionResponse.instance?.token ?? null;
+
+    console.log('[ChannelService] Instância Evolution provisionada:', {
+      instanceId,
+      hasToken: !!instanceToken,
+    });
+
+    return { instanceId, instanceToken };
+  }
+
+  private async removeEvolutionInstance(instanceId: string, apiKey: string): Promise<void> {
+    try {
+      console.log('[ChannelService] Removendo instância Evolution:', instanceId);
+      await evolutionApi.deleteInstance(instanceId, apiKey);
+      console.log('[ChannelService] Instância Evolution removida:', instanceId);
+    } catch (error: any) {
+      const message = error.message || String(error);
+      if (/not found|404/i.test(message)) {
+        console.log('[ChannelService] Instância Evolution já inexistente:', instanceId);
+        return;
+      }
+      console.error('[ChannelService] Erro ao remover instância Evolution:', instanceId, message);
+      throw error;
+    }
   }
 
   /**
@@ -253,44 +303,9 @@ export class ChannelService {
     
     if (data.type === ChannelType.WHATSAPP && apiKey && !instanceId && !isWhatsAppOfficial) {
       try {
-        const instanceName = `channel_${Date.now()}`;
-        console.log('[ChannelService] Criando instância na Evolution API:', {
-          instanceName,
-          hasApiKey: !!apiKey,
-        });
-        
-        const evolutionResponse = await evolutionApi.createInstance(
-          instanceName,
-          apiKey,
-          true // qrcode: true para gerar QR code automaticamente
-        );
-        
-        console.log('[ChannelService] Resposta completa da criação de instância:', JSON.stringify(evolutionResponse, null, 2).substring(0, 1000));
-        console.log('[ChannelService] Resposta da criação de instância:', {
-          hasInstance: !!evolutionResponse.instance,
-          instanceName: evolutionResponse.instance?.instanceName,
-          hasToken: !!evolutionResponse.instance?.token,
-          hasQrcode: !!evolutionResponse.qrcode,
-          hasQrcodeBase64: !!evolutionResponse.qrcode?.base64,
-          keys: Object.keys(evolutionResponse),
-        });
-        
-        instanceId = evolutionResponse.instance?.instanceName || instanceName;
-        instanceToken = evolutionResponse.instance?.token;
-        
-        // Verificar se o QR code já veio na resposta da criação
-        if (evolutionResponse.qrcode?.base64) {
-          console.log('[ChannelService] ✅ QR Code recebido na criação da instância!');
-        }
-        
-        console.log('[ChannelService] Instância criada:', {
-          instanceId,
-          hasToken: !!instanceToken,
-        });
-
-        // Configurar webhook na criação (tentativa inicial)
-        // Nota: O webhook será configurado automaticamente quando a instância conectar
-        // pois precisamos do token da instância, que só é gerado após a conexão
+        const provisioned = await this.provisionEvolutionInstance(data.name, apiKey);
+        instanceId = provisioned.instanceId;
+        instanceToken = provisioned.instanceToken ?? undefined;
       } catch (error: any) {
         console.error('Erro ao criar instância na Evolution API:', error.message);
         // Continua criando o canal mesmo se falhar a criação da instância
@@ -340,9 +355,6 @@ export class ChannelService {
   async updateChannel(id: string, data: Partial<CreateChannelData>): Promise<Channel> {
     const existingChannel = await prisma.channel.findUnique({
       where: { id },
-      select: {
-        config: true,
-      },
     });
     if (!existingChannel) {
       throw new Error('Canal não encontrado');
@@ -354,10 +366,51 @@ export class ChannelService {
 
     const shouldUpdateSectors = data.primarySectorId !== undefined || data.secondarySectorIds !== undefined;
 
+    const trimmedName = typeof data.name === 'string' ? data.name.trim() : '';
+    const isRename = trimmedName.length > 0 && trimmedName !== existingChannel.name;
+
+    let evolutionSync:
+      | {
+          evolutionInstanceId: string;
+          evolutionInstanceToken: string | null;
+          status: ChannelStatus;
+        }
+      | undefined;
+
+    if (
+      isRename &&
+      existingChannel.type === ChannelType.WHATSAPP &&
+      !this.isWhatsAppOfficialConfig(existingChannel.config) &&
+      existingChannel.evolutionInstanceId
+    ) {
+      const apiKey = this.resolveEvolutionApiKey(existingChannel.evolutionApiKey);
+      if (apiKey) {
+        const oldInstanceId = existingChannel.evolutionInstanceId;
+        try {
+          await this.removeEvolutionInstance(oldInstanceId, apiKey);
+          const provisioned = await this.provisionEvolutionInstance(trimmedName, apiKey);
+          evolutionSync = {
+            evolutionInstanceId: provisioned.instanceId,
+            evolutionInstanceToken: provisioned.instanceToken ?? null,
+            status: ChannelStatus.INACTIVE,
+          };
+          console.log('[ChannelService] Instância Evolution recriada após renomear canal:', {
+            oldInstanceId,
+            newInstanceId: provisioned.instanceId,
+            channelName: trimmedName,
+          });
+        } catch (error: any) {
+          throw new Error(
+            `Não foi possível sincronizar o novo nome na Evolution API: ${error.message}`
+          );
+        }
+      }
+    }
+
     const updated = await prisma.channel.update({
       where: { id },
       data: {
-        ...(data.name && { name: data.name }),
+        ...(isRename && { name: trimmedName }),
         ...(data.config && {
           config: this.mergeConfigPreservingSecrets(existingChannel.config as any, data.config),
         }),
@@ -367,6 +420,7 @@ export class ChannelService {
         ...(data.primarySectorId !== undefined || data.sectorId !== undefined
           ? { sectorId: normalizedPrimarySectorId }
           : {}),
+        ...(evolutionSync || {}),
       },
     });
 
@@ -416,29 +470,9 @@ export class ChannelService {
       id: channel.id,
       name: channel.name,
       instanceId: channel.evolutionInstanceId,
-      hasApiKey: !!channel.evolutionApiKey,
+      hasApiKey: !!channel.evolutionApiKey || !!process.env.EVOLUTION_API_KEY,
     });
-    
-    // Se tiver instância na Evolution API, deletar também
-    if (channel.evolutionInstanceId && channel.evolutionApiKey) {
-      try {
-        console.log('[ChannelService] Deletando instância na Evolution API:', channel.evolutionInstanceId);
-        await evolutionApi.deleteInstance(channel.evolutionInstanceId, channel.evolutionApiKey);
-        console.log('[ChannelService] ✅ Instância deletada com sucesso na Evolution API');
-      } catch (error: any) {
-        console.error('[ChannelService] ❌ Erro ao deletar instância na Evolution API:', error.message);
-        if (error.response) {
-          console.error('[ChannelService] Status:', error.response.status);
-          console.error('[ChannelService] Data:', JSON.stringify(error.response.data, null, 2));
-        }
-        // Continua com a exclusão do canal mesmo se falhar na Evolution API
-        console.warn('[ChannelService] ⚠️ Continuando exclusão do canal mesmo com erro na Evolution API');
-      }
-    } else {
-      console.log('[ChannelService] Canal não tem instância na Evolution API para deletar');
-    }
 
-    // Verificar relacionamentos (apenas para logging)
     const conversationsCount = await prisma.conversation.count({
       where: { channelId: id },
     });
@@ -458,15 +492,34 @@ export class ChannelService {
       );
     }
 
+    const apiKey = this.resolveEvolutionApiKey(channel.evolutionApiKey);
+    const shouldDeleteEvolution =
+      channel.type === ChannelType.WHATSAPP &&
+      !!channel.evolutionInstanceId &&
+      !!apiKey &&
+      !this.isWhatsAppOfficialConfig(channel.config);
+
+    if (shouldDeleteEvolution) {
+      try {
+        await this.removeEvolutionInstance(channel.evolutionInstanceId!, apiKey!);
+      } catch (error: any) {
+        console.warn(
+          '[ChannelService] Continuando exclusão do canal após falha na Evolution API:',
+          error.message
+        );
+      }
+    } else {
+      console.log('[ChannelService] Canal sem instância Evolution para remover');
+    }
+
     try {
-      // Deletar canal apenas quando não houver vínculos
       await prisma.channel.delete({
         where: { id },
       });
       
-      console.log('[ChannelService] ✅ Canal deletado com sucesso');
+      console.log('[ChannelService] Canal deletado com sucesso');
     } catch (error: any) {
-      console.error('[ChannelService] ❌ Erro ao deletar canal:', error.message);
+      console.error('[ChannelService] Erro ao deletar canal:', error.message);
       console.error('[ChannelService] Código:', error.code);
       console.error('[ChannelService] Stack:', error.stack?.substring(0, 500));
       throw error;
