@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
-import { getPublicApiOrigin } from '../config/publicUrl';
+import { getPublicApiOrigin, resolveMessageMediaPreviewUrl, isDirectlyRenderableMediaUrl, resolveMediaMetadataUrl } from '../config/publicUrl';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import { getTimeAgo } from '../utils/timeUtils';
@@ -1338,16 +1338,7 @@ export default function Conversations() {
     }
   };
 
-  const getPreviewSrc = (message: Message) => {
-    const metaUrl = message.metadata?.mediaUrl;
-    // Se houver URL HTTP(s) explícita no metadata, pode ser usada diretamente.
-    if (typeof metaUrl === 'string' && (metaUrl.startsWith('http://') || metaUrl.startsWith('https://'))) {
-      return metaUrl;
-    }
-    // Para URLs locais (/api/media/file/...) priorizar /api/media/:id,
-    // pois essa rota tenta recuperar a mídia quando o arquivo sumiu do pod.
-    return `${apiBase}/api/media/${message.id}`;
-  };
+  const getPreviewSrc = (message: Message) => resolveMessageMediaPreviewUrl(message);
 
   const getTaskNotificationData = (message: Message): TaskNotificationData | null => {
     const metadataTask = message.metadata?.taskNotification;
@@ -2067,16 +2058,14 @@ export default function Conversations() {
                                     imgEl.dataset.fallbackTried = '1';
 
                                     // Fallback: tentar URL direta do metadata se disponível
-                                    if (message.metadata?.mediaUrl) {
-                                      let fallbackUrl = message.metadata.mediaUrl;
-                                      if (!fallbackUrl.startsWith('http')) {
-                                        const path = fallbackUrl.startsWith('/')
-                                          ? fallbackUrl
-                                          : `/${fallbackUrl}`;
-                                        fallbackUrl = `${apiBase}${path}`;
-                                      }
-                                      imgEl.src = fallbackUrl;
-                                      console.log('🔄 Tentando URL alternativa:', imgEl.src);
+                                    if (
+                                      message.metadata?.mediaUrl &&
+                                      isDirectlyRenderableMediaUrl(
+                                        message.metadata.mediaUrl,
+                                        message.metadata,
+                                      )
+                                    ) {
+                                      imgEl.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
                                     } else {
                                       imgEl.src =
                                         'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E';
@@ -2199,16 +2188,14 @@ export default function Conversations() {
                                     console.error('❌ Erro ao carregar vídeo:', message.id, e);
                                     const videoEl = e.target as HTMLVideoElement;
                                     // Fallback: tentar URL direta do metadata se disponível
-                                    if (message.metadata?.mediaUrl) {
-                                      let fallbackUrl = message.metadata.mediaUrl;
-                                      if (!fallbackUrl.startsWith('http')) {
-                                        const path = fallbackUrl.startsWith('/')
-                                          ? fallbackUrl
-                                          : `/${fallbackUrl}`;
-                                        fallbackUrl = `${apiBase}${path}`;
-                                      }
-                                      videoEl.src = fallbackUrl;
-                                      console.log('🔄 Tentando URL alternativa:', videoEl.src);
+                                    if (
+                                      message.metadata?.mediaUrl &&
+                                      isDirectlyRenderableMediaUrl(
+                                        message.metadata.mediaUrl,
+                                        message.metadata,
+                                      )
+                                    ) {
+                                      videoEl.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
                                     }
                                   }}
                                 />
@@ -2505,15 +2492,14 @@ export default function Conversations() {
                                     console.error('❌ Erro ao carregar áudio via /api/media/:id:', message.id, e);
                                     const audioEl = e.target as HTMLAudioElement;
                                     // Fallback: tentar URL direta do metadata
-                                    if (message.metadata?.mediaUrl) {
-                                      if (message.metadata.mediaUrl.startsWith('http')) {
-                                        audioEl.src = message.metadata.mediaUrl;
-                                      } else {
-                                        audioEl.src = `${apiBase}${
-                                          message.metadata.mediaUrl.startsWith('/') ? '' : '/'
-                                        }${message.metadata.mediaUrl}`;
-                                      }
-                                      console.log('🔄 Tentando URL alternativa:', audioEl.src);
+                                    if (
+                                      message.metadata?.mediaUrl &&
+                                      isDirectlyRenderableMediaUrl(
+                                        message.metadata.mediaUrl,
+                                        message.metadata,
+                                      )
+                                    ) {
+                                      audioEl.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
                                     }
                                   }}
                                   onLoadedMetadata={(ev) => {

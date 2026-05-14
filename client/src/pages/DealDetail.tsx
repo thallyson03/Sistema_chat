@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
-import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl } from '../config/publicUrl';
+import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl, isDirectlyRenderableMediaUrl } from '../config/publicUrl';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import CustomFieldsManager from '../components/CustomFieldsManager';
@@ -2316,10 +2316,14 @@ export default function DealDetail() {
                               }}
                               onError={(e) => {
                                 const imgEl = e.target as HTMLImageElement;
-                                if (message.metadata?.mediaUrl) {
-                                  imgEl.src = message.metadata.mediaUrl.startsWith('http')
-                                    ? message.metadata.mediaUrl
-                                    : resolveMediaMetadataUrl(message.metadata.mediaUrl);
+                                if (
+                                  message.metadata?.mediaUrl &&
+                                  isDirectlyRenderableMediaUrl(
+                                    message.metadata.mediaUrl,
+                                    message.metadata,
+                                  )
+                                ) {
+                                  imgEl.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
                                 }
                               }}
                             />
@@ -2415,10 +2419,14 @@ export default function DealDetail() {
                               }}
                               onError={(e) => {
                                 const videoEl = e.target as HTMLVideoElement;
-                                if (message.metadata?.mediaUrl) {
-                                  videoEl.src = message.metadata.mediaUrl.startsWith('http')
-                                    ? message.metadata.mediaUrl
-                                    : resolveMediaMetadataUrl(message.metadata.mediaUrl);
+                                if (
+                                  message.metadata?.mediaUrl &&
+                                  isDirectlyRenderableMediaUrl(
+                                    message.metadata.mediaUrl,
+                                    message.metadata,
+                                  )
+                                ) {
+                                  videoEl.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
                                 }
                               }}
                             />
@@ -2674,9 +2682,13 @@ export default function DealDetail() {
                           </div>
                           <a
                             href={
-                              message.metadata.mediaUrl
+                              message.metadata?.mediaUrl &&
+                              isDirectlyRenderableMediaUrl(
+                                message.metadata.mediaUrl,
+                                message.metadata,
+                              )
                                 ? resolveMediaMetadataUrl(message.metadata.mediaUrl)
-                                : '#'
+                                : getMessageMediaUrl(message.id)
                             }
                             download
                             style={{

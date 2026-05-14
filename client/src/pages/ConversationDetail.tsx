@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import api from '../utils/api';
-import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl } from '../config/publicUrl';
+import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl, isDirectlyRenderableMediaUrl } from '../config/publicUrl';
 
 // Componente de Player de Áudio estilo WhatsApp
 function AudioPlayer({ 
@@ -550,13 +550,14 @@ export default function ConversationDetail() {
                             console.error('❌ Erro ao carregar imagem:', message.id, e);
                             const target = e.target as HTMLImageElement;
                             // Fallback: tentar URL direta do metadata se disponível
-                            if (message.metadata?.mediaUrl) {
-                              if (message.metadata.mediaUrl.startsWith('http')) {
-                                target.src = message.metadata.mediaUrl;
-                              } else {
-                                target.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
-                              }
-                              console.log('🔄 Tentando URL alternativa:', target.src);
+                            if (
+                              message.metadata?.mediaUrl &&
+                              isDirectlyRenderableMediaUrl(
+                                message.metadata.mediaUrl,
+                                message.metadata,
+                              )
+                            ) {
+                              target.src = resolveMediaMetadataUrl(message.metadata.mediaUrl);
                             } else {
                             target.style.display = 'none';
                             }

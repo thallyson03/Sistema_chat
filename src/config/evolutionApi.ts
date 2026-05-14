@@ -631,6 +631,43 @@ class EvolutionApiClient {
       );
     }
   }
+
+  /**
+   * Obtém mídia descriptografada via Evolution (recomendado vs. baixar URL do WhatsApp no CRM).
+   */
+  async getBase64FromMediaMessage(
+    instanceName: string,
+    messagePayload: Record<string, any>,
+    apiKey?: string,
+    convertToMp4 = false
+  ): Promise<{
+    base64?: string;
+    mimetype?: string;
+    fileName?: string;
+    mediaType?: string;
+  }> {
+    try {
+      const response = await this.client.post(
+        `/chat/getBase64FromMediaMessage/${instanceName}`,
+        {
+          message: messagePayload,
+          convertToMp4,
+        },
+        {
+          headers: this.getHeaders(apiKey),
+          timeout: Number(process.env.EVOLUTION_MEDIA_TIMEOUT_MS || 120000),
+        }
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          error.message ||
+          'Erro ao obter mídia na Evolution API'
+      );
+    }
+  }
 }
 
 export const evolutionApi = new EvolutionApiClient();

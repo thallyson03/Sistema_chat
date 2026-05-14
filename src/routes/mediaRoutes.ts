@@ -11,6 +11,8 @@ import { authenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
 import { convertWebmToOgg, convertOggToMp3 } from '../utils/audioConverter';
 import { objectStorageService } from '../services/objectStorageService';
+import { evolutionApi } from '../config/evolutionApi';
+import { buildEvolutionMediaMessagePayload } from '../utils/whatsappMedia';
 
 const router = Router();
 
@@ -987,50 +989,107 @@ router.get('/:messageId', async (req: Request, res: Response) => {
     // Fluxo original Evolution API (Baileys)
     // ============================================
 
-    // Buscar token da instância para autenticação
-    let instanceToken: string | null = null;
-    
-    if (message.conversation.channel) {
-      instanceToken = message.conversation.channel.evolutionInstanceToken;
-    }
-    
-    // Se não encontrou no relacionamento, buscar diretamente do canal
-    if (!instanceToken) {
-      console.warn('[Media] ⚠️ Token não encontrado no relacionamento, buscando diretamente do canal...');
-      const channel = await prisma.channel.findUnique({
+    // Buscar canal Evolution (token da instância ou API key global)
+    const channelRecord =
+      message.conversation.channel ||
+      (await prisma.channel.findUnique({
         where: { id: message.conversation.channelId },
-        select: { evolutionInstanceToken: true, evolutionInstanceId: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          evolutionInstanceId: true,
+          evolutionInstanceToken: true,
+          evolutionApiKey: true,
+        },
+      }));
+
+    const instanceName = channelRecord?.evolutionInstanceId;
+    const evolutionAuthKey =
+      channelRecord?.evolutionInstanceToken ||
+      channelRecord?.evolutionApiKey ||
+      process.env.EVOLUTION_API_KEY ||
+      null;
+
+    if (!evolutionAuthKey) {
+      console.error('[Media] Token/API key Evolution não encontrado', {
+        channelId: message.conversation.channelId,
+        instanceName,
       });
-      
-      if (channel) {
-        instanceToken = channel.evolutionInstanceToken;
-        console.log('[Media] Canal encontrado:', {
-          channelId: message.conversation.channelId,
-          channelName: channel.name,
-          instanceId: channel.evolutionInstanceId,
-          hasToken: !!instanceToken,
-        });
-      }
-    }
-    
-    if (!instanceToken) {
-      console.error('[Media] ❌ Token da instância não encontrado');
-      console.error('[Media] ChannelId:', message.conversation.channelId);
-      if (message.conversation.channel) {
-        console.error('[Media] Channel data:', {
-          id: message.conversation.channel.id,
-          name: message.conversation.channel.name,
-          instanceId: message.conversation.channel.evolutionInstanceId,
-          hasToken: !!message.conversation.channel.evolutionInstanceToken,
-        });
-      }
-      return res.status(500).json({ 
-        error: 'Token da instância não configurado. Verifique se o canal está configurado corretamente.' 
+      return res.status(500).json({
+        error:
+          'Token da instância não configurado. Verifique se o canal Evolution está conectado.',
       });
     }
 
-    // Baixar mídia diretamente do WhatsApp usando o token
+    const tryEvolutionBase64 = async (): Promise<{
+      buffer: Buffer;
+      contentType: string;
+    } | null> => {
+      if (!instanceName) return null;
+      const payload = buildEvolutionMediaMessagePayload(
+        (metadata || {}) as Record<string, any>,
+        message.externalId,
+      );
+      if (!payload) {
+        console.warn('[Media] Evolution: payload getBase64 indisponível no metadata', messageId);
+        return null;
+      }
+      try {
+        console.log('[Media] Evolution: getBase64FromMediaMessage', {
+          instanceName,
+          messageId,
+        });
+        const result = await evolutionApi.getBase64FromMediaMessage(
+          instanceName,
+          payload,
+          evolutionAuthKey,
+          message.type === 'VIDEO',
+        );
+        if (!result?.base64) return null;
+        const buffer = Buffer.from(result.base64, 'base64');
+        const contentType =
+          result.mimetype ||
+          mediaMetadata?.mimetype ||
+          (message.type === 'IMAGE'
+            ? 'image/jpeg'
+            : message.type === 'VIDEO'
+              ? 'video/mp4'
+              : message.type === 'AUDIO'
+                ? 'audio/ogg'
+                : 'application/octet-stream');
+        console.log('[Media] Evolution getBase64 OK', {
+          messageId,
+          bytes: buffer.length,
+          contentType,
+        });
+        return { buffer, contentType };
+      } catch (evoErr: any) {
+        console.warn('[Media] Evolution getBase64 falhou, tentando URL direta:', evoErr.message);
+        return null;
+      }
+    };
+
+    // Baixar mídia (Evolution API primeiro; fallback URL WhatsApp + descriptografia local)
     try {
+      let buffer: Buffer | null = null;
+      let responseContentType: string | undefined;
+      let contentType =
+        mediaMetadata?.mimetype ||
+        (message.type === 'IMAGE'
+          ? 'image/jpeg'
+          : message.type === 'VIDEO'
+            ? 'video/mp4'
+            : message.type === 'AUDIO'
+              ? 'audio/ogg'
+              : 'application/octet-stream');
+
+      const base64Result = await tryEvolutionBase64();
+      if (base64Result) {
+        buffer = base64Result.buffer;
+        contentType = base64Result.contentType;
+      }
+
+      if (!buffer) {
       const evolutionDownloadUrl =
         remoteMediaFetchUrl && remoteMediaFetchUrl.startsWith('http')
           ? remoteMediaFetchUrl
@@ -1046,14 +1105,14 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         });
       }
 
-      console.log('[Media] 📥 Baixando mídia do WhatsApp...');
+      console.log('[Media] 📥 Baixando mídia do WhatsApp (fallback URL)...');
       console.log('[Media] URL:', evolutionDownloadUrl.substring(0, 100));
-      console.log('[Media] Token:', instanceToken.substring(0, 20) + '...');
 
       const response = await axios.get(evolutionDownloadUrl, {
         headers: {
-          'Authorization': `Bearer ${instanceToken}`,
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36',
+          Authorization: `Bearer ${evolutionAuthKey}`,
+          'User-Agent':
+            'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36',
         },
         responseType: 'arraybuffer',
         timeout: 30000,
@@ -1065,9 +1124,9 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         contentType: response.headers['content-type'],
       });
 
-      let buffer: Buffer;
-      
-      // Converter ArrayBuffer para Buffer
+      const responseContentType =
+        response.headers['content-type'] || response.headers['Content-Type'];
+
       if (response.data instanceof ArrayBuffer) {
         buffer = Buffer.from(response.data);
       } else {
@@ -1078,7 +1137,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
 
       // Verificar se precisa descriptografar
       const needsDecryption = !!mediaMetadata?.mediaKey;
-      
+
       if (needsDecryption && mediaMetadata.mediaKey) {
         try {
           console.log('[Media] 🔓 Tentando descriptografar mídia usando mediaKey...');
@@ -1191,63 +1250,49 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           console.warn('[Media] ⚠️ Dados parecem criptografados mas não há mediaKey disponível!');
         }
       }
-      
-      // Determinar Content-Type baseado no mimetype do metadata ou tipo da mensagem
-      let contentType: string;
-      if (mediaMetadata?.mimetype) {
-        contentType = mediaMetadata.mimetype;
-      } else if (response.headers['content-type'] || response.headers['Content-Type']) {
-        contentType = response.headers['content-type'] || response.headers['Content-Type'] || '';
-      } else {
-        // Fallback baseado no tipo de mensagem
-        switch (message.type) {
-          case 'IMAGE':
-            // Tentar determinar pelo magic number do buffer descriptografado
-            if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xD8) {
-              contentType = 'image/jpeg';
-            } else if (buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
-              contentType = 'image/png';
-            } else {
-              contentType = 'image/jpeg'; // Padrão
-            }
-            break;
-          case 'VIDEO':
-            // Tentar determinar pelo magic number do buffer descriptografado
-            if (buffer.length >= 8 && (
-              (buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) ||
-              (buffer[4] === 0x4D && buffer[5] === 0x54 && buffer[6] === 0x79 && buffer[7] === 0x70)
-            )) {
-              contentType = 'video/mp4';
-            } else if (buffer.length >= 4 && buffer[0] === 0x1A && buffer[1] === 0x45 && buffer[2] === 0xDF && buffer[3] === 0xA3) {
-              contentType = 'video/webm';
-            } else {
-              contentType = 'video/mp4'; // Padrão
-            }
-            break;
-          case 'AUDIO':
-            // Tentar determinar pelo magic number do buffer descriptografado
-            if (buffer.length >= 4 && buffer[0] === 0x1A && buffer[1] === 0x45 && buffer[2] === 0xDF && buffer[3] === 0xA3) {
-              contentType = 'audio/webm'; // WEBM
-            } else if (buffer.length >= 4 && buffer[0] === 0x4F && buffer[1] === 0x67 && buffer[2] === 0x67 && buffer[3] === 0x53) {
-              contentType = 'audio/ogg'; // OGG
-            } else if (buffer.length >= 12 && buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) {
-              contentType = 'audio/mp4'; // MP4/M4A
-            } else if (buffer.length >= 4 && buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46) {
-              contentType = 'audio/wav'; // WAV
-            } else {
-              // Usar mimetype do metadata se disponível, senão padrão
-              contentType = mediaMetadata?.mimetype || 'audio/ogg';
-            }
-            break;
-          default:
-            contentType = 'application/octet-stream';
-        }
+
+      if (!contentType && responseContentType) {
+        contentType = responseContentType;
       }
-      
-      // Validar que o buffer tem conteúdo
+      } // fim fallback URL direta
+
       if (!buffer || buffer.length === 0) {
         console.error('[Media] ❌ Buffer vazio ou inválido!');
         return res.status(500).json({ error: 'Buffer de mídia vazio ou inválido' });
+      }
+
+      if (!contentType || contentType === 'application/octet-stream') {
+        if (mediaMetadata?.mimetype) {
+          contentType = mediaMetadata.mimetype;
+        } else if (responseContentType) {
+          contentType = responseContentType;
+        } else {
+          switch (message.type) {
+            case 'IMAGE':
+              if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+                contentType = 'image/jpeg';
+              } else if (
+                buffer.length >= 4 &&
+                buffer[0] === 0x89 &&
+                buffer[1] === 0x50 &&
+                buffer[2] === 0x4e &&
+                buffer[3] === 0x47
+              ) {
+                contentType = 'image/png';
+              } else {
+                contentType = 'image/jpeg';
+              }
+              break;
+            case 'VIDEO':
+              contentType = 'video/mp4';
+              break;
+            case 'AUDIO':
+              contentType = mediaMetadata?.mimetype || 'audio/ogg';
+              break;
+            default:
+              contentType = 'application/octet-stream';
+          }
+        }
       }
       
       // Verificar magic numbers por tipo de mídia
@@ -1265,11 +1310,10 @@ router.get('/:messageId', async (req: Request, res: Response) => {
                           contentType.startsWith('video/') || 
                           contentType.startsWith('audio/');
       
-      console.log('[Media] ✅ Mídia baixada com sucesso do WhatsApp:', {
+      console.log('[Media] ✅ Mídia baixada com sucesso:', {
         mediaType: message.type,
         size: buffer.length,
         contentType,
-        status: response.status,
         urlLength: mediaUrl.length,
         isJPEG,
         isPNG,

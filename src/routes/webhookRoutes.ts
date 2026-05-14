@@ -14,6 +14,7 @@ import { idempotencyService } from '../services/idempotencyService';
 import { botProcessQueue } from '../queues/botProcess.queue';
 import { emitConversationDelta, emitMessageStatus } from '../utils/realtimeEvents';
 import { hybridCacheService } from '../services/hybridCacheService';
+import { normalizeWhatsAppMediaKey } from '../utils/whatsappMedia';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -1372,7 +1373,7 @@ async function handleNewMessage(data: any) {
       messageContent = msgObj.imageMessage.caption || ''; // Apenas caption, sem [Imagem]
       mediaUrl = msgObj.imageMessage.url;
       mediaMetadata = {
-        mediaKey: msgObj.imageMessage.mediaKey,
+        mediaKey: normalizeWhatsAppMediaKey(msgObj.imageMessage.mediaKey),
         mimetype: msgObj.imageMessage.mimetype,
         fileLength: msgObj.imageMessage.fileLength,
         height: msgObj.imageMessage.height,
@@ -1383,7 +1384,7 @@ async function handleNewMessage(data: any) {
       messageContent = msgObj.videoMessage.caption || ''; // Apenas caption, sem [Vídeo]
       mediaUrl = msgObj.videoMessage.url;
       mediaMetadata = {
-        mediaKey: msgObj.videoMessage.mediaKey,
+        mediaKey: normalizeWhatsAppMediaKey(msgObj.videoMessage.mediaKey),
         mimetype: msgObj.videoMessage.mimetype,
         fileLength: msgObj.videoMessage.fileLength,
         seconds: msgObj.videoMessage.seconds,
@@ -1395,7 +1396,7 @@ async function handleNewMessage(data: any) {
       messageContent = ''; // Sem texto para áudio
       mediaUrl = msgObj.audioMessage.url;
       mediaMetadata = {
-        mediaKey: msgObj.audioMessage.mediaKey,
+        mediaKey: normalizeWhatsAppMediaKey(msgObj.audioMessage.mediaKey),
         mimetype: msgObj.audioMessage.mimetype,
         fileLength: msgObj.audioMessage.fileLength,
         seconds: msgObj.audioMessage.seconds,
@@ -1406,7 +1407,7 @@ async function handleNewMessage(data: any) {
       messageContent = msgObj.documentMessage.fileName || ''; // Apenas nome do arquivo
       mediaUrl = msgObj.documentMessage.url;
       mediaMetadata = {
-        mediaKey: msgObj.documentMessage.mediaKey,
+        mediaKey: normalizeWhatsAppMediaKey(msgObj.documentMessage.mediaKey),
         mimetype: msgObj.documentMessage.mimetype,
         fileLength: msgObj.documentMessage.fileLength,
         fileName: msgObj.documentMessage.fileName,
@@ -1467,6 +1468,8 @@ async function handleNewMessage(data: any) {
       const fullMetadata: any = {
         ...data,
         ...message,
+        key: messageKey || data.key,
+        message: msgObj,
         mediaUrl: mediaUrl,
         mediaMetadata: mediaMetadata,
       };
@@ -1497,6 +1500,37 @@ async function handleNewMessage(data: any) {
         content: messageContent.substring(0, 50),
         type: messageType,
       });
+
+      if (['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(messageType)) {
+        const persistPort = process.env.PORT || 3007;
+        setImmediate(() => {
+          import('axios')
+            .then(({ default: axios }) =>
+              axios.get(`http://127.0.0.1:${persistPort}/api/media/${createdMessage.id}`, {
+                responseType: 'arraybuffer',
+                timeout: 180_000,
+                validateStatus: () => true,
+              }),
+            )
+            .then((res) => {
+              if (res.status === 200) {
+                console.log(
+                  `[handleNewMessage] Mídia Evolution persistida messageId=${createdMessage.id}`,
+                );
+              } else {
+                console.warn(
+                  `[handleNewMessage] Persistência mídia HTTP ${res.status} messageId=${createdMessage.id}`,
+                );
+              }
+            })
+            .catch((err) => {
+              console.warn(
+                `[handleNewMessage] Falha ao persistir mídia messageId=${createdMessage.id}:`,
+                err?.message,
+              );
+            });
+        });
+      }
 
       // Verificar se há bot ativo e processar mensagem
       if (!fromMe && messageContent) {
