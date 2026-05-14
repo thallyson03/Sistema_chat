@@ -12,7 +12,7 @@ import { AuthRequest } from '../middleware/auth';
 import { convertWebmToOgg, convertOggToMp3 } from '../utils/audioConverter';
 import { objectStorageService } from '../services/objectStorageService';
 import { evolutionApi } from '../config/evolutionApi';
-import { buildEvolutionMediaMessagePayload } from '../utils/whatsappMedia';
+import { buildEvolutionMediaMessagePayload, isWhatsAppCdnUrl, normalizeWhatsAppMediaKey, resolveMediaKeyFromMetadata } from '../utils/whatsappMedia';
 
 const router = Router();
 
@@ -520,7 +520,11 @@ router.get('/:messageId', async (req: Request, res: Response) => {
     // Extrair informações de mídia do metadata
     const metadata = message.metadata as any;
     const mediaUrl = metadata?.mediaUrl;
-    const mediaMetadata = metadata?.mediaMetadata || {};
+    let mediaMetadata = metadata?.mediaMetadata || {};
+    const resolvedMediaKey = resolveMediaKeyFromMetadata(metadata);
+    if (resolvedMediaKey && !mediaMetadata.mediaKey) {
+      mediaMetadata = { ...mediaMetadata, mediaKey: resolvedMediaKey };
+    }
     /** Quando o arquivo em /uploads sumiu (ex.: pod novo sem volume), URL HTTPS guardada para rebaixar. */
     let remoteMediaFetchUrl: string | null = null;
 
@@ -553,9 +557,11 @@ router.get('/:messageId', async (req: Request, res: Response) => {
     const hasGraphMediaId = !!resolveGraphMediaId(metadata);
     const isHttpMediaUrl = mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://');
     const isPersistedObjectUrl =
-      (isHttpMediaUrl && metadata?.storageProvider === 'object') ||
-      (isHttpMediaUrl && !!mediaMetadata?.storageKey) ||
-      (isHttpMediaUrl && !hasGraphMediaId && !mediaMetadata?.mediaKey);
+      isHttpMediaUrl &&
+      !isWhatsAppCdnUrl(mediaUrl) &&
+      (metadata?.storageProvider === 'object' ||
+        !!mediaMetadata?.storageKey ||
+        /minio\.|\/crm-media\//i.test(mediaUrl));
 
     if (isPersistedObjectUrl) {
       const signedUrl = await resolveSignedMediaUrl(metadata, mediaUrl);

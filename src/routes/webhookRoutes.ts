@@ -14,7 +14,7 @@ import { idempotencyService } from '../services/idempotencyService';
 import { botProcessQueue } from '../queues/botProcess.queue';
 import { emitConversationDelta, emitMessageStatus } from '../utils/realtimeEvents';
 import { hybridCacheService } from '../services/hybridCacheService';
-import { normalizeWhatsAppMediaKey } from '../utils/whatsappMedia';
+import { extractEvolutionMediaFields } from '../utils/whatsappMedia';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -1370,48 +1370,24 @@ async function handleNewMessage(data: any) {
       messageType = 'TEXT';
     } else if (msgObj.imageMessage) {
       messageType = 'IMAGE';
-      messageContent = msgObj.imageMessage.caption || ''; // Apenas caption, sem [Imagem]
+      messageContent = msgObj.imageMessage.caption || '';
       mediaUrl = msgObj.imageMessage.url;
-      mediaMetadata = {
-        mediaKey: normalizeWhatsAppMediaKey(msgObj.imageMessage.mediaKey),
-        mimetype: msgObj.imageMessage.mimetype,
-        fileLength: msgObj.imageMessage.fileLength,
-        height: msgObj.imageMessage.height,
-        width: msgObj.imageMessage.width,
-      };
+      mediaMetadata = extractEvolutionMediaFields(msgObj.imageMessage);
     } else if (msgObj.videoMessage) {
       messageType = 'VIDEO';
-      messageContent = msgObj.videoMessage.caption || ''; // Apenas caption, sem [Vídeo]
+      messageContent = msgObj.videoMessage.caption || '';
       mediaUrl = msgObj.videoMessage.url;
-      mediaMetadata = {
-        mediaKey: normalizeWhatsAppMediaKey(msgObj.videoMessage.mediaKey),
-        mimetype: msgObj.videoMessage.mimetype,
-        fileLength: msgObj.videoMessage.fileLength,
-        seconds: msgObj.videoMessage.seconds,
-        height: msgObj.videoMessage.height,
-        width: msgObj.videoMessage.width,
-      };
+      mediaMetadata = extractEvolutionMediaFields(msgObj.videoMessage);
     } else if (msgObj.audioMessage) {
       messageType = 'AUDIO';
-      messageContent = ''; // Sem texto para áudio
+      messageContent = '';
       mediaUrl = msgObj.audioMessage.url;
-      mediaMetadata = {
-        mediaKey: normalizeWhatsAppMediaKey(msgObj.audioMessage.mediaKey),
-        mimetype: msgObj.audioMessage.mimetype,
-        fileLength: msgObj.audioMessage.fileLength,
-        seconds: msgObj.audioMessage.seconds,
-        ptt: msgObj.audioMessage.ptt,
-      };
+      mediaMetadata = extractEvolutionMediaFields(msgObj.audioMessage);
     } else if (msgObj.documentMessage) {
       messageType = 'DOCUMENT';
-      messageContent = msgObj.documentMessage.fileName || ''; // Apenas nome do arquivo
+      messageContent = msgObj.documentMessage.fileName || '';
       mediaUrl = msgObj.documentMessage.url;
-      mediaMetadata = {
-        mediaKey: normalizeWhatsAppMediaKey(msgObj.documentMessage.mediaKey),
-        mimetype: msgObj.documentMessage.mimetype,
-        fileLength: msgObj.documentMessage.fileLength,
-        fileName: msgObj.documentMessage.fileName,
-      };
+      mediaMetadata = extractEvolutionMediaFields(msgObj.documentMessage);
     } else {
       messageContent = '[Mensagem não suportada]';
       messageType = 'TEXT';
