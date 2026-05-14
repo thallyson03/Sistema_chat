@@ -839,6 +839,24 @@ export default function Conversations() {
     }
   };
 
+  const appendMessageToChat = useCallback((newMsg: Message) => {
+    const el = messagesScrollRef.current;
+    if (el) {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      pendingScrollAfterMessagesRef.current =
+        gap < 120 ? { type: 'stickBottom' } : { type: 'preserveBottomGap', gapPx: gap };
+    } else {
+      pendingScrollAfterMessagesRef.current = { type: 'stickBottom' };
+    }
+    setShouldScrollToBottom(false);
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === newMsg.id)) return prev;
+      return [...prev, newMsg].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+    });
+  }, []);
+
   const handleConversationClick = async (conversation: Conversation) => {
     const isSameConversation = selectedConversation?.id === conversation.id;
     setSelectedConversation(conversation);
@@ -891,7 +909,7 @@ export default function Conversations() {
     ) {
       try {
         setSending(true);
-        await api.post('/api/whatsapp/templates/send', {
+        const response = await api.post('/api/whatsapp/templates/send', {
           conversationId: selectedConversation.id,
           templateName: pendingTemplate.name,
           language: pendingTemplate.language,
@@ -901,8 +919,10 @@ export default function Conversations() {
         setPendingTemplate(null);
         setMessageInput('');
         setShowEmojiPicker(false);
-      await fetchMessages(selectedConversation.id, { reset: true });
-        await fetchConversations();
+        if (response.status === 201 && response.data?.id) {
+          appendMessageToChat(response.data as Message);
+        }
+        queueConversationsRefresh(250);
       } catch (error: any) {
         console.error('Erro ao enviar template WhatsApp:', error);
         alert(
@@ -919,23 +939,28 @@ export default function Conversations() {
     if (!messageInput.trim() && !mediaUrl) return;
 
     setSending(true);
+    const trimmedContent = messageInput.trim();
+    setMessageInput('');
+    setShowEmojiPicker(false);
+    setPendingTemplate(null);
     try {
-      await api.post('/api/messages', {
+      const response = await api.post('/api/messages', {
         conversationId: selectedConversation.id,
-        content: messageInput.trim() || caption || '',
+        content: trimmedContent || caption || '',
         type: messageType || 'TEXT',
         mediaUrl,
         fileName,
-        caption: messageInput.trim() || caption,
+        caption: trimmedContent || caption,
       });
 
-      setPendingTemplate(null);
-      setMessageInput('');
-      setShowEmojiPicker(false);
-      // As mensagens serão atualizadas via Socket.IO
-      await fetchMessages(selectedConversation.id, { reset: true });
-      await fetchConversations();
+      if (response.status === 201 && response.data?.id) {
+        appendMessageToChat(response.data as Message);
+      }
+      queueConversationsRefresh(250);
     } catch (error) {
+      if (!mediaUrl) {
+        setMessageInput(trimmedContent);
+      }
       console.error('Erro ao enviar mensagem:', error);
       alert('Erro ao enviar mensagem. Tente novamente.');
     } finally {
@@ -1015,7 +1040,7 @@ export default function Conversations() {
       }
 
       // Enviar mensagem com mídia (incluindo mimetype para envio correto)
-      await api.post('/api/messages', {
+      const sendResponse = await api.post('/api/messages', {
         conversationId: selectedConversation.id,
         content: messageInput.trim() || file.name,
         type: messageType,
@@ -1027,9 +1052,10 @@ export default function Conversations() {
 
       setMessageInput('');
       setShowEmojiPicker(false);
-      // As mensagens serão atualizadas via Socket.IO
-      await fetchMessages(selectedConversation.id, { reset: true });
-      await fetchConversations();
+      if (sendResponse.status === 201 && sendResponse.data?.id) {
+        appendMessageToChat(sendResponse.data as Message);
+      }
+      queueConversationsRefresh(250);
     } catch (error) {
       console.error('Erro ao fazer upload:', error);
       alert('Erro ao fazer upload do arquivo. Tente novamente.');
@@ -1191,7 +1217,7 @@ export default function Conversations() {
             }
 
             // Enviar mensagem de áudio (incluindo mimetype)
-            await api.post('/api/messages', {
+            const audioResponse = await api.post('/api/messages', {
               conversationId: selectedConversation.id,
               content: '',
               type: 'AUDIO',
@@ -1202,10 +1228,11 @@ export default function Conversations() {
               caption: 'Áudio',
               mimetype: mimetype, // Passar mimetype para o backend usar no envio
             });
-            
-            // Atualizar mensagens
-            await fetchMessages(selectedConversation.id, { reset: true });
-            await fetchConversations();
+
+            if (audioResponse.status === 201 && audioResponse.data?.id) {
+              appendMessageToChat(audioResponse.data as Message);
+            }
+            queueConversationsRefresh(250);
           } catch (error: any) {
             console.error('Erro ao fazer upload do áudio:', error);
             const errorMsg = error.response?.data?.error || error.message || 'Erro ao enviar áudio.';
