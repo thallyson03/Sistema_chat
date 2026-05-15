@@ -2,6 +2,7 @@ import prisma from '../config/database';
 import { ConversationStatus, Priority } from '@prisma/client';
 import { ConversationDistributionService } from './conversationDistributionService';
 import { dispatchJourneyEvent } from './journeyEventDispatcher';
+import { getConversationMessagingWindow } from '../utils/whatsappMessagingWindow';
 
 export interface ConversationFilters {
   channelId?: string;
@@ -301,6 +302,7 @@ export class ConversationService {
           lastMessage: conv.messages[0]?.content || '',
           lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
           lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
+          messagingWindow: getConversationMessagingWindow(conv),
           inBot,
         };
       }),
@@ -373,6 +375,7 @@ export class ConversationService {
       ...conv,
       lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
       lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
+      messagingWindow: getConversationMessagingWindow(conv),
       inBot,
     } as any;
   }

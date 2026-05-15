@@ -12,6 +12,11 @@ import { resolvePublicAppBaseUrl } from '../utils/publicBaseUrl';
 import { emitConversationDelta } from '../utils/realtimeEvents';
 import { hybridCacheService } from './hybridCacheService';
 import { providerResilienceService } from './providerResilienceService';
+import {
+  assertMessagingWindowOpen,
+  extractWhatsAppApiError,
+  isWhatsAppOfficialChannel,
+} from '../utils/whatsappMessagingWindow';
 
 // io será injetado via função (mensagens de bot/automação precisam refletir em tempo real no chat)
 let io: any = null;
@@ -85,6 +90,8 @@ export class MessageService {
     // Se for mensagem interna (notificação apenas no CRM), não enviar para canais externos
     let externalId: string | null = null;
     let status: MessageStatus = MessageStatus.SENT;
+    let outboundSendError: { message: string; code?: string | number | null; at: string } | null =
+      null;
 
     if (!conversation.channel) {
       // Recuperação automática: se a conversa perdeu channelId, mas o contato ainda tem,
@@ -151,6 +158,15 @@ export class MessageService {
       channel.type === 'WHATSAPP' &&
       !!conversation.contact.phone &&
       (hasChannelOfficialConfig || hasGlobalEnvOfficial);
+
+    const isTemplateSend = !!String(data.metadata?.templateName || '').trim();
+    const usesOfficialChannel =
+      isWhatsAppOfficialChannel(channel) ||
+      (shouldUseWhatsAppOfficial && (hasChannelOfficialConfig || hasGlobalEnvOfficial));
+
+    if (usesOfficialChannel && !isInternalOnly && !isTemplateSend) {
+      assertMessagingWindowOpen(conversation);
+    }
 
     if (shouldUseWhatsAppOfficial) {
       // Usar WhatsApp Official API
@@ -442,7 +458,16 @@ export class MessageService {
         });
       } catch (error: any) {
         console.error('❌ [MessageService] Erro ao enviar via WhatsApp Official:', error);
-        throw error;
+        const sendError = extractWhatsAppApiError(error);
+        status = MessageStatus.FAILED;
+        outboundSendError = {
+          message: sendError.message,
+          code: sendError.code ?? null,
+          at: new Date().toISOString(),
+        };
+        console.warn(
+          '⚠️ [MessageService] Mensagem será salva com status FAILED após falha no WhatsApp Official',
+        );
       }
     } else if (
       !!channel &&
@@ -828,6 +853,9 @@ export class MessageService {
     }
     if (isInternalOnly) {
       metadata.internalOnly = true;
+    }
+    if (outboundSendError) {
+      metadata.sendError = outboundSendError;
     }
 
     // Se userId vier como string vazia (caso de mensagens de bot), converter para null

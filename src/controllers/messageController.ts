@@ -126,7 +126,19 @@ export class MessageController {
     } catch (error: any) {
       console.error('[MessageController] Erro ao enviar mensagem:', error.message);
       console.error('[MessageController] Stack:', error.stack?.substring(0, 500));
-      res.status(400).json({ error: error.message });
+
+      if (error?.code === 'MESSAGING_WINDOW_CLOSED') {
+        return res.status(403).json({
+          error: error.message,
+          code: error.code,
+          messagingWindow: error.messagingWindow,
+        });
+      }
+
+      res.status(400).json({
+        error: error.message,
+        code: error.code,
+      });
     }
   }
 

@@ -7,6 +7,12 @@ import { getPublicApiOrigin, resolveMessageMediaPreviewUrl, isDirectlyRenderable
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
 import { getTimeAgo } from '../utils/timeUtils';
+import {
+  formatMessagingWindowRemaining,
+  getSendBlockedReason,
+  resolveConversationMessagingWindow,
+  type MessagingWindowStatus,
+} from '../utils/whatsappMessagingWindow';
 import { ConversationCard } from '../components/ui/ConversationCard';
 import { IconButton } from '../components/ui/IconButton';
 import { useConfirm } from '../components/ui/ConfirmProvider';
@@ -91,10 +97,12 @@ interface Conversation {
   unreadCount: number;
   lastCustomerMessageAt?: string;
   lastAgentMessageAt?: string;
+  messagingWindow?: MessagingWindowStatus;
   channel: {
     id: string;
     name: string;
     type: string;
+    config?: { provider?: string; phoneNumberId?: string; token?: string };
   };
   inBot?: boolean;
 }
@@ -125,6 +133,11 @@ interface Message {
     source?: string;
     taskNotification?: TaskNotificationData;
     noteNotification?: NoteNotificationData;
+    sendError?: {
+      message?: string;
+      code?: string | number | null;
+      at?: string;
+    };
   };
 }
 
@@ -145,11 +158,13 @@ function conversationFromDetailApi(raw: Record<string, unknown>): Conversation {
     unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
     lastCustomerMessageAt: raw.lastCustomerMessageAt as string | undefined,
     lastAgentMessageAt: raw.lastAgentMessageAt as string | undefined,
+    messagingWindow: raw.messagingWindow as MessagingWindowStatus | undefined,
     channel: ch
       ? {
           id: String(ch.id),
           name: String(ch.name ?? ''),
           type: String(ch.type ?? 'WHATSAPP'),
+          config: ch.config as Conversation['channel']['config'],
         }
       : { id: String(raw.channelId ?? ''), name: 'Sem canal', type: 'WHATSAPP' },
     inBot: raw.inBot as boolean | undefined,
@@ -186,6 +201,8 @@ export default function Conversations() {
     null,
   );
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [windowTick, setWindowTick] = useState(() => Date.now());
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -264,10 +281,31 @@ export default function Conversations() {
     return true;
   };
 
+  const getActiveMessagingWindow = (): MessagingWindowStatus | null => {
+    if (!selectedConversation) return null;
+    return resolveConversationMessagingWindow(selectedConversation, windowTick);
+  };
+
+  const getMessagingWindowBlockReason = (hasPendingTemplate = false): string | null => {
+    const mw = getActiveMessagingWindow();
+    if (!mw) return null;
+    return getSendBlockedReason(mw, hasPendingTemplate);
+  };
+
   // Atualizar o ref sempre que a conversa selecionada mudar
   useEffect(() => {
     currentConversationIdRef.current = selectedConversation?.id || null;
   }, [selectedConversation]);
+
+  useEffect(() => {
+    setSendError(null);
+  }, [selectedConversation?.id]);
+
+  useEffect(() => {
+    if (!selectedConversation) return undefined;
+    const timer = window.setInterval(() => setWindowTick(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [selectedConversation?.id]);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -901,6 +939,12 @@ export default function Conversations() {
     if (!selectedConversation || sending) return;
     if (!ensureBotDisabledForManualInteraction()) return;
 
+    const windowBlockReason = getMessagingWindowBlockReason(!!pendingTemplate);
+    if (windowBlockReason && !pendingTemplate) {
+      setSendError(windowBlockReason);
+      return;
+    }
+
     // Se há um template pendente e não estamos enviando mídia, envia como template
     if (
       pendingTemplate &&
@@ -909,6 +953,7 @@ export default function Conversations() {
     ) {
       try {
         setSending(true);
+        setSendError(null);
         const response = await api.post('/api/whatsapp/templates/send', {
           conversationId: selectedConversation.id,
           templateName: pendingTemplate.name,
@@ -925,7 +970,7 @@ export default function Conversations() {
         queueConversationsRefresh(250);
       } catch (error: any) {
         console.error('Erro ao enviar template WhatsApp:', error);
-        alert(
+        setSendError(
           error.response?.data?.error ||
             'Erro ao enviar template WhatsApp. Verifique se o template está aprovado e o canal está correto.',
         );
@@ -939,6 +984,7 @@ export default function Conversations() {
     if (!messageInput.trim() && !mediaUrl) return;
 
     setSending(true);
+    setSendError(null);
     const trimmedContent = messageInput.trim();
     setMessageInput('');
     setShowEmojiPicker(false);
@@ -955,14 +1001,26 @@ export default function Conversations() {
 
       if (response.status === 201 && response.data?.id) {
         appendMessageToChat(response.data as Message);
+        if ((response.data.status || '').toUpperCase() === 'FAILED') {
+          const failedMsg =
+            response.data.metadata?.sendError?.message ||
+            'Não foi possível entregar a mensagem pelo WhatsApp.';
+          setSendError(failedMsg);
+        }
       }
       queueConversationsRefresh(250);
-    } catch (error) {
+    } catch (error: any) {
       if (!mediaUrl) {
         setMessageInput(trimmedContent);
       }
       console.error('Erro ao enviar mensagem:', error);
-      alert('Erro ao enviar mensagem. Tente novamente.');
+      const apiData = error.response?.data;
+      setSendError(
+        apiData?.error ||
+          apiData?.details ||
+          error.message ||
+          'Erro ao enviar mensagem. Tente novamente.',
+      );
     } finally {
       setSending(false);
     }
@@ -1016,7 +1074,15 @@ export default function Conversations() {
       return;
     }
 
+    const uploadBlockReason = getMessagingWindowBlockReason(false);
+    if (uploadBlockReason) {
+      setSendError(uploadBlockReason);
+      e.target.value = '';
+      return;
+    }
+
     setUploadingFile(true);
+    setSendError(null);
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -1054,11 +1120,21 @@ export default function Conversations() {
       setShowEmojiPicker(false);
       if (sendResponse.status === 201 && sendResponse.data?.id) {
         appendMessageToChat(sendResponse.data as Message);
+        if ((sendResponse.data.status || '').toUpperCase() === 'FAILED') {
+          setSendError(
+            sendResponse.data.metadata?.sendError?.message ||
+              'Não foi possível enviar o arquivo pelo WhatsApp.',
+          );
+        }
       }
       queueConversationsRefresh(250);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao fazer upload:', error);
-      alert('Erro ao fazer upload do arquivo. Tente novamente.');
+      setSendError(
+        error.response?.data?.error ||
+          error.message ||
+          'Erro ao fazer upload do arquivo. Tente novamente.',
+      );
     } finally {
       setUploadingFile(false);
       if (fileInputRef.current) {
@@ -1216,6 +1292,13 @@ export default function Conversations() {
               return;
             }
 
+            const audioBlockReason = getMessagingWindowBlockReason(false);
+            if (audioBlockReason) {
+              setSendError(audioBlockReason);
+              return;
+            }
+            setSendError(null);
+
             // Enviar mensagem de áudio (incluindo mimetype)
             const audioResponse = await api.post('/api/messages', {
               conversationId: selectedConversation.id,
@@ -1231,12 +1314,19 @@ export default function Conversations() {
 
             if (audioResponse.status === 201 && audioResponse.data?.id) {
               appendMessageToChat(audioResponse.data as Message);
+              if ((audioResponse.data.status || '').toUpperCase() === 'FAILED') {
+                setSendError(
+                  audioResponse.data.metadata?.sendError?.message ||
+                    'Não foi possível enviar o áudio pelo WhatsApp.',
+                );
+              }
             }
             queueConversationsRefresh(250);
           } catch (error: any) {
             console.error('Erro ao fazer upload do áudio:', error);
-            const errorMsg = error.response?.data?.error || error.message || 'Erro ao enviar áudio.';
-            alert(`Erro ao enviar áudio: ${errorMsg}`);
+            setSendError(
+              error.response?.data?.error || error.message || 'Erro ao enviar áudio.',
+            );
           } finally {
             setUploadingFile(false);
           }
@@ -1311,6 +1401,9 @@ export default function Conversations() {
 
   const getDeliveryCheckClass = (status?: string) => {
     const normalized = (status || '').toUpperCase();
+    if (normalized === 'FAILED') {
+      return 'text-red-400';
+    }
     if (normalized === 'DELIVERED' || normalized === 'READ') {
       return 'text-sky-400';
     }
@@ -1462,6 +1555,10 @@ export default function Conversations() {
       </div>
     );
   }
+
+  const activeMessagingWindow = getActiveMessagingWindow();
+  const messagingWindowBlockReason = getMessagingWindowBlockReason(!!pendingTemplate);
+  const isMessagingInputLocked = !!messagingWindowBlockReason;
 
   return (
     <div className="relative flex h-full min-h-0 w-full min-w-0 max-w-full flex-1 overflow-hidden bg-background font-body text-on-surface">
@@ -1645,6 +1742,11 @@ export default function Conversations() {
                         </p>
                       )}
                       <div className="text-[10px] uppercase tracking-wider text-primary/65">
+                        {conv.messagingWindow?.applies && !conv.messagingWindow.isOpen && (
+                          <div className="mb-0.5 font-bold text-on-error-container">
+                            Janela 24h encerrada
+                          </div>
+                        )}
                         {conv.lastCustomerMessageAt && (
                           <div><span className="text-primary-fixed-dim">Cliente:</span> {getTimeAgo(conv.lastCustomerMessageAt)}</div>
                         )}
@@ -1725,6 +1827,24 @@ export default function Conversations() {
                       selectedConversation.contact?.name ||
                       'Sem telefone'}
                   </p>
+                  {activeMessagingWindow?.applies && (
+                    <motion.div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                          activeMessagingWindow.isOpen
+                            ? 'bg-primary-container/80 text-on-secondary-container'
+                            : 'bg-error-container/90 text-on-error-container'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {activeMessagingWindow.isOpen ? 'schedule' : 'lock'}
+                        </span>
+                        {activeMessagingWindow.isOpen
+                          ? `Janela 24h · ${formatMessagingWindowRemaining(activeMessagingWindow.remainingMs)}`
+                          : 'Janela 24h encerrada'}
+                      </span>
+                    </motion.div>
+                  )}
                 </div>
               </div>
               <div className="ml-2 flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -2736,17 +2856,26 @@ export default function Conversations() {
                           {message.userId && (
                             <span
                               title={
-                                (message.status || '').toUpperCase() === 'DELIVERED' ||
-                                (message.status || '').toUpperCase() === 'READ'
-                                  ? 'Entregue'
-                                  : 'Enviado'
+                                (message.status || '').toUpperCase() === 'FAILED'
+                                  ? message.metadata?.sendError?.message || 'Falha no envio'
+                                  : (message.status || '').toUpperCase() === 'DELIVERED' ||
+                                      (message.status || '').toUpperCase() === 'READ'
+                                    ? 'Entregue'
+                                    : 'Enviado'
                               }
                               className={`text-xs leading-none ${getDeliveryCheckClass(message.status)}`}
                             >
-                              ✓
+                              {(message.status || '').toUpperCase() === 'FAILED' ? '✗' : '✓'}
                             </span>
                           )}
                         </div>
+                        {isOwnMessage &&
+                          (message.status || '').toUpperCase() === 'FAILED' &&
+                          message.metadata?.sendError?.message && (
+                            <p className="mt-1 text-[10px] text-red-400/90">
+                              {message.metadata.sendError.message}
+                            </p>
+                          )}
                       </motion.div>
                       
                       {/* Avatar do agente (só aparece em mensagens do agente) */}
@@ -2790,6 +2919,46 @@ export default function Conversations() {
 
             {/* Input de Mensagem */}
             <div className="relative border-t border-primary/10 bg-surface-container-low/60 px-5 py-4 backdrop-blur-md">
+              {pendingTemplate && (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-primary/25 bg-primary-container/30 px-3 py-2 text-xs text-on-secondary-container">
+                  <span className="material-symbols-outlined text-base">campaign</span>
+                  <span>
+                    Enviando template <strong>{pendingTemplate.name}</strong> — preencha o texto e
+                    confirme o envio.
+                  </span>
+                </div>
+              )}
+              {messagingWindowBlockReason && !pendingTemplate && (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-error/30 bg-error-container/40 px-3 py-2 text-xs text-on-error-container">
+                  <span className="material-symbols-outlined shrink-0 text-base">info</span>
+                  <div>
+                    <p>{messagingWindowBlockReason}</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickReplies(true)}
+                      className="mt-1 font-semibold underline hover:no-underline"
+                    >
+                      Abrir respostas rápidas / templates
+                    </button>
+                  </div>
+                </div>
+              )}
+              {sendError && (
+                <motion.div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/35 bg-red-950/35 px-3 py-2 text-xs text-red-200">
+                  <span className="material-symbols-outlined shrink-0 text-base">error</span>
+                  <div className="min-w-0 flex-1">
+                    <p>{sendError}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSendError(null)}
+                    className="shrink-0 text-red-300/80 hover:text-red-100"
+                    aria-label="Fechar aviso"
+                  >
+                    <span className="material-symbols-outlined text-base">close</span>
+                  </button>
+                </motion.div>
+              )}
               {/* Emoji Picker */}
               {showEmojiPicker && (
                 <div ref={emojiPickerRef} className="absolute bottom-20 left-5 z-[1000]">
@@ -2838,9 +3007,13 @@ export default function Conversations() {
                 <IconButton
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingFile || sending}
+                  disabled={uploadingFile || sending || isMessagingInputLocked}
                   icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">attach_file</span>}
-                  tooltip="Enviar arquivo"
+                  tooltip={
+                    isMessagingInputLocked
+                      ? 'Envio bloqueado — use um template aprovado'
+                      : 'Enviar arquivo'
+                  }
                   className="!border !border-[rgba(63,73,69,0.2)] !bg-transparent !text-primary-fixed-dim hover:!bg-emerald-900/25 focus:!ring-primary/30"
                 />
                 <input
@@ -2856,9 +3029,13 @@ export default function Conversations() {
                   <IconButton
                     type="button"
                     onClick={startRecording}
-                    disabled={sending || uploadingFile}
+                    disabled={sending || uploadingFile || isMessagingInputLocked}
                     icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">mic</span>}
-                    tooltip="Gravar áudio"
+                    tooltip={
+                      isMessagingInputLocked
+                        ? 'Envio bloqueado — use um template aprovado'
+                        : 'Gravar áudio'
+                    }
                     className="!border !border-[rgba(63,73,69,0.2)] !bg-transparent !text-primary-fixed-dim hover:!bg-emerald-900/25 focus:!ring-primary/30"
                   />
                 ) : (
@@ -2886,15 +3063,30 @@ export default function Conversations() {
                   type="text"
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  placeholder={recording ? "Gravando áudio..." : uploadingFile ? "Enviando arquivo..." : "Digite sua mensagem..."}
-                  disabled={recording || uploadingFile}
+                  placeholder={
+                    recording
+                      ? 'Gravando áudio...'
+                      : uploadingFile
+                        ? 'Enviando arquivo...'
+                        : pendingTemplate
+                          ? 'Texto do template...'
+                          : isMessagingInputLocked
+                            ? 'Janela 24h encerrada — use template'
+                            : 'Digite sua mensagem...'
+                  }
+                  disabled={recording || uploadingFile || (isMessagingInputLocked && !pendingTemplate)}
                   className="min-w-0 flex-1 rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-lowest px-4 py-2.5 text-sm text-on-surface outline-none transition focus:border-primary/40 focus:ring-1 focus:ring-primary/30 disabled:opacity-60"
                   whileFocus={{ scale: 1.01 }}
                 />
 
                 <motion.button
                   type="submit"
-                  disabled={(!messageInput.trim() && !recording && !uploadingFile) || sending || uploadingFile}
+                  disabled={
+                    (!messageInput.trim() && !recording && !uploadingFile) ||
+                    sending ||
+                    uploadingFile ||
+                    (isMessagingInputLocked && !pendingTemplate)
+                  }
                   className="flex min-w-[3rem] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-on-primary shadow-emerald-send transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 active-gradient-emerald hover:brightness-110"
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
