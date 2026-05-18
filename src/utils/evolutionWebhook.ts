@@ -78,6 +78,15 @@ export function extractPhoneFromEvolutionJid(jid: string | null | undefined): st
   return clean.length >= 10 ? clean : null;
 }
 
+/** Identificador estável para ContactChannelIdentity (ex.: `262581432397993@lid`). */
+export function normalizeEvolutionLidExternalId(jid: string | null | undefined): string | null {
+  if (!jid || typeof jid !== 'string' || !jid.includes('@lid')) return null;
+  const trimmed = jid.trim();
+  const numeric = trimmed.replace('@lid', '').replace(/\D/g, '');
+  if (!numeric) return null;
+  return `${numeric}@lid`;
+}
+
 export function extractEvolutionMessageKeyId(key: any): string | null {
   const id = key?.id ?? key?.messageId;
   return id ? String(id) : null;

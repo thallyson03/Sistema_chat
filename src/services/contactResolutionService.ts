@@ -1,5 +1,6 @@
 import prisma from '../config/database';
 import { Channel, Contact } from '@prisma/client';
+import { normalizeEvolutionLidExternalId } from '../utils/evolutionWebhook';
 import { assertValidPhone, normalizePhone } from '../utils/phone';
 import { dispatchJourneyEvent } from './journeyEventDispatcher';
 
@@ -118,6 +119,82 @@ export class ContactResolutionService {
     });
 
     return identity?.contact ?? null;
+  }
+
+  /** Vincula LID do WhatsApp (presença) ao contato após mensagem 1:1. */
+  async upsertLidIdentity(params: {
+    contactId: string;
+    channelId: string;
+    lidJid: string;
+    provider?: string | null;
+  }) {
+    const externalId = normalizeEvolutionLidExternalId(params.lidJid);
+    if (!externalId) return null;
+
+    return prisma.contactChannelIdentity.upsert({
+      where: {
+        channelId_externalId: {
+          channelId: params.channelId,
+          externalId,
+        },
+      },
+      create: {
+        contactId: params.contactId,
+        channelId: params.channelId,
+        externalId,
+        provider: params.provider ?? 'evolution-lid',
+        lastSeenAt: new Date(),
+      },
+      update: {
+        contactId: params.contactId,
+        lastSeenAt: new Date(),
+      },
+    });
+  }
+
+  /** Resolve contato a partir do LID (@lid) usado em presence.update. */
+  async findContactByLidOnChannel(channelId: string, lidJid: string): Promise<Contact | null> {
+    const externalId = normalizeEvolutionLidExternalId(lidJid);
+    if (!externalId) return null;
+
+    const identity = await prisma.contactChannelIdentity.findFirst({
+      where: { channelId, externalId },
+      include: { contact: true },
+    });
+    if (identity?.contact) return identity.contact;
+
+    const recentWithLid = await prisma.message.findFirst({
+      where: {
+        conversation: { channelId },
+        OR: [
+          {
+            metadata: {
+              path: ['key', 'remoteJidAlt'],
+              equals: externalId,
+            },
+          },
+          {
+            metadata: {
+              path: ['key', 'participant'],
+              equals: externalId,
+            },
+          },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        conversation: { include: { contact: true } },
+      },
+    });
+    if (!recentWithLid?.conversation?.contact) return null;
+
+    await this.upsertLidIdentity({
+      contactId: recentWithLid.conversation.contact.id,
+      channelId,
+      lidJid: externalId,
+      provider: 'evolution-lid',
+    });
+    return recentWithLid.conversation.contact;
   }
 
   resolveProviderFromChannel(channel: Channel): string | null {

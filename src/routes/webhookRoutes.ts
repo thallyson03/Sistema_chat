@@ -1097,6 +1097,21 @@ async function handleNewMessage(data: any) {
       provider: contactResolutionService.resolveProviderFromChannel(channel),
     });
 
+    const msgKeyForLid = (data.key || messageKey) as Record<string, unknown> | undefined;
+    const lidJids = [
+      msgKeyForLid?.remoteJidAlt,
+      msgKeyForLid?.participant,
+      msgKeyForLid?.remoteJid,
+    ].filter((v): v is string => typeof v === 'string' && v.includes('@lid'));
+    for (const lidJid of lidJids) {
+      await contactResolutionService.upsertLidIdentity({
+        contactId: contact.id,
+        channelId: channel.id,
+        lidJid,
+        provider: contactResolutionService.resolveProviderFromChannel(channel),
+      });
+    }
+
     const channelWithSector = await prisma.channel.findUnique({
       where: { id: channel.id },
       include: { sector: true },
@@ -1683,11 +1698,27 @@ async function handlePresenceUpdate(data: any) {
         continue;
       }
 
-      const phone =
+      let phone =
         extractPhoneFromEvolutionPresenceData(item) ||
         extractPhoneFromEvolutionJid(presence.remoteJid);
-      if (!phone) {
-        console.log('[Webhook] PRESENCE_UPDATE sem telefone resolvível', {
+
+      let contact =
+        phone != null
+          ? await contactResolutionService.findContactOnChannel(channel.id, phone)
+          : null;
+
+      if (!contact && presence.remoteJid.includes('@lid')) {
+        contact = await contactResolutionService.findContactByLidOnChannel(
+          channel.id,
+          presence.remoteJid,
+        );
+        if (contact?.phone) {
+          phone = contact.phone;
+        }
+      }
+
+      if (!phone || !contact) {
+        console.log('[Webhook] PRESENCE_UPDATE sem telefone/contato resolvível', {
           instance: instanceName,
           remoteJid: presence.remoteJid,
           state: presence.state,

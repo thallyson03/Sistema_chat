@@ -497,6 +497,23 @@ class EvolutionApiClient {
    * Inscreve na presença do contato no Baileys (necessário para receber "digitando"/"gravando").
    * Usa sendPresence com delay mínimo e "paused" para não exibir typing ao cliente.
    */
+  async fetchWhatsAppNumberInfo(instanceName: string, phone: string, apiKey?: string) {
+    const cleanNumber = String(phone).replace(/\D/g, '');
+    if (cleanNumber.length < 10) return null;
+
+    try {
+      const response = await this.client.post(
+        `/chat/whatsappNumbers/${instanceName}`,
+        { numbers: [cleanNumber] },
+        { headers: this.getHeaders(apiKey) },
+      );
+      const list = Array.isArray(response.data) ? response.data : [];
+      return list[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async subscribeContactPresence(instanceName: string, number: string, apiKey?: string) {
     const cleanNumber = String(number).replace(/\D/g, '');
     if (cleanNumber.length < 10) return;

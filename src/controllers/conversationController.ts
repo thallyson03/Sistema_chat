@@ -115,9 +115,10 @@ export class ConversationController {
       const conversation = await prisma.conversation.findUnique({
         where: { id },
         include: {
-          contact: { select: { phone: true } },
+          contact: { select: { id: true, phone: true } },
           channel: {
             select: {
+              id: true,
               type: true,
               evolutionInstanceId: true,
               evolutionApiKey: true,
@@ -127,8 +128,48 @@ export class ConversationController {
       });
 
       if (!conversation?.channel?.evolutionInstanceId || !conversation.contact?.phone) {
-        return res.status(400).json({
-          error: 'Conversa sem canal Evolution ou telefone do contato',
+        return res.json({ ok: false, skipped: true });
+      }
+
+      const { contactResolutionService } = await import('../services/contactResolutionService');
+
+      const recentMessages = await prisma.message.findMany({
+        where: { conversationId: id },
+        select: { metadata: true },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+      });
+      for (const row of recentMessages) {
+        const key = (row.metadata as { key?: Record<string, string> } | null)?.key;
+        for (const candidate of [key?.remoteJidAlt, key?.participant, key?.remoteJid]) {
+          if (candidate?.includes('@lid')) {
+            await contactResolutionService.upsertLidIdentity({
+              contactId: conversation.contact.id,
+              channelId: conversation.channel.id,
+              lidJid: candidate,
+            });
+          }
+        }
+      }
+
+      const waInfo = await evolutionApi.fetchWhatsAppNumberInfo(
+        conversation.channel.evolutionInstanceId,
+        conversation.contact.phone,
+        conversation.channel.evolutionApiKey ?? undefined,
+      );
+      const lidFromApi =
+        typeof waInfo?.lid === 'string' && waInfo.lid !== 'lid'
+          ? waInfo.lid.includes('@')
+            ? waInfo.lid
+            : `${waInfo.lid}@lid`
+          : typeof waInfo?.jid === 'string' && waInfo.jid.includes('@lid')
+            ? waInfo.jid
+            : null;
+      if (lidFromApi) {
+        await contactResolutionService.upsertLidIdentity({
+          contactId: conversation.contact.id,
+          channelId: conversation.channel.id,
+          lidJid: lidFromApi,
         });
       }
 
