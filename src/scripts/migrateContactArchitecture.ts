@@ -1,9 +1,10 @@
 /**
- * Migra dados legados para Contact global + identities + channelSnapshot.
- * Executar após 20260515120000 e antes de 20260515130000:
- *   npx ts-node scripts/migrateContactArchitecture.ts
+ * Backfill pós-migração: telefones normalizados, identities e channelSnapshot.
+ *
+ * Desenvolvimento: npm run migrate:contacts
+ * Produção (Docker):   node dist/scripts/migrateContactArchitecture.js
  */
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -84,81 +85,115 @@ async function reassignContactFk(fromId: string, toId: string) {
   await prisma.contactChannelIdentity.deleteMany({ where: { contactId: fromId } });
 }
 
-async function main() {
-  const contacts = await prisma.contact.findMany({
-    orderBy: { createdAt: 'asc' },
-  });
-
-  console.log(`[migrate] ${contacts.length} contatos legados`);
-
+async function mergeDuplicateContacts() {
+  const contacts = await prisma.contact.findMany({ orderBy: { createdAt: 'asc' } });
   const phoneToMaster = new Map<string, string>();
+  let merged = 0;
 
   for (const c of contacts) {
-    const phone =
-      normalizePhone(c.phone) ||
-      normalizePhone((c as { channelIdentifier?: string }).channelIdentifier);
+    const phone = normalizePhone(c.phone);
     if (!phone) {
-      console.warn(`[migrate] contato ${c.id} sem telefone válido — será removido na finalize`);
+      console.warn(`[migrate] contato ${c.id} sem telefone válido, ignorando merge`);
       continue;
     }
 
     if (!phoneToMaster.has(phone)) {
-      await prisma.contact.update({ where: { id: c.id }, data: { phone } });
+      if (c.phone !== phone) {
+        await prisma.contact.update({ where: { id: c.id }, data: { phone } });
+      }
       phoneToMaster.set(phone, c.id);
-    } else {
-      const masterId = phoneToMaster.get(phone)!;
-      console.log(`[migrate] merge ${c.id} → ${masterId} (${phone})`);
-      await reassignContactFk(c.id, masterId);
-      await prisma.contact.delete({ where: { id: c.id } });
+      continue;
     }
 
-    const legacy = c as { channelId?: string | null; channelIdentifier?: string };
-    if (legacy.channelId) {
-      const ext =
-        normalizePhone(legacy.channelIdentifier) ||
-        normalizePhone(c.phone) ||
-        phone;
-      if (ext) {
-        const masterId = phoneToMaster.get(phone)!;
-        try {
-          await prisma.contactChannelIdentity.upsert({
-            where: {
-              channelId_externalId: { channelId: legacy.channelId, externalId: ext },
-            },
-            create: {
-              contactId: masterId,
-              channelId: legacy.channelId,
-              externalId: ext,
-            },
-            update: { contactId: masterId, lastSeenAt: new Date() },
-          });
-        } catch (e) {
-          console.warn('[migrate] identity skip', e);
-        }
-      }
-    }
+    const masterId = phoneToMaster.get(phone)!;
+    if (c.id === masterId) continue;
+
+    console.log(`[migrate] merge ${c.id} → ${masterId} (${phone})`);
+    await reassignContactFk(c.id, masterId);
+    await prisma.contact.delete({ where: { id: c.id } });
+    merged++;
   }
 
+  return merged;
+}
+
+async function backfillIdentitiesFromConversations() {
+  const rows = await prisma.conversation.groupBy({
+    by: ['contactId', 'channelId'],
+    where: { channelId: { not: null } },
+  });
+
+  let count = 0;
+  for (const row of rows) {
+    if (!row.channelId) continue;
+    const contact = await prisma.contact.findUnique({
+      where: { id: row.contactId },
+      select: { id: true, phone: true },
+    });
+    if (!contact) continue;
+
+    const externalId = normalizePhone(contact.phone);
+    if (!externalId) continue;
+
+    try {
+      await prisma.contactChannelIdentity.upsert({
+        where: {
+          channelId_externalId: { channelId: row.channelId, externalId },
+        },
+        create: {
+          contactId: contact.id,
+          channelId: row.channelId,
+          externalId,
+          lastSeenAt: new Date(),
+        },
+        update: {
+          contactId: contact.id,
+          lastSeenAt: new Date(),
+        },
+      });
+      count++;
+    } catch (e) {
+      console.warn('[migrate] identity skip', e);
+    }
+  }
+  return count;
+}
+
+async function backfillChannelSnapshots() {
   const channels = await prisma.channel.findMany();
   const channelMap = new Map(channels.map((ch) => [ch.id, ch]));
 
   const conversations = await prisma.conversation.findMany({
-    where: { channelSnapshot: { equals: null } as never },
+    where: { channelSnapshot: { equals: Prisma.JsonNull } },
+    select: { id: true, channelId: true },
   });
 
-  let snapCount = 0;
+  let count = 0;
   for (const conv of conversations) {
     if (!conv.channelId) continue;
     const ch = channelMap.get(conv.channelId);
     if (!ch) continue;
     await prisma.conversation.update({
       where: { id: conv.id },
-      data: { channelSnapshot: buildSnapshot(ch) },
+      data: { channelSnapshot: buildSnapshot(ch) as unknown as Prisma.InputJsonValue },
     });
-    snapCount++;
+    count++;
   }
+  return count;
+}
 
-  console.log(`[migrate] ${snapCount} snapshots de canal preenchidos`);
+async function main() {
+  console.log('[migrate] iniciando backfill pós-migração...');
+
+  const merged = await mergeDuplicateContacts();
+  console.log(`[migrate] contatos duplicados unificados: ${merged}`);
+
+  const identities = await backfillIdentitiesFromConversations();
+  console.log(`[migrate] identities garantidas: ${identities}`);
+
+  const snapshots = await backfillChannelSnapshots();
+  console.log(`[migrate] channelSnapshot preenchidos: ${snapshots}`);
+
   console.log('[migrate] concluído');
 }
 

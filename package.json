@@ -23,7 +23,9 @@
     "perf:phase1:quick": "k6 run -e BASE_URL=http://localhost:3007 -e VUS=20 -e DURATION=3m -e WRITE_ENABLED=false scripts/load/phase1-mixed.js",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
-    "prisma:setup": "prisma migrate deploy && prisma generate"
+    "prisma:setup": "prisma migrate deploy && prisma generate",
+    "migrate:contacts": "ts-node src/scripts/migrateContactArchitecture.ts",
+    "migrate:contacts:prod": "node dist/scripts/migrateContactArchitecture.js"
   },
   "keywords": [
     "chat",
