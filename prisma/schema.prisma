@@ -171,7 +171,7 @@ model Channel {
   updatedAt               DateTime       @updatedAt
 
   sector        Sector?            @relation(fields: [sectorId], references: [id], onDelete: SetNull)
-  contacts      Contact[]         @relation("ContactChannel")
+  channelIdentities ContactChannelIdentity[]
   conversations Conversation[]    @relation("ConversationChannel")
   webhooks      WebhookConfig[]
   bots          Bot[]
@@ -199,32 +199,46 @@ model ChannelSector {
 model Contact {
   id               String   @id @default(cuid())
   name             String
-  phone            String?
+  phone            String
   email            String?
-  profilePicture   String?  // URL da foto de perfil do WhatsApp
-  channelId        String?  // Opcional: permite manter histórico quando canal é deletado
-  channelIdentifier String
+  profilePicture   String?
   metadata         Json?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  channel       Channel?       @relation("ContactChannel", fields: [channelId], references: [id], onDelete: SetNull)
-  conversations Conversation[]
-  deals         Deal[]
-  // Relacionamento com campanhas
+  channelIdentities ContactChannelIdentity[]
+  conversations     Conversation[]
+  deals             Deal[]
   campaignRecipients CampaignRecipient[]
-  // Relacionamento com listas
-  listMembers   ContactListMember[]
-  // Relacionamento com jornadas
+  listMembers       ContactListMember[]
   journeyExecutions JourneyExecution[]
 
-  @@unique([channelId, channelIdentifier])
-  @@index([channelId])
+  @@unique([phone])
+  @@index([name])
+}
+
+/// Como o contato aparece em cada canal/provedor (identificador externo por canal).
+model ContactChannelIdentity {
+  id         String   @id @default(cuid())
+  contactId  String
+  channelId  String
+  externalId String
+  provider   String?
+  lastSeenAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, externalId])
+  @@index([contactId])
 }
 
 model Conversation {
   id           String             @id @default(cuid())
-  channelId    String?  // Opcional: permite manter histórico quando canal é deletado
+  channelId    String?
+  channelSnapshot Json?
   contactId    String
   assignedToId String?
   // Setor atual da conversa (fila/setor para roteamento fora do pipeline).

@@ -102,10 +102,9 @@ export class PipelineService {
               include: {
                 contact: {
                   include: {
-                    channel: {
-                      select: {
-                        name: true,
-                        type: true,
+                    channelIdentities: {
+                      include: {
+                        channel: { select: { name: true, type: true } },
                       },
                     },
                   },

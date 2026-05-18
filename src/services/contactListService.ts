@@ -71,11 +71,11 @@ export class ContactListService {
           include: {
             contact: {
               include: {
-                channel: {
-                  select: {
-                    id: true,
-                    name: true,
-                    type: true,
+                channelIdentities: {
+                  include: {
+                    channel: {
+                      select: { id: true, name: true, type: true },
+                    },
                   },
                 },
               },
@@ -161,17 +161,17 @@ export class ContactListService {
     const members = await prisma.contactListMember.findMany({
       where: { listId },
       include: {
-        contact: {
-          include: {
-            channel: {
-              select: {
-                id: true,
-                name: true,
-                type: true,
+            contact: {
+              include: {
+                channelIdentities: {
+                  include: {
+                    channel: {
+                      select: { id: true, name: true, type: true },
+                    },
+                  },
+                },
               },
             },
-          },
-        },
       },
       orderBy: { addedAt: 'desc' },
       take: limit,

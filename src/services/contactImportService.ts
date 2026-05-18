@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import prisma from '../config/database';
 import * as XLSX from 'xlsx';
+import { contactResolutionService } from './contactResolutionService';
+import { normalizePhone } from '../utils/phone';
 
 // Importar csv-parse (para compatibilidade com CSV)
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -97,10 +99,8 @@ export class ContactImportService {
             continue;
           }
 
-          // Limpar e validar telefone
-          const cleanPhone = row.phone.replace(/\D/g, ''); // Remove tudo que não é dígito
-          
-          if (cleanPhone.length < 10) {
+          const normalizedPhone = normalizePhone(String(row.phone));
+          if (!normalizedPhone) {
             result.errors++;
             result.details.push({
               row: rowNumber,
@@ -111,18 +111,31 @@ export class ContactImportService {
             continue;
           }
 
-          // Verificar se contato já existe
-          const existingContact = await prisma.contact.findFirst({
-            where: {
-              channelId: channelId,
-              OR: [
-                { phone: cleanPhone },
-                { channelIdentifier: cleanPhone },
-              ],
-            },
+          const existingContact = await prisma.contact.findUnique({
+            where: { phone: normalizedPhone },
           });
 
+          const contact = existingContact
+            ? existingContact
+            : await contactResolutionService.resolveContactByPhone({
+                phone: normalizedPhone,
+                name: row.name.trim(),
+                channelId,
+                externalId: normalizedPhone,
+              });
+
           if (existingContact) {
+            await contactResolutionService.upsertChannelIdentity({
+              contactId: contact.id,
+              channelId,
+              externalId: normalizedPhone,
+            });
+            if (row.email?.trim()) {
+              await prisma.contact.update({
+                where: { id: contact.id },
+                data: { email: row.email.trim() },
+              });
+            }
             result.skipped++;
             result.details.push({
               row: rowNumber,
@@ -130,20 +143,8 @@ export class ContactImportService {
               status: 'skipped',
               message: `Contato já existe: ${existingContact.name}`,
             });
-            continue;
+            if (!listId) continue;
           }
-
-          // Criar contato
-          const contact = await prisma.contact.create({
-            data: {
-              name: row.name.trim(),
-              phone: cleanPhone,
-              email: row.email?.trim() || null,
-              channelId: channelId,
-              channelIdentifier: cleanPhone, // Usar número limpo como identificador
-              metadata: {},
-            },
-          });
 
           // Se listId foi fornecido, adicionar contato à lista
           if (listId) {
@@ -189,7 +190,7 @@ export class ContactImportService {
           }
 
           result.success++;
-          console.log(`[ContactImport] ✅ Linha ${rowNumber}: Contato criado - ${row.name} (${cleanPhone})`);
+          console.log(`[ContactImport] ✅ Linha ${rowNumber}: Contato criado - ${row.name} (${normalizedPhone})`);
         } catch (rowError: any) {
           result.errors++;
           result.details.push({

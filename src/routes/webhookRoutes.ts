@@ -30,6 +30,9 @@ import {
   parseEvolutionMessagePatches,
   parseEvolutionPresence,
 } from '../utils/evolutionWebhook';
+import { normalizePhone } from '../utils/phone';
+import { contactResolutionService } from '../services/contactResolutionService';
+import { conversationResolutionService } from '../services/conversationResolutionService';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -486,121 +489,44 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       }
     }
 
-    // Buscar ou criar contato (sempre no canal oficial resolvido). Telefone sempre normalizado (só dígitos).
-    let contact = await prisma.contact.findFirst({
-      where: {
-        channelId: whatsappChannel.id,
-        OR: [{ phone: phoneNumber }, { channelIdentifier: phoneNumber }],
-      },
-      include: {
-        channel: true,
-      },
-    });
-
-    // Se não encontrou no canal correto, tenta recuperar contato legado sem canal e re-vincular
-    if (!contact) {
-      const orphanContact = await prisma.contact.findFirst({
-        where: {
-          channelId: null,
-          OR: [{ phone: phoneNumber }, { channelIdentifier: phoneNumber }],
-        },
-        include: { channel: true },
-      });
-
-      if (orphanContact) {
-        contact = await prisma.contact.update({
-          where: { id: orphanContact.id },
-          data: {
-            channelId: whatsappChannel.id,
-            channelIdentifier: orphanContact.channelIdentifier || phoneNumber,
-          },
-          include: { channel: true },
-        });
-        console.log('[WhatsAppOfficial] 🔗 Contato órfão re-vinculado ao canal:', {
-          contactId: contact.id,
-          channelId: whatsappChannel.id,
-        });
-      } else {
-        // Criar contato
-        contact = await prisma.contact.create({
-          data: {
-            // Usar profile.name se disponível, senão fallback para número
-            name: profileName || phoneNumber,
-            phone: phoneNumber,
-            channelId: whatsappChannel.id,
-            channelIdentifier: phoneNumber, // Usar phone como identifier
-          },
-          include: {
-            channel: true,
-          },
-        });
-        await dispatchJourneyEvent('contact_created', {
-          contactId: contact.id,
-          channelId: contact.channelId,
-        });
-      }
-    } else if (profileName && profileName.trim().length > 0 && contact.name !== profileName) {
-      // Se o contato já existe e temos um profile.name mais "bonito",
-      // atualizar o nome salvo (sem alterar telefone/canal).
-      try {
-        contact = await prisma.contact.update({
-          where: { id: contact.id },
-          data: { name: profileName },
-          include: { channel: true },
-        });
-        console.log('[WhatsAppOfficial] ✅ Nome do contato atualizado a partir do profile.name:', {
-          contactId: contact.id,
-          name: contact.name,
-        });
-      } catch (updateError: any) {
-        console.warn(
-          '[WhatsAppOfficial] ⚠️ Falha ao atualizar nome do contato com profile.name:',
-          updateError.message,
-        );
-      }
-    }
-
-    // Verificar se contact foi criado/encontrado
-    if (!contact) {
-      console.error('[WhatsAppOfficial] ❌ Não foi possível criar/encontrar contato');
+    const normalizedPhone = normalizePhone(phoneNumber);
+    if (!normalizedPhone) {
+      console.error('[WhatsAppOfficial] ❌ Telefone inválido:', phoneNumber);
       return;
     }
 
-    // Garantia extra: contato não pode ficar sem canal neste fluxo
-    if (!contact.channelId) {
-      contact = await prisma.contact.update({
-        where: { id: contact.id },
-        data: { channelId: whatsappChannel.id },
-        include: { channel: true },
-      });
-    }
-
-    // Buscar ou criar conversa
-    let conversation = await prisma.conversation.findFirst({
-      where: {
-        contactId: contact.id,
-        channelId: contact.channelId,
-      },
+    const contact = await contactResolutionService.resolveContactByPhone({
+      phone: normalizedPhone,
+      name: profileName || normalizedPhone,
+      channelId: whatsappChannel.id,
+      externalId: normalizedPhone,
+      provider: 'whatsapp_official',
     });
 
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          contactId: contact.id,
-          channelId: contact.channelId,
-          status: 'OPEN',
-          lastMessageAt: timestamp,
-          lastCustomerMessageAt: timestamp,
-        },
-      });
-      await dispatchJourneyEvent('conversation_created', {
-        contactId: contact.id,
-        channelId: contact.channelId,
-        conversationId: conversation.id,
-      });
-    } else {
-      // Atualizar timestamps e reabrir conversa automaticamente com nova mensagem do cliente
-      await prisma.conversation.update({
+    const channelWithSector = await prisma.channel.findUnique({
+      where: { id: whatsappChannel.id },
+      include: { sector: true },
+    });
+    if (!channelWithSector) {
+      console.error('[WhatsAppOfficial] ❌ Canal não encontrado após resolução');
+      return;
+    }
+
+    const resolved = await conversationResolutionService.resolveOpenConversation(
+      contact.id,
+      channelWithSector,
+      {
+        sectorId: channelWithSector.sectorId ?? null,
+        lastMessageAt: timestamp,
+        lastCustomerMessageAt: timestamp,
+        initialUnread: 1,
+        reopenIfClosed: true,
+      },
+    );
+
+    let conversation = resolved.conversation;
+    if (!resolved.created && !resolved.reopened) {
+      conversation = await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
           status: 'OPEN',
@@ -652,7 +578,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
           receivedAt: timestamp,
           assignedToId: conversation.assignedToId,
           contactId: contact.id,
-          channelId: contact.channelId,
+          channelId: whatsappChannel.id,
         });
         if (result.handled) {
           if (io) {
@@ -739,7 +665,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
           receivedAt: timestamp,
           assignedToId: conversation.assignedToId,
           contactId: contact.id,
-          channelId: contact.channelId,
+          channelId: whatsappChannel.id,
           provider: 'whatsapp_official',
         });
         if (result.handled) {
@@ -788,7 +714,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
     });
     await dispatchJourneyEvent('message_received', {
       contactId: contact.id,
-      channelId: contact.channelId,
+      channelId: whatsappChannel.id,
       conversationId: conversation.id,
       messageContent,
     });
@@ -850,7 +776,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
             messageId: createdMessage.id,
             conversationId: conversation.id,
             contactId: contact.id,
-            channelId: contact.channelId,
+            channelId: whatsappChannel.id,
             content: messageContent,
             type: messageTypeDb,
             fromMe: false,
@@ -860,7 +786,7 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
               provider: 'whatsapp_official',
             },
           },
-          contact.channelId || undefined,
+          whatsappChannel.id || undefined,
         );
       } catch (webhookError: any) {
         console.error(
@@ -879,12 +805,12 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
     if (io) {
       emitConversationDelta(io, 'new_message', {
         conversationId: conversation.id,
-        channelId: contact.channelId,
+        channelId: whatsappChannel.id,
         messageId: createdMessage.id,
       });
       emitConversationDelta(io, 'conversation_updated', {
         conversationId: conversation.id,
-        channelId: contact.channelId,
+        channelId: whatsappChannel.id,
       });
     }
   } catch (error: any) {
@@ -1134,32 +1060,18 @@ async function handleNewMessage(data: any) {
     
     console.log('✅ [handleNewMessage] Número de telefone válido extraído:', phone);
     
-    // Limpar número para busca (remover caracteres não numéricos)
-    const cleanPhone = phone.replace(/\D/g, '');
-    
-    // Buscar contato por channelIdentifier (pode ter LID antigo) ou por phone
-    let contact = await prisma.contact.findFirst({
-      where: {
-        channelId: channel.id,
-        OR: [
-          { channelIdentifier: cleanPhone },
-          { phone: cleanPhone },
-        ],
-      },
-    });
-    
-    // Se encontrou contato mas tem LID no channelIdentifier, vamos atualizar
-    if (contact && contact.channelIdentifier && (contact.channelIdentifier.includes('@lid') || !/^\d+$/.test(contact.channelIdentifier))) {
-      console.log('🔄 [handleNewMessage] Contato encontrado mas com LID ou identificador inválido, atualizando...');
-      console.log('🔄 [handleNewMessage] Identificador antigo:', contact.channelIdentifier);
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) {
+      console.error('❌ [handleNewMessage] Telefone inválido:', phone);
+      return;
     }
 
-    // Buscar foto de perfil do WhatsApp (usar cleanPhone)
+    // Buscar foto de perfil do WhatsApp
     let profilePicture: string | null = null;
     try {
-      if (channel.evolutionInstanceId && channel.evolutionApiKey && cleanPhone) {
+      if (channel.evolutionInstanceId && channel.evolutionApiKey && normalizedPhone) {
         const { evolutionApi } = await import('../config/evolutionApi');
-        const whatsappNumber = `${cleanPhone}@s.whatsapp.net`;
+        const whatsappNumber = `${normalizedPhone}@s.whatsapp.net`;
         profilePicture = await evolutionApi.getProfilePicture(
           channel.evolutionInstanceId,
           whatsappNumber,
@@ -1174,189 +1086,83 @@ async function handleNewMessage(data: any) {
       // Continuar mesmo se falhar
     }
 
-    if (!contact) {
-      // O pushName pode estar em message.pushName ou data.pushName
-      const contactName = data.pushName || message.pushName || message.notifyName || cleanPhone;
-      console.log('📩 [handleNewMessage] Criando novo contato:', { name: contactName, phone: cleanPhone });
-      
-      if (!cleanPhone || cleanPhone.length < 10) {
-        console.error('❌ [handleNewMessage] Número de telefone inválido após limpeza:', cleanPhone);
-        console.error('❌ [handleNewMessage] RemoteJid original:', remoteJid);
-        return;
-      }
-      
-      contact = await prisma.contact.create({
-        data: {
-          channelId: channel.id,
-          channelIdentifier: cleanPhone, // Usar número limpo como identificador
-          name: contactName,
-          phone: cleanPhone, // Salvar número limpo no campo phone também
-          profilePicture: profilePicture,
-          metadata: {},
-        },
-      });
-      await dispatchJourneyEvent('contact_created', {
-        contactId: contact.id,
-        channelId: contact.channelId,
-      });
-      console.log('✅ [handleNewMessage] Contato criado:', contact.id);
-    } else {
-      // Garantir que phone é um número válido antes de atualizar
-      const cleanPhone = phone.replace(/\D/g, ''); // Remove qualquer caractere não numérico
-      
-      // Atualizar nome, telefone e foto de perfil se mudou
-      const newName = data.pushName || message.pushName || message.notifyName;
-      const updateData: any = {};
-      
-      if (newName && newName !== contact.name) {
-        updateData.name = newName;
-        contact.name = newName;
-        console.log('📩 [handleNewMessage] Nome do contato atualizado:', newName);
-      }
-      
-      // Atualizar número se o contato tinha LID ou número inválido e agora temos número real
-      if (cleanPhone && cleanPhone.length >= 10) {
-        // Se o channelIdentifier atual contém @lid ou não é um número válido, atualizar
-        const currentIdentifier = contact.channelIdentifier || '';
-        const isCurrentLid = currentIdentifier.includes('@lid') || !/^\d+$/.test(currentIdentifier);
-        
-        if (isCurrentLid || currentIdentifier !== cleanPhone) {
-          updateData.channelIdentifier = cleanPhone;
-          updateData.phone = cleanPhone;
-          console.log('📱 [handleNewMessage] Número de telefone atualizado (era LID ou inválido):', {
-            antigo: currentIdentifier,
-            novo: cleanPhone,
-          });
-        } else if (contact.phone !== cleanPhone) {
-          // Se o channelIdentifier está correto mas o phone não, atualizar apenas o phone
-          updateData.phone = cleanPhone;
-          console.log('📱 [handleNewMessage] Campo phone atualizado:', cleanPhone);
-        }
-      }
-      
-      if (profilePicture && profilePicture !== contact.profilePicture) {
-        updateData.profilePicture = profilePicture;
-        console.log('📸 [handleNewMessage] Foto de perfil atualizada');
-      }
-      
-      if (Object.keys(updateData).length > 0) {
-        await prisma.contact.update({
-          where: { id: contact.id },
-          data: updateData,
-        });
-        // Atualizar objeto local para refletir mudanças
-        Object.assign(contact, updateData);
-      }
-    }
+    const contactName = data.pushName || message.pushName || message.notifyName || normalizedPhone;
+    const contact = await contactResolutionService.resolveContactByPhone({
+      phone: normalizedPhone,
+      name: contactName,
+      channelId: channel.id,
+      externalId: normalizedPhone,
+      profilePicture,
+      provider: contactResolutionService.resolveProviderFromChannel(channel),
+    });
 
-    // Buscar canal com setor
     const channelWithSector = await prisma.channel.findUnique({
       where: { id: channel.id },
-      include: {
-        sector: true,
-      },
+      include: { sector: true },
     });
 
-    // Buscar ou criar conversa
-    let conversation: any = await prisma.conversation.findFirst({
-      where: {
-        channelId: channel.id,
-        contactId: contact.id,
+    const now = new Date();
+    const resolved = await conversationResolutionService.resolveOpenConversation(
+      contact.id,
+      channel,
+      {
+        sectorId: channelWithSector?.sectorId ?? null,
+        lastMessageAt: now,
+        lastCustomerMessageAt: now,
+        initialUnread: 1,
+        reopenIfClosed: true,
       },
-      include: {
-        channel: {
-          include: {
-            sector: true,
-          },
-        },
-      },
-    });
+    );
 
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
+    let conversation: any = resolved.conversation;
+    const channelInclude = {
+      channel: { include: { sector: true } },
+    };
+
+    if (!resolved.created && !resolved.reopened) {
+      conversation = await prisma.conversation.update({
+        where: { id: conversation.id },
         data: {
-          channelId: channel.id,
-          contactId: contact.id,
-            // Fora do pipeline, começamos no setor principal configurado no canal.
-            sectorId: channelWithSector?.sectorId || null,
           status: 'OPEN',
-          unreadCount: 1,
-          lastMessageAt: new Date(),
-          lastCustomerMessageAt: new Date(),
-        } as any,
-        include: {
-          channel: {
-            include: {
-              sector: true,
-            },
-          },
+          unreadCount: { increment: 1 },
+          lastMessageAt: now,
+          lastCustomerMessageAt: now,
         },
+        include: channelInclude,
       });
-      await dispatchJourneyEvent('conversation_created', {
-        contactId: contact.id,
-        channelId: channel.id,
-        conversationId: conversation.id,
+    } else {
+      conversation = await prisma.conversation.findUnique({
+        where: { id: conversation.id },
+        include: channelInclude,
       });
+    }
 
-      // Distribuir conversa automaticamente para um usuário disponível
+    if (resolved.created || resolved.reopened) {
       try {
         const distributionService = new ConversationDistributionService();
         const assignedUserId = await distributionService.distributeConversation(conversation.id, {
           channelId: channel.id,
           sectorId: channelWithSector?.sectorId || undefined,
         });
-
         if (assignedUserId) {
-          console.log(`✅ [handleNewMessage] Conversa ${conversation.id} atribuída automaticamente ao usuário ${assignedUserId}`);
-          
-          // Atualizar a conversa com o usuário atribuído
           conversation = await prisma.conversation.update({
             where: { id: conversation.id },
-            data: {
-              assignedToId: assignedUserId,
-            },
-            include: {
-              channel: {
-                include: {
-                  sector: true,
-                },
-              },
-            },
+            data: { assignedToId: assignedUserId },
+            include: channelInclude,
           });
-        } else {
-          console.log(`⚠️ [handleNewMessage] Nenhum usuário disponível para atribuir a conversa ${conversation.id}`);
         }
       } catch (error: any) {
         console.error(`❌ [handleNewMessage] Erro ao distribuir conversa ${conversation.id}:`, error.message);
-        // Não bloquear o processamento da mensagem se a distribuição falhar
       }
-    } else {
-      // Incrementar não lidas, atualizar timestamp e reabrir conversa automaticamente
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          status: 'OPEN',
-          unreadCount: { increment: 1 },
-          lastMessageAt: new Date(),
-          lastCustomerMessageAt: new Date(),
-        },
-      });
-
-      // Se a conversa não tem usuário atribuído, tentar distribuir
-      if (!conversation.assignedToId) {
-        try {
-          const distributionService = new ConversationDistributionService();
-          const assignedUserId = await distributionService.distributeConversation(conversation.id, {
-            channelId: channel.id,
-            sectorId: channelWithSector?.sectorId || undefined,
-          });
-
-          if (assignedUserId) {
-            console.log(`✅ [handleNewMessage] Conversa ${conversation.id} atribuída automaticamente ao usuário ${assignedUserId}`);
-          }
-        } catch (error: any) {
-          console.error(`❌ [handleNewMessage] Erro ao redistribuir conversa ${conversation.id}:`, error.message);
-        }
+    } else if (!conversation.assignedToId) {
+      try {
+        const distributionService = new ConversationDistributionService();
+        await distributionService.distributeConversation(conversation.id, {
+          channelId: channel.id,
+          sectorId: channelWithSector?.sectorId || undefined,
+        });
+      } catch (error: any) {
+        console.error(`❌ [handleNewMessage] Erro ao redistribuir conversa ${conversation.id}:`, error.message);
       }
     }
 
@@ -1721,19 +1527,18 @@ async function resolveChannelByEvolutionInstance(instanceName: string | null) {
 }
 
 async function resolveConversationByChannelAndPhone(channelId: string, phone: string) {
-  const cleanPhone = phone.replace(/\D/g, '');
-  if (!cleanPhone) return null;
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
 
-  const contact = await prisma.contact.findFirst({
-    where: {
-      channelId,
-      OR: [{ phone: cleanPhone }, { channelIdentifier: cleanPhone }],
-    },
-  });
+  const contact = await contactResolutionService.findContactOnChannel(channelId, normalized);
   if (!contact) return null;
 
   return prisma.conversation.findFirst({
-    where: { channelId, contactId: contact.id },
+    where: {
+      channelId,
+      contactId: contact.id,
+      status: { in: ['OPEN', 'WAITING'] },
+    },
     orderBy: { lastMessageAt: 'desc' },
   });
 }

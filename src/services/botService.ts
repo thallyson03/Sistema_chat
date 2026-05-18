@@ -1162,26 +1162,8 @@ export class BotService {
               select: {
                 id: true,
                 channelId: true,
-                contact: {
-                  select: {
-                    channelId: true,
-                  },
-                },
               },
             });
-
-            // Tarefa do bot nunca deve depender de canal.
-            // Se houver canal no contato, tentamos preencher na conversa para notificar no chat.
-            if (!conversationForNotify?.channelId && conversationForNotify?.contact?.channelId) {
-              await prisma.conversation.update({
-                where: { id: session.conversationId },
-                data: { channelId: conversationForNotify.contact.channelId },
-              });
-              console.log('[BotService] CRM_ADD_TASK vinculou canal na conversa para notificação', {
-                conversationId: session.conversationId,
-                channelId: conversationForNotify.contact.channelId,
-              });
-            }
 
             const contentLines = [
               '🤖 Tarefa criada pelo bot deste negócio.',

@@ -1179,22 +1179,17 @@ function CreateDealModal({
       let finalContactId = selectedContactId;
 
       if (createNewContact) {
-        if (!newContactName.trim() || !newContactChannelId) {
-          alert('Para criar contato, informe nome e canal.');
+        if (!newContactName.trim() || !newContactChannelId || !newContactPhone.trim()) {
+          alert('Para criar contato, informe nome, telefone e canal.');
           setSubmitting(false);
           return;
         }
-        const channelIdentifier =
-          newContactPhone.trim() ||
-          newContactEmail.trim() ||
-          `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
         const createdContactResponse = await api.post('/api/contacts', {
           name: newContactName.trim(),
-          phone: newContactPhone.trim() || undefined,
+          phone: newContactPhone.trim(),
           email: newContactEmail.trim() || undefined,
           channelId: newContactChannelId,
-          channelIdentifier,
         });
         finalContactId = createdContactResponse.data.id;
       }

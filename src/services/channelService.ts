@@ -476,21 +476,23 @@ export class ChannelService {
     const conversationsCount = await prisma.conversation.count({
       where: { channelId: id },
     });
-    
-    const contactsCount = await prisma.contact.count({
-      where: { channelId: id },
-    });
 
-    console.log('[ChannelService] Relacionamentos encontrados:', {
-      conversations: conversationsCount,
-      contacts: contactsCount,
-    });
+    console.log('[ChannelService] Conversas vinculadas (histórico preservado):', conversationsCount);
 
-    if (conversationsCount > 0 || contactsCount > 0) {
-      throw new Error(
-        `Não é possível excluir o canal porque ele possui ${conversationsCount} conversa(s) e ${contactsCount} contato(s) vinculados. Edite/desative o canal ou reatribua os vínculos antes de excluir.`
-      );
+    const conversationsWithoutSnapshot = await prisma.conversation.findMany({
+      where: { channelId: id, channelSnapshot: { equals: null } as never },
+      include: { channel: true },
+    });
+    for (const conv of conversationsWithoutSnapshot) {
+      if (!conv.channel) continue;
+      const { buildChannelSnapshot, snapshotToPrismaJson } = await import('../utils/channelSnapshot');
+      await prisma.conversation.update({
+        where: { id: conv.id },
+        data: { channelSnapshot: snapshotToPrismaJson(buildChannelSnapshot(conv.channel)) },
+      });
     }
+
+    await prisma.contactChannelIdentity.deleteMany({ where: { channelId: id } });
 
     const apiKey = this.resolveEvolutionApiKey(channel.evolutionApiKey);
     const shouldDeleteEvolution =

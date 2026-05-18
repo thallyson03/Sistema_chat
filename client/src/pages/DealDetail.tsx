@@ -464,10 +464,13 @@ export default function DealDetail() {
       // Primeiro, buscar o contato do deal para pegar o channelId
       const contactResponse = await api.get(`/api/contacts/${deal.contact.id}`);
       const dealContact = contactResponse.data;
-      const channelId = dealContact.channelId || deal.contact.channelId;
-      
+      const channelId =
+        dealContact.channelIdentities?.[0]?.channelId ||
+        (deal.conversation as { channelId?: string } | undefined)?.channelId ||
+        null;
+
       if (!channelId) {
-        alert('Nenhum canal disponível para criar contato');
+        alert('Nenhum canal disponível para este contato. Vincule um canal antes de iniciar conversa.');
         return;
       }
 
@@ -513,7 +516,6 @@ export default function DealDetail() {
             name: `Contato ${cleanPhone}`,
             phone: cleanPhone,
             channelId: channelId,
-            channelIdentifier: `${cleanPhone}@s.whatsapp.net`,
           });
           targetContact = newContactResponse.data;
         } catch (contactError: any) {
@@ -779,9 +781,17 @@ export default function DealDetail() {
       } else {
         const contactResponse = await api.get(`/api/contacts/${deal.contact.id}`);
         const contact = contactResponse.data;
+        const channelId =
+          contact.channelIdentities?.[0]?.channelId ||
+          (deal.conversation as { channelId?: string } | undefined)?.channelId;
+
+        if (!channelId) {
+          console.error('Contato sem canal vinculado para abrir conversa');
+          return;
+        }
 
         const newConvResponse = await api.post('/api/conversations', {
-          channelId: contact.channelId,
+          channelId,
           contactId: deal.contact.id,
         });
 

@@ -93,25 +93,6 @@ export class MessageService {
     let outboundSendError: { message: string; code?: string | number | null; at: string } | null =
       null;
 
-    if (!conversation.channel) {
-      // Recuperação automática: se a conversa perdeu channelId, mas o contato ainda tem,
-      // reassociamos para evitar falha no envio.
-      if (conversation.contact?.channelId) {
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { channelId: conversation.contact.channelId },
-        });
-
-        conversation = await prisma.conversation.findUnique({
-          where: { id: data.conversationId },
-          include: {
-            channel: true,
-            contact: true,
-          },
-        });
-      }
-    }
-
     if (!conversation) {
       throw new Error('Conversa não encontrada');
     }
@@ -121,7 +102,7 @@ export class MessageService {
 
     if (!channel && !isInternalOnly) {
       throw new Error(
-        'Conversa sem canal associado. Vincule um canal ao contato/conversa antes de enviar mensagens.'
+        'Conversa sem canal ativo (canal removido ou arquivado). Abra uma nova conversa em um canal disponível.'
       );
     }
 

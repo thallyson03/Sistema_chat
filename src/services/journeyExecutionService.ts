@@ -140,7 +140,7 @@ export class JourneyExecutionService {
       const contact = await prisma.contact.findUnique({
         where: { id: contactId },
         include: {
-          channel: true,
+          channelIdentities: { include: { channel: true } },
           conversations: {
             take: 1,
             orderBy: { createdAt: 'desc' },
@@ -543,9 +543,14 @@ export class JourneyExecutionService {
       },
     });
 
+    const identity = await prisma.contactChannelIdentity.findFirst({
+      where: { contactId: contact.id },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+
     await this.processEvent('list_added', {
       contactId: contact.id,
-      channelId: contact.channelId || null,
+      channelId: identity?.channelId || null,
       listId,
     });
   }

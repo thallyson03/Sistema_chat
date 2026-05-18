@@ -3,6 +3,8 @@ import { ConversationStatus, Priority } from '@prisma/client';
 import { ConversationDistributionService } from './conversationDistributionService';
 import { dispatchJourneyEvent } from './journeyEventDispatcher';
 import { getConversationMessagingWindow } from '../utils/whatsappMessagingWindow';
+import { getChannelDisplayName } from '../utils/channelSnapshot';
+import { conversationResolutionService } from './conversationResolutionService';
 
 export interface ConversationFilters {
   channelId?: string;
@@ -83,33 +85,43 @@ export class ConversationService {
   }
 
   async createConversation(data: { channelId: string; contactId: string; assignedToId?: string }) {
-    // Verificar se já existe conversa para este contato neste canal
-    const existing = await prisma.conversation.findFirst({
-      where: {
-        channelId: data.channelId,
-        contactId: data.contactId,
-      },
+    const channel = await prisma.channel.findUnique({
+      where: { id: data.channelId },
     });
-
-    if (existing) {
-      return existing;
+    if (!channel) {
+      throw new Error('Canal não encontrado');
     }
 
-    const conversation = await prisma.conversation.create({
-      data: {
-        channelId: data.channelId,
-        contactId: data.contactId,
-        assignedToId: data.assignedToId,
-        status: ConversationStatus.OPEN,
-      },
-      include: {
-        channel: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
+    const { conversation } = await conversationResolutionService.resolveOpenConversation(
+      data.contactId,
+      channel,
+      { reopenIfClosed: true },
+    );
+
+    if (data.assignedToId && conversation.assignedToId !== data.assignedToId) {
+      return prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { assignedToId: data.assignedToId },
+        include: {
+          channel: { select: { id: true, name: true, type: true } },
+          contact: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              email: true,
+              profilePicture: true,
+            },
           },
+          assignedTo: { select: { id: true, name: true, email: true } },
         },
+      });
+    }
+
+    return prisma.conversation.findUnique({
+      where: { id: conversation.id },
+      include: {
+        channel: { select: { id: true, name: true, type: true } },
         contact: {
           select: {
             id: true,
@@ -119,23 +131,36 @@ export class ConversationService {
             profilePicture: true,
           },
         },
-        assignedTo: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
+        assignedTo: { select: { id: true, name: true, email: true } },
+      },
+    });
+  }
+
+  async getContactConversations(contactId: string, viewer?: ConversationViewer) {
+    const visibilityWhere = await this.buildVisibilityWhere(viewer);
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        contactId,
+        ...visibilityWhere,
+      },
+      orderBy: { lastMessageAt: 'desc' },
+      include: {
+        channel: { select: { id: true, name: true, type: true, status: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+        messages: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { content: true, createdAt: true },
         },
       },
     });
 
-    await dispatchJourneyEvent('conversation_created', {
-      contactId: conversation.contactId,
-      channelId: conversation.channelId,
-      conversationId: conversation.id,
-    });
-
-    return conversation;
+    return conversations.map((conv) => ({
+      ...conv,
+      channelDisplayName: getChannelDisplayName(conv),
+      lastMessage: conv.messages[0]?.content || '',
+      messagingWindow: getConversationMessagingWindow(conv),
+    }));
   }
 
   async getConversations(

@@ -53,7 +53,6 @@ export interface CalendarTaskFilters {
 
 export class DealService {
   async createDeal(data: CreateDealData) {
-    // Verificar se já existe um deal para esta conversa (se conversationId foi fornecido)
     if (data.conversationId) {
       const existingDeal = await prisma.deal.findUnique({
         where: { conversationId: data.conversationId },
@@ -64,6 +63,33 @@ export class DealService {
           `Já existe um negócio para esta conversa. Deal ID: ${existingDeal.id}`
         );
       }
+    }
+
+    const openDealForContact = await prisma.deal.findFirst({
+      where: {
+        contactId: data.contactId,
+        pipelineId: data.pipelineId,
+        status: DealStatus.OPEN,
+      },
+    });
+
+    if (openDealForContact) {
+      if (data.conversationId && !openDealForContact.conversationId) {
+        return prisma.deal.update({
+          where: { id: openDealForContact.id },
+          data: { conversationId: data.conversationId },
+          include: {
+            pipeline: true,
+            stage: true,
+            contact: true,
+            assignedTo: { select: { id: true, name: true, email: true } },
+            conversation: true,
+          },
+        });
+      }
+      throw new Error(
+        `Já existe um negócio aberto para este contato no pipeline. Deal ID: ${openDealForContact.id}`
+      );
     }
 
     // Buscar stage para obter probabilidade padrão se não fornecida
@@ -90,10 +116,9 @@ export class DealService {
         stage: true,
         contact: {
           include: {
-            channel: {
-              select: {
-                name: true,
-                type: true,
+            channelIdentities: {
+              include: {
+                channel: { select: { name: true, type: true } },
               },
             },
           },
@@ -197,10 +222,9 @@ export class DealService {
         },
         contact: {
           include: {
-            channel: {
-              select: {
-                name: true,
-                type: true,
+            channelIdentities: {
+              include: {
+                channel: { select: { name: true, type: true } },
               },
             },
           },
@@ -247,10 +271,9 @@ export class DealService {
         stage: true,
         contact: {
           include: {
-            channel: {
-              select: {
-                name: true,
-                type: true,
+            channelIdentities: {
+              include: {
+                channel: { select: { name: true, type: true } },
               },
             },
           },
@@ -326,10 +349,9 @@ export class DealService {
         stage: true,
         contact: {
           include: {
-            channel: {
-              select: {
-                name: true,
-                type: true,
+            channelIdentities: {
+              include: {
+                channel: { select: { name: true, type: true } },
               },
             },
           },

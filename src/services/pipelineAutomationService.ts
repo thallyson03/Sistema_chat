@@ -105,7 +105,7 @@ export class PipelineAutomationService {
       include: {
         contact: {
           include: {
-            channel: true,
+            channelIdentities: { include: { channel: true } },
           },
         },
         stage: true,
@@ -305,9 +305,9 @@ export class PipelineAutomationService {
       const firstConversation = await prisma.conversation.findFirst({
         where: {
           contactId: deal.contactId,
-          channelId: deal.contact.channelId,
+          status: { in: ['OPEN', 'WAITING'] },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { lastMessageAt: 'desc' },
       });
       conversationId = firstConversation?.id;
     }
@@ -745,7 +745,7 @@ export class PipelineAutomationService {
             include: {
               contact: {
                 include: {
-                  channel: true,
+                  channelIdentities: { include: { channel: true } },
                 },
               },
               conversation: true,

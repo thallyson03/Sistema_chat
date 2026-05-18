@@ -13,6 +13,7 @@ import {
   resolveConversationMessagingWindow,
   type MessagingWindowStatus,
 } from '../utils/whatsappMessagingWindow';
+import { getConversationChannelLabel, normalizePhone } from '../utils/phone';
 import { ConversationCard } from '../components/ui/ConversationCard';
 import { IconButton } from '../components/ui/IconButton';
 import { useConfirm } from '../components/ui/ConfirmProvider';
@@ -77,9 +78,21 @@ const getContactAvatar = (contact: { name: string; profilePicture?: string }, si
   return getAvatarUrl(contact.name, size);
 };
 
+interface ContactThread {
+  id: string;
+  channelId: string | null;
+  status: string;
+  channelDisplayName?: string;
+  channel?: { id: string; name: string; type: string } | null;
+  channelSnapshot?: { name?: string; channelId?: string } | null;
+  lastMessageAt?: string | null;
+}
+
 interface Conversation {
   id: string;
-  channelId: string;
+  channelId: string | null;
+  channelSnapshot?: { name?: string; channelId?: string } | null;
+  channelDisplayName?: string;
   assignedToId?: string | null;
   assignedTo?: {
     id: string;
@@ -98,12 +111,12 @@ interface Conversation {
   lastCustomerMessageAt?: string;
   lastAgentMessageAt?: string;
   messagingWindow?: MessagingWindowStatus;
-  channel: {
+  channel?: {
     id: string;
     name: string;
     type: string;
     config?: { provider?: string; phoneNumberId?: string; token?: string };
-  };
+  } | null;
   inBot?: boolean;
 }
 
@@ -161,14 +174,16 @@ function conversationFromDetailApi(raw: Record<string, unknown>): Conversation {
     lastCustomerMessageAt: raw.lastCustomerMessageAt as string | undefined,
     lastAgentMessageAt: raw.lastAgentMessageAt as string | undefined,
     messagingWindow: raw.messagingWindow as MessagingWindowStatus | undefined,
+    channelSnapshot: raw.channelSnapshot as Conversation['channelSnapshot'],
+    channelDisplayName: raw.channelDisplayName as string | undefined,
     channel: ch
       ? {
           id: String(ch.id),
           name: String(ch.name ?? ''),
           type: String(ch.type ?? 'WHATSAPP'),
-          config: ch.config as Conversation['channel']['config'],
+          config: ch.config as NonNullable<Conversation['channel']>['config'],
         }
-      : { id: String(raw.channelId ?? ''), name: 'Sem canal', type: 'WHATSAPP' },
+      : null,
     inBot: raw.inBot as boolean | undefined,
   };
 }
@@ -194,6 +209,7 @@ export default function Conversations() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [contactThreads, setContactThreads] = useState<ContactThread[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -287,7 +303,13 @@ export default function Conversations() {
 
   const getActiveMessagingWindow = (): MessagingWindowStatus | null => {
     if (!selectedConversation) return null;
-    return resolveConversationMessagingWindow(selectedConversation, windowTick);
+    return resolveConversationMessagingWindow(
+      {
+        ...selectedConversation,
+        channel: selectedConversation.channel ?? undefined,
+      },
+      windowTick,
+    );
   };
 
   const getMessagingWindowBlockReason = (hasPendingTemplate = false): string | null => {
@@ -309,6 +331,23 @@ export default function Conversations() {
       contactPresenceTimeoutRef.current = null;
     }
   }, [selectedConversation?.id]);
+
+  const fetchContactThreads = useCallback(async (contactId: string) => {
+    try {
+      const response = await api.get(`/api/contacts/${contactId}/conversations`);
+      setContactThreads(response.data?.conversations || []);
+    } catch {
+      setContactThreads([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedConversation?.contact?.id) {
+      fetchContactThreads(selectedConversation.contact.id);
+    } else {
+      setContactThreads([]);
+    }
+  }, [selectedConversation?.contact?.id, fetchContactThreads]);
 
   useEffect(() => {
     if (!selectedConversation) return undefined;
@@ -768,10 +807,8 @@ export default function Conversations() {
       return;
     }
 
-    // Limpar número (remover caracteres não numéricos, exceto +)
-    const cleanPhone = phoneNumber.replace(/[^\d+]/g, '');
-    
-    if (cleanPhone.length < 10) {
+    const normalizedPhone = normalizePhone(phoneNumber);
+    if (!normalizedPhone) {
       alert('Número de telefone inválido. Digite pelo menos 10 dígitos.');
       return;
     }
@@ -779,42 +816,39 @@ export default function Conversations() {
     setLoadingNewConversation(true);
 
     try {
-      // Buscar primeiro canal disponível (ou usar o primeiro da lista)
       const channel = channels.length > 0 ? channels[0] : null;
-      
       if (!channel) {
         alert('Nenhum canal disponível. Configure um canal primeiro.');
         setLoadingNewConversation(false);
         return;
       }
 
-      // Buscar contato existente pelo telefone
-      const contactsResponse = await api.get(`/api/contacts?search=${encodeURIComponent(cleanPhone)}`);
+      const contactsResponse = await api.get(
+        `/api/contacts?search=${encodeURIComponent(normalizedPhone)}`,
+      );
       const contacts = contactsResponse.data?.contacts || contactsResponse.data || [];
-      
-      let contact = contacts.find((c: any) => {
-        const contactPhone = c.phone?.replace(/\D/g, '') || '';
-        return contactPhone === cleanPhone || contactPhone.includes(cleanPhone) || cleanPhone.includes(contactPhone);
-      });
+      let contact = contacts.find(
+        (c: { phone?: string }) => normalizePhone(c.phone) === normalizedPhone,
+      );
 
-      // Se não encontrou, criar novo contato
       if (!contact) {
         const newContactResponse = await api.post('/api/contacts', {
-          name: `Contato ${cleanPhone}`,
-          phone: cleanPhone,
+          name: `Contato ${normalizedPhone}`,
+          phone: normalizedPhone,
           channelId: channel.id,
-          channelIdentifier: `${cleanPhone}@s.whatsapp.net`,
         });
         contact = newContactResponse.data;
       }
 
-      // Buscar conversa existente para este contato
-      const conversationsResponse = await api.get(`/api/conversations?contactId=${contact.id}`);
-      const existingConversations = conversationsResponse.data?.conversations || conversationsResponse.data || [];
-      
-      let conversation = existingConversations.length > 0 ? existingConversations[0] : null;
+      const threadsResponse = await api.get(`/api/contacts/${contact.id}/conversations`);
+      const threads: ContactThread[] = threadsResponse.data?.conversations || [];
+      let conversation =
+        threads.find(
+          (t) =>
+            t.channelId === channel.id &&
+            (t.status === 'OPEN' || t.status === 'WAITING'),
+        ) || null;
 
-      // Se não encontrou, criar nova conversa
       if (!conversation) {
         const newConversationResponse = await api.post('/api/conversations', {
           channelId: channel.id,
@@ -826,9 +860,10 @@ export default function Conversations() {
       // Recarregar lista de conversas
       await fetchConversations();
 
-      // Selecionar a conversa criada/encontrada
+      if (!conversation) return;
+
       setTimeout(() => {
-        const foundConversation = conversations.find(c => c.id === conversation.id) || conversation;
+        const foundConversation = conversations.find((c) => c.id === conversation!.id) || conversation;
         setSelectedConversation(foundConversation as Conversation);
         setShowNewConversationModal(false);
         setPhoneNumber('');
@@ -998,7 +1033,7 @@ export default function Conversations() {
     if (
       pendingTemplate &&
       !mediaUrl &&
-      selectedConversation.channel.type === 'WHATSAPP'
+      selectedConversation.channel?.type === 'WHATSAPP'
     ) {
       try {
         setSending(true);
@@ -1086,7 +1121,7 @@ export default function Conversations() {
       quickReply.isTemplate &&
       quickReply.templateName &&
       selectedConversation &&
-      selectedConversation.channel.type === 'WHATSAPP'
+      selectedConversation.channel?.type === 'WHATSAPP'
     ) {
       const language = quickReply.templateLanguage || 'pt_BR';
       setPendingTemplate({
@@ -1780,7 +1815,7 @@ export default function Conversations() {
                         </h3>
                       </div>
                       <p className="mb-1 truncate text-xs text-primary/80">
-                        {(conv.channel?.name || 'Sem canal')} • {conv.contact.phone || 'Sem telefone'}
+                        {getConversationChannelLabel(conv)} • {conv.contact.phone || 'Sem telefone'}
                       </p>
                       <p className="mb-1 truncate text-[11px] text-primary-fixed-dim">
                         Responsável: {conv.assignedTo?.name || 'Aguardando atendimento'}
@@ -1871,11 +1906,44 @@ export default function Conversations() {
                     </span>
                   </div>
                   <p className="mt-0 text-xs text-primary/80">
-                    {(selectedConversation.channel?.name || 'Sem canal')} •{' '}
-                    {selectedConversation.contact?.phone ||
-                      selectedConversation.contact?.name ||
-                      'Sem telefone'}
+                    {getConversationChannelLabel(selectedConversation)} •{' '}
+                    {selectedConversation.contact?.phone || 'Sem telefone'}
                   </p>
+                  {contactThreads.length > 1 && (
+                    <motion.div className="mt-2 flex flex-wrap gap-1.5">
+                      {contactThreads.map((thread) => {
+                        const isActive = thread.id === selectedConversation.id;
+                        const statusLabel =
+                          thread.status === 'OPEN'
+                            ? 'Aberta'
+                            : thread.status === 'WAITING'
+                            ? 'Aguardando'
+                            : thread.status === 'CLOSED'
+                            ? 'Fechada'
+                            : 'Arquivada';
+                        return (
+                          <button
+                            key={thread.id}
+                            type="button"
+                            onClick={async () => {
+                              if (thread.id === selectedConversation.id) return;
+                              const convResp = await api.get(`/api/conversations/${thread.id}`);
+                              handleConversationClick(
+                                conversationFromDetailApi(convResp.data as Record<string, unknown>),
+                              );
+                            }}
+                            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                              isActive
+                                ? 'border-primary bg-primary-container text-on-secondary-container'
+                                : 'border-primary/20 bg-surface-container text-on-surface-variant hover:border-primary/40'
+                            }`}
+                          >
+                            {getConversationChannelLabel(thread)} · {statusLabel}
+                          </button>
+                        );
+                      })}
+                    </motion.div>
+                  )}
                   {contactPresence && (
                     <p className="mt-0.5 text-xs italic text-primary-fixed-dim">
                       {contactPresence === 'recording'
@@ -3191,7 +3259,7 @@ export default function Conversations() {
                   {selectedConversation.contact.name}
                 </h3>
                 <p className="mb-6 text-xs font-semibold text-primary/70">
-                  {(selectedConversation.channel?.name || 'Canal')} • {selectedConversation.contact.phone || '—'}
+                  {getConversationChannelLabel(selectedConversation)} • {selectedConversation.contact.phone || '—'}
                 </p>
                 <div className="w-full space-y-5 text-left">
                   <div>
@@ -3255,7 +3323,7 @@ export default function Conversations() {
         onSelect={handleQuickReplySelect}
         contactId={selectedConversation?.contact.id}
         conversationId={selectedConversation?.id}
-        channelId={selectedConversation?.channelId}
+        channelId={selectedConversation?.channelId ?? undefined}
       />
 
       {/* Modal de Transferência: setor (fila) ou usuário específico do setor */}

@@ -3,84 +3,72 @@ import { authenticateToken } from '../middleware/auth';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import * as XLSX from 'xlsx';
-import { dispatchJourneyEvent } from '../services/journeyEventDispatcher';
-
+import { contactResolutionService } from '../services/contactResolutionService';
+import { ConversationService } from '../services/conversationService';
 const router = Router();
+const conversationService = new ConversationService();
 
-// Todas as rotas precisam de autenticação
 router.use(authenticateToken);
 
-// POST - Criar novo contato
 router.post('/', async (req: AuthRequest, res) => {
   try {
-    const { name, phone, email, channelId, channelIdentifier, metadata } = req.body;
+    const { name, phone, email, channelId, metadata } = req.body;
 
-    if (!name || !channelId) {
-      return res.status(400).json({ error: 'Nome e channelId são obrigatórios' });
+    if (!name || !phone || !channelId) {
+      return res.status(400).json({ error: 'Nome, telefone e channelId são obrigatórios' });
     }
 
-    // Verificar se já existe contato com este channelIdentifier no mesmo canal
-    if (channelIdentifier) {
-      const existing = await prisma.contact.findFirst({
-        where: {
-          channelId,
-          channelIdentifier,
-        },
+    const contact = await contactResolutionService.resolveContactByPhone({
+      phone,
+      name,
+      channelId,
+      externalId: phone,
+      provider: null,
+    });
+
+    if (email) {
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: { email },
       });
-
-      if (existing) {
-        return res.json(existing);
-      }
     }
 
-    // Criar novo contato
-    const contact = await prisma.contact.create({
-      data: {
-        name,
-        phone: phone || null,
-        email: email || null,
-        channelId,
-        channelIdentifier: channelIdentifier || null,
-        metadata: metadata || {},
-      },
+    if (metadata && typeof metadata === 'object') {
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: { metadata },
+      });
+    }
+
+    const full = await prisma.contact.findUnique({
+      where: { id: contact.id },
       include: {
-        channel: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
+        channelIdentities: {
+          include: {
+            channel: { select: { id: true, name: true, type: true } },
           },
         },
       },
     });
 
-    await dispatchJourneyEvent('contact_created', {
-      contactId: contact.id,
-      channelId: contact.channelId,
-    });
-
-    res.status(201).json(contact);
+    res.status(201).json(full);
   } catch (error: any) {
     console.error('Erro ao criar contato:', error);
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
 });
 
-// GET - Download template XLSX (deve vir antes de /:id)
 router.get('/template', async (req: AuthRequest, res) => {
   try {
-    // Dados de exemplo para o template
     const rows = [
-      { name: 'João Silva',  phone: '559988776655', email: 'joao@example.com' },
+      { name: 'João Silva', phone: '559988776655', email: 'joao@example.com' },
       { name: 'Maria Santos', phone: '559977665544', email: 'maria@example.com' },
     ];
 
-    // Criar worksheet e workbook com XLSX
     const worksheet = XLSX.utils.json_to_sheet(rows, { header: ['name', 'phone', 'email'] });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Contatos');
 
-    // Gerar buffer em formato XLSX
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -91,15 +79,16 @@ router.get('/template', async (req: AuthRequest, res) => {
   }
 });
 
-// GET - Listar todos os contatos
 router.get('/', async (req: AuthRequest, res) => {
   try {
     const { channelId, search, limit, offset } = req.query;
 
     const where: any = {};
-    
+
     if (channelId) {
-      where.channelId = channelId as string;
+      where.channelIdentities = {
+        some: { channelId: channelId as string },
+      };
     }
 
     if (search) {
@@ -120,49 +109,55 @@ router.get('/', async (req: AuthRequest, res) => {
         skip,
         orderBy: { createdAt: 'desc' },
         include: {
-          channel: {
-            select: {
-              id: true,
-              name: true,
-              type: true,
+          channelIdentities: {
+            include: {
+              channel: { select: { id: true, name: true, type: true } },
             },
           },
-          _count: {
-            select: {
-              conversations: true,
-            },
-          },
+          _count: { select: { conversations: true } },
         },
       }),
       prisma.contact.count({ where }),
     ]);
 
-    res.json({
-      contacts,
-      total,
-      limit: take,
-      offset: skip,
-    });
+    res.json({ contacts, total, limit: take, offset: skip });
   } catch (error: any) {
     console.error('Erro ao listar contatos:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// GET Contact por ID
+router.get('/:id/conversations', async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const contact = await prisma.contact.findUnique({ where: { id } });
+    if (!contact) {
+      return res.status(404).json({ error: 'Contato não encontrado' });
+    }
+
+    const conversations = await conversationService.getContactConversations(id, {
+      id: req.user!.id,
+      role: req.user!.role,
+    });
+
+    res.json({ contactId: id, conversations });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/:id', async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const contact = await prisma.contact.findUnique({
       where: { id },
       include: {
-        channel: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
+        channelIdentities: {
+          include: {
+            channel: { select: { id: true, name: true, type: true, status: true } },
           },
         },
+        _count: { select: { conversations: true, deals: true } },
       },
     });
 
@@ -177,4 +172,3 @@ router.get('/:id', async (req: AuthRequest, res) => {
 });
 
 export default router;
-
