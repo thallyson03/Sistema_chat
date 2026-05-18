@@ -12,9 +12,24 @@ import { phase1Flags } from '../config/phase1Flags';
 import { webhookIngestQueue } from '../queues/webhookIngest.queue';
 import { idempotencyService } from '../services/idempotencyService';
 import { botProcessQueue } from '../queues/botProcess.queue';
-import { emitConversationDelta, emitMessageStatus } from '../utils/realtimeEvents';
+import {
+  emitChannelStatusUpdate,
+  emitContactPresence,
+  emitConversationDelta,
+  emitMessageContentUpdate,
+  emitMessageStatus,
+  emitQrcodeUpdate,
+} from '../utils/realtimeEvents';
 import { hybridCacheService } from '../services/hybridCacheService';
 import { extractEvolutionMediaFields } from '../utils/whatsappMedia';
+import {
+  extractEvolutionEventType,
+  extractEvolutionInstanceName,
+  extractEvolutionQrBase64,
+  extractPhoneFromEvolutionJid,
+  parseEvolutionMessagePatches,
+  parseEvolutionPresence,
+} from '../utils/evolutionWebhook';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -1675,12 +1690,8 @@ async function handleConnectionUpdate(data: any) {
         }
       }
       
-      // Emitir evento via Socket.IO
       if (io) {
-        io.emit('channel_status_update', {
-          channelId: channel.id,
-          status: 'ACTIVE',
-        });
+        emitChannelStatusUpdate(io, { channelId: channel.id, status: 'ACTIVE' });
         console.log('[Webhook] 📢 Evento Socket.IO emitido: channel_status_update');
       }
     } else if (isDisconnected) {
@@ -1690,12 +1701,8 @@ async function handleConnectionUpdate(data: any) {
       });
       console.log('[Webhook] ⚠️ Canal desconectado:', channel.name);
       
-      // Emitir evento via Socket.IO
       if (io) {
-        io.emit('channel_status_update', {
-          channelId: channel.id,
-          status: 'INACTIVE',
-        });
+        emitChannelStatusUpdate(io, { channelId: channel.id, status: 'INACTIVE' });
       }
     } else {
       console.log('[Webhook] ℹ️ Estado desconhecido ou não processado:', normalizedState);
@@ -1706,20 +1713,193 @@ async function handleConnectionUpdate(data: any) {
   }
 }
 
+async function resolveChannelByEvolutionInstance(instanceName: string | null) {
+  if (!instanceName) return null;
+  return prisma.channel.findFirst({
+    where: { evolutionInstanceId: instanceName },
+  });
+}
+
+async function resolveConversationByChannelAndPhone(channelId: string, phone: string) {
+  const cleanPhone = phone.replace(/\D/g, '');
+  if (!cleanPhone) return null;
+
+  const contact = await prisma.contact.findFirst({
+    where: {
+      channelId,
+      OR: [{ phone: cleanPhone }, { channelIdentifier: cleanPhone }],
+    },
+  });
+  if (!contact) return null;
+
+  return prisma.conversation.findFirst({
+    where: { channelId, contactId: contact.id },
+    orderBy: { lastMessageAt: 'desc' },
+  });
+}
+
+async function applyEvolutionMessagePatches(
+  channelId: string,
+  patches: ReturnType<typeof parseEvolutionMessagePatches>,
+  options?: { allowContentEdit?: boolean },
+): Promise<void> {
+  for (const patch of patches) {
+    if (!patch.externalId) continue;
+
+    const messages = await prisma.message.findMany({
+      where: { externalId: patch.externalId },
+      select: { id: true, conversationId: true, content: true, metadata: true },
+    });
+
+    if (messages.length === 0) continue;
+
+    for (const msg of messages) {
+      const updateData: { status?: any; content?: string; metadata?: any } = {};
+
+      if (patch.status) {
+        updateData.status = patch.status;
+      }
+
+      if (options?.allowContentEdit && patch.content && patch.content !== msg.content) {
+        updateData.content = patch.content;
+        const metadata =
+          msg.metadata && typeof msg.metadata === 'object' ? { ...(msg.metadata as object) } : {};
+        updateData.metadata = {
+          ...metadata,
+          editedAt: new Date().toISOString(),
+          editedVia: 'evolution',
+        };
+      }
+
+      if (Object.keys(updateData).length === 0) continue;
+
+      await prisma.message.update({
+        where: { id: msg.id },
+        data: updateData,
+      });
+
+      if (io) {
+        if (patch.status) {
+          emitMessageStatus(io, {
+            conversationId: msg.conversationId,
+            messageId: msg.id,
+            status: patch.status,
+          });
+        }
+        if (updateData.content) {
+          emitMessageContentUpdate(io, {
+            conversationId: msg.conversationId,
+            messageId: msg.id,
+            content: updateData.content,
+          });
+        }
+      }
+    }
+  }
+}
+
+async function handleMessagesUpdate(data: any) {
+  try {
+    const instanceName = extractEvolutionInstanceName(null, data);
+    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    if (!channel) {
+      console.warn('[Webhook] MESSAGES_UPDATE: canal não encontrado', instanceName);
+      return;
+    }
+
+    const patches = parseEvolutionMessagePatches(data);
+    if (patches.length === 0) {
+      console.log('[Webhook] MESSAGES_UPDATE sem patches reconhecíveis');
+      return;
+    }
+
+    await applyEvolutionMessagePatches(channel.id, patches, { allowContentEdit: false });
+    console.log('[Webhook] ✅ MESSAGES_UPDATE aplicado:', patches.length, 'patch(es)');
+  } catch (error: any) {
+    console.error('[Webhook] ❌ Erro em MESSAGES_UPDATE:', error.message);
+  }
+}
+
+async function handleMessagesEdited(data: any) {
+  try {
+    const instanceName = extractEvolutionInstanceName(null, data);
+    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    if (!channel) return;
+
+    const patches = parseEvolutionMessagePatches(data);
+    await applyEvolutionMessagePatches(channel.id, patches, { allowContentEdit: true });
+    console.log('[Webhook] ✅ MESSAGES_EDITED aplicado:', patches.length, 'patch(es)');
+  } catch (error: any) {
+    console.error('[Webhook] ❌ Erro em MESSAGES_EDITED:', error.message);
+  }
+}
+
+async function handleSendMessageEvent(data: any) {
+  try {
+    const instanceName = extractEvolutionInstanceName(null, data);
+    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    if (!channel) return;
+
+    const patches = parseEvolutionMessagePatches(data);
+    const outboundPatches = patches.map((p) => ({
+      ...p,
+      status: p.status || ('SENT' as const),
+    }));
+
+    await applyEvolutionMessagePatches(channel.id, outboundPatches, { allowContentEdit: false });
+    console.log('[Webhook] ✅ SEND_MESSAGE processado:', outboundPatches.length, 'patch(es)');
+  } catch (error: any) {
+    console.error('[Webhook] ❌ Erro em SEND_MESSAGE:', error.message);
+  }
+}
+
+async function handlePresenceUpdate(data: any) {
+  try {
+    const instanceName = extractEvolutionInstanceName(null, data);
+    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    if (!channel || !io) return;
+
+    const presence = parseEvolutionPresence(data);
+    if (!presence) return;
+
+    const phone = extractPhoneFromEvolutionJid(presence.remoteJid);
+    if (!phone) return;
+
+    const conversation = await resolveConversationByChannelAndPhone(channel.id, phone);
+    if (!conversation) return;
+
+    const uiState =
+      presence.state === 'composing' || presence.state === 'recording'
+        ? presence.state
+        : null;
+
+    emitContactPresence(io, {
+      conversationId: conversation.id,
+      channelId: channel.id,
+      state: uiState,
+      contactPhone: phone,
+    });
+  } catch (error: any) {
+    console.error('[Webhook] ❌ Erro em PRESENCE_UPDATE:', error.message);
+  }
+}
+
 async function handleQRCodeUpdate(data: any) {
   try {
-    const instanceName = data.instance;
-    const channel = await prisma.channel.findFirst({
-      where: { evolutionInstanceId: instanceName },
-    });
+    const instanceName = extractEvolutionInstanceName(null, data) || data.instance;
+    const channel = await resolveChannelByEvolutionInstance(instanceName);
 
     if (!channel) return;
 
-    // Emitir evento via Socket.IO para atualizar QR Code
-    io.emit('qrcode_update', {
-      channelId: channel.id,
-      qrcode: data.qrcode?.base64,
-    });
+    const qrcode = extractEvolutionQrBase64(data);
+    if (!qrcode) {
+      console.log('[Webhook] QRCODE_UPDATED sem base64 utilizável');
+      return;
+    }
+
+    if (io) {
+      emitQrcodeUpdate(io, { channelId: channel.id, qrcode });
+    }
   } catch (error: any) {
     console.error('Erro ao processar atualização de QR Code:', error);
   }
@@ -1790,47 +1970,77 @@ export async function processWhatsAppOfficialWebhookPayload(payload: any): Promi
 }
 
 export async function processEvolutionWebhookPayload(event: any): Promise<void> {
-  const eventType =
-    event.event ||
-    event.eventName ||
-    event.eventType ||
-    event.data?.event ||
-    event.data?.eventName ||
-    event.data?.eventType ||
-    (event.eventName ? event.eventName : null);
+  const eventType = extractEvolutionEventType(event);
+  const instanceName = extractEvolutionInstanceName(event);
+  const eventData = event.data ?? event;
 
-  const instanceName =
-    event.instance || event.data?.instance || event.instanceName || event.data?.instanceName;
-  const eventData = event.data || event;
-
-  if (instanceName && !eventData.instance && !eventData.instanceName) {
-    eventData.instance = instanceName;
-    eventData.instanceName = instanceName;
+  if (instanceName && eventData && typeof eventData === 'object') {
+    if (!eventData.instance) eventData.instance = instanceName;
+    if (!eventData.instanceName) eventData.instanceName = instanceName;
   }
 
   console.log('📨 Event Type detectado:', eventType);
   console.log('📨 Instance Name:', instanceName);
-  console.log('📨 Event Data keys:', Object.keys(eventData));
+  console.log(
+    '📨 Event Data keys:',
+    eventData && typeof eventData === 'object' ? Object.keys(eventData) : [],
+  );
 
-  const normalizedEventType = (eventType || '').toLowerCase();
+  const normalizedEventType = eventType.toLowerCase().replace(/\./g, '_');
 
-  if (normalizedEventType.includes('message') && normalizedEventType.includes('upsert')) {
+  if (normalizedEventType.includes('messages') && normalizedEventType.includes('upsert')) {
     console.log('📨 Processando como MESSAGES_UPSERT');
     await handleNewMessage(eventData);
-  } else if (normalizedEventType.includes('connection') && normalizedEventType.includes('update')) {
+    return;
+  }
+
+  if (normalizedEventType.includes('messages') && normalizedEventType.includes('edited')) {
+    console.log('📨 Processando como MESSAGES_EDITED');
+    await handleMessagesEdited(eventData);
+    return;
+  }
+
+  if (normalizedEventType.includes('messages') && normalizedEventType.includes('update')) {
+    console.log('📨 Processando como MESSAGES_UPDATE');
+    await handleMessagesUpdate(eventData);
+    return;
+  }
+
+  if (normalizedEventType.includes('send') && normalizedEventType.includes('message')) {
+    console.log('📨 Processando como SEND_MESSAGE');
+    await handleSendMessageEvent(eventData);
+    return;
+  }
+
+  if (normalizedEventType.includes('presence')) {
+    console.log('📨 Processando como PRESENCE_UPDATE');
+    await handlePresenceUpdate(eventData);
+    return;
+  }
+
+  if (normalizedEventType.includes('connection') && normalizedEventType.includes('update')) {
     console.log('📨 Processando como CONNECTION_UPDATE');
     await handleConnectionUpdate(eventData);
-  } else if (normalizedEventType.includes('qrcode')) {
+    return;
+  }
+
+  if (normalizedEventType.includes('qrcode')) {
     console.log('📨 Processando como QRCODE_UPDATED');
     await handleQRCodeUpdate(eventData);
-  } else {
-    console.log('📨 Tentando detectar tipo de evento automaticamente...');
-    if (eventData.messages || event.messages || eventData.message || event.message) {
-      console.log('📨 Estrutura de mensagem detectada, processando como mensagem');
-      await handleNewMessage(eventData);
+    return;
+  }
+
+  console.log('📨 Tentando detectar tipo de evento automaticamente...');
+  if (eventData?.messages || event.messages || eventData?.message || event.message) {
+    if (eventData?.update || (Array.isArray(eventData) && eventData[0]?.update)) {
+      await handleMessagesUpdate(eventData);
     } else {
-      console.log('⚠️ Tipo de evento não reconhecido:', eventType);
-      console.log('⚠️ Estrutura do evento:', JSON.stringify(event, null, 2).substring(0, 500));
+      await handleNewMessage(eventData);
     }
+  } else if (eventData?.presences || eventData?.lastKnownPresence) {
+    await handlePresenceUpdate(eventData);
+  } else {
+    console.log('⚠️ Tipo de evento não reconhecido:', eventType);
+    console.log('⚠️ Estrutura do evento:', JSON.stringify(event, null, 2).substring(0, 500));
   }
 }

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { io, Socket } from 'socket.io-client';
 import api from '../utils/api';
+import { getPublicApiOrigin } from '../config/publicUrl';
 
 interface Channel {
   id: string;
@@ -114,6 +116,8 @@ export default function Channels() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [qrChannelId, setQrChannelId] = useState<string | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const resetForm = () => {
     setFormData({
@@ -142,6 +146,47 @@ export default function Channels() {
     const timeout = setTimeout(() => setSuccessMessage(null), 4000);
     return () => clearTimeout(timeout);
   }, [successMessage]);
+
+  useEffect(() => {
+    const socket: Socket = io(getPublicApiOrigin(), {
+      transports: ['websocket', 'polling'],
+      auth: { token: localStorage.getItem('token') || '' },
+    });
+    socketRef.current = socket;
+
+    socket.on('qrcode_update', (data: { channelId: string; qrcode: string | null }) => {
+      if (!data?.qrcode) return;
+      if (qrChannelId && data.channelId !== qrChannelId) return;
+      setQrCode(data.qrcode);
+      setShowQRModal(true);
+    });
+
+    socket.on('channel_status_update', (data: { channelId: string; status: string }) => {
+      if (qrChannelId && data.channelId === qrChannelId) {
+        const isConnected =
+          data.status === 'ACTIVE' ||
+          data.status === 'active' ||
+          data.status === 'open' ||
+          data.status === 'connected';
+        if (isConnected) {
+          setCheckingConnection(false);
+          setShowQRModal(false);
+          setQrCode(null);
+          setQrChannelId(null);
+          fetchChannels();
+          fetchHealthPanel();
+        }
+      } else {
+        fetchChannels();
+        fetchHealthPanel();
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [qrChannelId]);
 
   const fetchSectors = async () => {
     try {
@@ -255,8 +300,10 @@ export default function Channels() {
     try {
       const response = await api.get(`/api/channels/${channelId}/qrcode`);
       if (response.data.qrcode) {
+        setQrChannelId(channelId);
         setQrCode(response.data.qrcode);
         setShowQRModal(true);
+        socketRef.current?.emit('subscribe_channel', channelId);
         startConnectionCheck(channelId);
       } else {
         alert('QR Code ainda não disponível. Aguarde alguns segundos.');
@@ -295,6 +342,7 @@ export default function Channels() {
           setCheckingConnection(false);
           setShowQRModal(false);
           setQrCode(null);
+          setQrChannelId(null);
           
           // Atualizar lista de canais
           await fetchChannels();
@@ -924,6 +972,7 @@ export default function Channels() {
             if (!checkingConnection) {
               setShowQRModal(false);
               setQrCode(null);
+              setQrChannelId(null);
             }
           }}
         >
@@ -954,6 +1003,7 @@ export default function Channels() {
                 onClick={() => {
                   setShowQRModal(false);
                   setQrCode(null);
+                  setQrChannelId(null);
                   setCheckingConnection(false);
                 }}
                 className="rounded-lg border border-[rgba(63,73,69,0.25)] bg-surface-container-highest px-5 py-1.5 text-xs font-semibold text-on-surface transition hover:bg-surface-variant"

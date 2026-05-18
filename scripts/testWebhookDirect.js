@@ -30,9 +30,12 @@ async function testWithInstanceToken() {
     events: [
       'MESSAGES_UPSERT',
       'MESSAGES_UPDATE',
+      'MESSAGES_EDITED',
       'MESSAGES_DELETE',
+      'SEND_MESSAGE',
       'CONNECTION_UPDATE',
       'QRCODE_UPDATED',
+      'PRESENCE_UPDATE',
     ],
   };
 
@@ -73,9 +76,12 @@ async function testWithApiKey() {
     events: [
       'MESSAGES_UPSERT',
       'MESSAGES_UPDATE',
+      'MESSAGES_EDITED',
       'MESSAGES_DELETE',
+      'SEND_MESSAGE',
       'CONNECTION_UPDATE',
       'QRCODE_UPDATED',
+      'PRESENCE_UPDATE',
     ],
   };
 
@@ -118,9 +124,12 @@ async function testWithNestedWebhook() {
         events: [
           'MESSAGES_UPSERT',
           'MESSAGES_UPDATE',
+          'MESSAGES_EDITED',
           'MESSAGES_DELETE',
+          'SEND_MESSAGE',
           'CONNECTION_UPDATE',
           'QRCODE_UPDATED',
+          'PRESENCE_UPDATE',
         ],
       },
     },
@@ -165,9 +174,12 @@ async function testWithInstanceRoot() {
       events: [
         'MESSAGES_UPSERT',
         'MESSAGES_UPDATE',
+        'MESSAGES_EDITED',
         'MESSAGES_DELETE',
+        'SEND_MESSAGE',
         'CONNECTION_UPDATE',
         'QRCODE_UPDATED',
+        'PRESENCE_UPDATE',
       ],
     },
   };

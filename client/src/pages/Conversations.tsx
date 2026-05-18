@@ -138,6 +138,8 @@ interface Message {
       code?: string | number | null;
       at?: string;
     };
+    editedAt?: string;
+    editedVia?: string;
   };
 }
 
@@ -203,6 +205,8 @@ export default function Conversations() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [windowTick, setWindowTick] = useState(() => Date.now());
+  const [contactPresence, setContactPresence] = useState<'composing' | 'recording' | null>(null);
+  const contactPresenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -299,6 +303,11 @@ export default function Conversations() {
 
   useEffect(() => {
     setSendError(null);
+    setContactPresence(null);
+    if (contactPresenceTimeoutRef.current) {
+      clearTimeout(contactPresenceTimeoutRef.current);
+      contactPresenceTimeoutRef.current = null;
+    }
   }, [selectedConversation?.id]);
 
   useEffect(() => {
@@ -477,6 +486,46 @@ export default function Conversations() {
             msg.id === data.messageId ? { ...msg, status: data.status } : msg,
           ),
         );
+      },
+    );
+
+    socket.on(
+      'message_updated',
+      (data: { conversationId: string; messageId: string; content: string }) => {
+        const currentId = currentConversationIdRef.current;
+        if (!currentId || data.conversationId !== currentId) return;
+
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === data.messageId ? { ...msg, content: data.content } : msg,
+          ),
+        );
+      },
+    );
+
+    socket.on(
+      'contact_presence',
+      (data: {
+        conversationId: string;
+        state: 'composing' | 'recording' | 'available' | 'unavailable' | 'paused' | null;
+      }) => {
+        const currentId = currentConversationIdRef.current;
+        if (!currentId || data.conversationId !== currentId) return;
+
+        if (contactPresenceTimeoutRef.current) {
+          clearTimeout(contactPresenceTimeoutRef.current);
+          contactPresenceTimeoutRef.current = null;
+        }
+
+        if (data.state === 'composing' || data.state === 'recording') {
+          setContactPresence(data.state);
+          contactPresenceTimeoutRef.current = setTimeout(() => {
+            setContactPresence(null);
+            contactPresenceTimeoutRef.current = null;
+          }, 25_000);
+        } else {
+          setContactPresence(null);
+        }
       },
     );
 
@@ -1827,6 +1876,13 @@ export default function Conversations() {
                       selectedConversation.contact?.name ||
                       'Sem telefone'}
                   </p>
+                  {contactPresence && (
+                    <p className="mt-0.5 text-xs italic text-primary-fixed-dim">
+                      {contactPresence === 'recording'
+                        ? 'Gravando áudio…'
+                        : 'Digitando…'}
+                    </p>
+                  )}
                   {activeMessagingWindow?.applies && (
                     <motion.div className="mt-1.5 flex flex-wrap items-center gap-2">
                       <span
@@ -2820,7 +2876,12 @@ export default function Conversations() {
                                     {message.user.name}
                                   </div>
                                 )}
-                                <div>{message.content}</div>
+                                <div>
+                                  {message.content}
+                                  {message.metadata?.editedAt && (
+                                    <span className="ml-1 text-[10px] opacity-70">(editada)</span>
+                                  )}
+                                </div>
                               </div>
                             )}
 

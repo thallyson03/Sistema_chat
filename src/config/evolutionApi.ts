@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { providerResilienceService } from '../services/providerResilienceService';
+import { EVOLUTION_WEBHOOK_EVENTS } from '../utils/evolutionWebhook';
 
 class EvolutionApiClient {
   private client: AxiosInstance;
@@ -508,13 +509,7 @@ class EvolutionApiClient {
           enabled: true,
           url: webhookUrl,
           webhookByEvents: false, // Se true, cada evento vai para um sub-caminho da URL
-          events: [
-            'MESSAGES_UPSERT',
-            'MESSAGES_UPDATE',
-            'MESSAGES_DELETE',
-            'CONNECTION_UPDATE',
-            'QRCODE_UPDATED',
-          ],
+          events: [...EVOLUTION_WEBHOOK_EVENTS],
         },
       };
 
