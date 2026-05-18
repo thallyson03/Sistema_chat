@@ -601,6 +601,18 @@ export default function Conversations() {
     };
   }, [selectedConversation?.id, selectedConversation?.channelId]);
 
+  // Evolution: inscrever presença do contato (Baileys exige subscribe para enviar digitando/gravando)
+  useEffect(() => {
+    const conversationId = selectedConversation?.id;
+    const channelType = selectedConversation?.channel?.type;
+    const phone = selectedConversation?.contact?.phone;
+    if (!conversationId || channelType !== 'EVOLUTION' || !phone) return;
+
+    api.post(`/api/conversations/${conversationId}/presence-subscribe`).catch(() => {
+      // falha silenciosa — presença é best-effort
+    });
+  }, [selectedConversation?.id, selectedConversation?.channel?.type, selectedConversation?.contact?.phone]);
+
   // Buscar usuário atual para poder assumir conversas do bot
   useEffect(() => {
     const fetchCurrentUser = async () => {

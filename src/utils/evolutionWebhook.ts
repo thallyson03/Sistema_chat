@@ -153,33 +153,138 @@ export function parseEvolutionMessagePatches(eventData: any): Array<{
   return patches;
 }
 
+const VALID_PRESENCE_STATES = new Set<EvolutionPresenceState>([
+  'composing',
+  'recording',
+  'available',
+  'unavailable',
+  'paused',
+]);
+
+function normalizePresenceState(raw: unknown): EvolutionPresenceState | null {
+  if (raw === null || raw === undefined) return null;
+  const state = String(raw).toLowerCase() as EvolutionPresenceState;
+  return VALID_PRESENCE_STATES.has(state) ? state : null;
+}
+
+function readPresenceStateFromEntry(entry: any): EvolutionPresenceState | null {
+  if (!entry || typeof entry !== 'object') return null;
+  return (
+    normalizePresenceState(entry.lastKnownPresence) ||
+    normalizePresenceState(entry.presence) ||
+    normalizePresenceState(entry.last)
+  );
+}
+
+function isWhatsAppPhoneJid(jid: string): boolean {
+  return jid.includes('@s.whatsapp.net') || jid.includes('@c.us');
+}
+
+function collectPresenceJidCandidates(eventData: any): string[] {
+  const presences = eventData?.presences || eventData?.presence;
+  const keys =
+    presences && typeof presences === 'object' && !Array.isArray(presences)
+      ? Object.keys(presences)
+      : [];
+
+  const candidates = [
+    eventData?.id,
+    eventData?.remoteJid,
+    eventData?.remoteJidAlt,
+    eventData?.senderPn,
+    eventData?.participant,
+    ...keys,
+  ];
+
+  const unique: string[] = [];
+  for (const value of candidates) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const jid = value.trim();
+    if (!unique.includes(jid)) unique.push(jid);
+  }
+  return unique;
+}
+
 export function parseEvolutionPresence(eventData: any): {
   remoteJid: string;
   state: EvolutionPresenceState;
 } | null {
-  const id = eventData?.id || eventData?.remoteJid;
-  if (!id) return null;
+  if (!eventData || typeof eventData !== 'object') return null;
 
   const presences = eventData?.presences || eventData?.presence || {};
-  const entry =
-    presences[id] ||
-    presences[Object.keys(presences)[0]] ||
-    eventData;
+  const candidates = collectPresenceJidCandidates(eventData);
 
-  const last =
-    entry?.lastKnownPresence ||
-    entry?.presence ||
-    eventData?.lastKnownPresence ||
-    eventData?.presence;
+  let fallback: { remoteJid: string; state: EvolutionPresenceState } | null = null;
 
-  if (!last) return null;
-
-  const state = String(last).toLowerCase() as EvolutionPresenceState;
-  if (!['composing', 'recording', 'available', 'unavailable', 'paused'].includes(state)) {
+  const consider = (jid: string, state: EvolutionPresenceState) => {
+    if (isWhatsAppPhoneJid(jid) && (state === 'composing' || state === 'recording')) {
+      return { remoteJid: jid, state };
+    }
+    if (!fallback) fallback = { remoteJid: jid, state };
     return null;
+  };
+
+  for (const jid of candidates) {
+    if (jid.includes('@g.us')) continue;
+
+    const entry =
+      (presences && typeof presences === 'object' && presences[jid]) ||
+      (jid === eventData?.id || jid === eventData?.remoteJid ? eventData : null);
+
+    const state =
+      readPresenceStateFromEntry(entry) ||
+      (jid === eventData?.id || jid === eventData?.remoteJid
+        ? normalizePresenceState(eventData?.lastKnownPresence) ||
+          normalizePresenceState(eventData?.presence)
+        : null);
+
+    if (!state) continue;
+
+    const immediate = consider(jid, state);
+    if (immediate) return immediate;
   }
 
-  return { remoteJid: String(id), state };
+  const rootState =
+    normalizePresenceState(eventData?.lastKnownPresence) ||
+    normalizePresenceState(eventData?.presence);
+  if (rootState && candidates[0]) {
+    const immediate = consider(candidates[0], rootState);
+    if (immediate) return immediate;
+  }
+
+  return fallback;
+}
+
+/** Extrai telefone E.164 a partir do payload de presença (inclui fallback LID → senderPn). */
+export function extractPhoneFromEvolutionPresenceData(eventData: any): string | null {
+  if (!eventData || typeof eventData !== 'object') return null;
+
+  const candidates = collectPresenceJidCandidates(eventData);
+  const senderPn =
+    typeof eventData?.senderPn === 'string'
+      ? eventData.senderPn
+      : typeof eventData?.participant === 'string'
+        ? eventData.participant
+        : null;
+
+  for (const jid of candidates) {
+    if (jid.includes('@g.us')) continue;
+    if (jid.includes('@lid')) {
+      if (senderPn) {
+        const fromSender = extractPhoneFromEvolutionJid(senderPn);
+        if (fromSender) return fromSender;
+      }
+      continue;
+    }
+    const phone = extractPhoneFromEvolutionJid(jid);
+    if (phone) return phone;
+  }
+
+  if (senderPn) {
+    return extractPhoneFromEvolutionJid(senderPn);
+  }
+
+  return null;
 }
 
 export function extractEvolutionQrBase64(eventData: any): string | null {

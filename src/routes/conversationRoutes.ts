@@ -25,6 +25,10 @@ router.get(
 );
 router.get('/unread-count', conversationController.getUnreadCount.bind(conversationController));
 router.get('/:id', conversationController.getConversationById.bind(conversationController));
+router.post(
+  '/:id/presence-subscribe',
+  conversationController.subscribeContactPresence.bind(conversationController),
+);
 router.put('/:id', conversationController.updateConversation.bind(conversationController));
 router.post('/:id/assign', conversationController.assignConversation.bind(conversationController));
 router.post('/:id/activate-bot', conversationController.activateBot.bind(conversationController));

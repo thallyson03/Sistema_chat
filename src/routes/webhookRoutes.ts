@@ -29,6 +29,7 @@ import {
   extractPhoneFromEvolutionJid,
   parseEvolutionMessagePatches,
   parseEvolutionPresence,
+  extractPhoneFromEvolutionPresenceData,
 } from '../utils/evolutionWebhook';
 import { normalizePhone } from '../utils/phone';
 import { contactResolutionService } from '../services/contactResolutionService';
@@ -1526,7 +1527,11 @@ async function resolveChannelByEvolutionInstance(instanceName: string | null) {
   });
 }
 
-async function resolveConversationByChannelAndPhone(channelId: string, phone: string) {
+async function resolveConversationByChannelAndPhone(
+  channelId: string,
+  phone: string,
+  options?: { includeClosed?: boolean },
+) {
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
 
@@ -1537,7 +1542,9 @@ async function resolveConversationByChannelAndPhone(channelId: string, phone: st
     where: {
       channelId,
       contactId: contact.id,
-      status: { in: ['OPEN', 'WAITING'] },
+      ...(options?.includeClosed
+        ? {}
+        : { status: { in: ['OPEN', 'WAITING'] } }),
     },
     orderBy: { lastMessageAt: 'desc' },
   });
@@ -1664,26 +1671,63 @@ async function handlePresenceUpdate(data: any) {
     const channel = await resolveChannelByEvolutionInstance(instanceName);
     if (!channel || !io) return;
 
-    const presence = parseEvolutionPresence(data);
-    if (!presence) return;
+    const batches = Array.isArray(data) ? data : [data];
 
-    const phone = extractPhoneFromEvolutionJid(presence.remoteJid);
-    if (!phone) return;
+    for (const item of batches) {
+      const presence = parseEvolutionPresence(item);
+      if (!presence) {
+        console.log('[Webhook] PRESENCE_UPDATE ignorado (estado não reconhecido)', {
+          instance: instanceName,
+          keys: item && typeof item === 'object' ? Object.keys(item) : [],
+        });
+        continue;
+      }
 
-    const conversation = await resolveConversationByChannelAndPhone(channel.id, phone);
-    if (!conversation) return;
+      const phone =
+        extractPhoneFromEvolutionPresenceData(item) ||
+        extractPhoneFromEvolutionJid(presence.remoteJid);
+      if (!phone) {
+        console.log('[Webhook] PRESENCE_UPDATE sem telefone resolvível', {
+          instance: instanceName,
+          remoteJid: presence.remoteJid,
+          state: presence.state,
+        });
+        continue;
+      }
 
-    const uiState =
-      presence.state === 'composing' || presence.state === 'recording'
-        ? presence.state
-        : null;
+      let conversation = await resolveConversationByChannelAndPhone(channel.id, phone);
+      if (!conversation) {
+        conversation = await resolveConversationByChannelAndPhone(channel.id, phone, {
+          includeClosed: true,
+        });
+      }
+      if (!conversation) {
+        console.log('[Webhook] PRESENCE_UPDATE sem conversa para o contato', {
+          instance: instanceName,
+          phone,
+          state: presence.state,
+        });
+        continue;
+      }
 
-    emitContactPresence(io, {
-      conversationId: conversation.id,
-      channelId: channel.id,
-      state: uiState,
-      contactPhone: phone,
-    });
+      const uiState =
+        presence.state === 'composing' || presence.state === 'recording'
+          ? presence.state
+          : null;
+
+      console.log('[Webhook] PRESENCE_UPDATE → UI', {
+        conversationId: conversation.id,
+        phone,
+        state: uiState ?? presence.state,
+      });
+
+      emitContactPresence(io, {
+        conversationId: conversation.id,
+        channelId: channel.id,
+        state: uiState,
+        contactPhone: phone,
+      });
+    }
   } catch (error: any) {
     console.error('[Webhook] ❌ Erro em PRESENCE_UPDATE:', error.message);
   }

@@ -493,6 +493,34 @@ class EvolutionApiClient {
     }
   }
 
+  /**
+   * Inscreve na presença do contato no Baileys (necessário para receber "digitando"/"gravando").
+   * Usa sendPresence com delay mínimo e "paused" para não exibir typing ao cliente.
+   */
+  async subscribeContactPresence(instanceName: string, number: string, apiKey?: string) {
+    const cleanNumber = String(number).replace(/\D/g, '');
+    if (cleanNumber.length < 10) return;
+
+    const payloads = [
+      {
+        number: cleanNumber,
+        options: { delay: 1, presence: 'paused', number: cleanNumber },
+      },
+      { number: cleanNumber, presence: 'paused', delay: 1 },
+    ];
+
+    for (const body of payloads) {
+      try {
+        await this.client.post(`/chat/sendPresence/${instanceName}`, body, {
+          headers: this.getHeaders(apiKey),
+        });
+        return;
+      } catch {
+        // tenta formato alternativo
+      }
+    }
+  }
+
   async setWebhook(instanceName: string, webhookUrl: string, apiKey?: string) {
     try {
       console.log('[EvolutionAPI] 📡 Configurando webhook:', {

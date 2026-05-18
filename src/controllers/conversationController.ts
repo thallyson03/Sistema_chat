@@ -1,5 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
+import prisma from '../config/database';
+import { evolutionApi } from '../config/evolutionApi';
 import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
 import { DashboardPerformanceService } from '../services/dashboardPerformanceService';
@@ -97,6 +99,46 @@ export class ConversationController {
       }
 
       res.json(conversation);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  /** Evolution/Baileys: inscreve presença do contato para receber digitando/gravando via webhook. */
+  async subscribeContactPresence(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      if (!(await this.ensureConversationAccess(req, res, id))) {
+        return;
+      }
+
+      const conversation = await prisma.conversation.findUnique({
+        where: { id },
+        include: {
+          contact: { select: { phone: true } },
+          channel: {
+            select: {
+              type: true,
+              evolutionInstanceId: true,
+              evolutionApiKey: true,
+            },
+          },
+        },
+      });
+
+      if (!conversation?.channel?.evolutionInstanceId || !conversation.contact?.phone) {
+        return res.status(400).json({
+          error: 'Conversa sem canal Evolution ou telefone do contato',
+        });
+      }
+
+      await evolutionApi.subscribeContactPresence(
+        conversation.channel.evolutionInstanceId,
+        conversation.contact.phone,
+        conversation.channel.evolutionApiKey ?? undefined,
+      );
+
+      res.json({ ok: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
