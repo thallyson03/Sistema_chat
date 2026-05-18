@@ -154,14 +154,39 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
   next();
 });
 
-// Preservar rawBody para validação de assinatura em webhooks (ex: WhatsApp Official)
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    // Armazena o corpo bruto para uso posterior em validações HMAC
-    (req as any).rawBody = Buffer.from(buf);
-  },
-}));
-app.use(express.urlencoded({ extended: true }));
+// Evolution/Meta podem enviar payloads grandes (mídia em base64, history sync).
+// O padrão do express.json é 100kb — isso gerava 413 e nenhuma mensagem era gravada.
+const WEBHOOK_JSON_LIMIT = process.env.WEBHOOK_JSON_LIMIT || '25mb';
+const API_JSON_LIMIT = process.env.API_JSON_LIMIT || '2mb';
+
+const preserveRawBody = (req: express.Request, _res: express.Response, buf: Buffer) => {
+  (req as any).rawBody = Buffer.from(buf);
+};
+
+const webhookJsonParser = express.json({ limit: WEBHOOK_JSON_LIMIT, verify: preserveRawBody });
+const apiJsonParser = express.json({ limit: API_JSON_LIMIT, verify: preserveRawBody });
+
+function isWebhookIngressPath(path: string): boolean {
+  return (
+    path.startsWith('/webhooks') ||
+    path.startsWith('/api/webhooks') ||
+    path.startsWith('/api/whatsapp')
+  );
+}
+
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (isWebhookIngressPath(req.path)) {
+    return webhookJsonParser(req, res, next);
+  }
+  return apiJsonParser(req, res, next);
+});
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: WEBHOOK_JSON_LIMIT,
+  }),
+);
 
 // Servir arquivos de upload (público para Evolution API poder baixar)
 import path from 'path';
@@ -308,13 +333,31 @@ if (serveStatic) {
 
 // Middleware de tratamento de erros global
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const isPayloadTooLarge =
+    err?.type === 'entity.too.large' ||
+    err?.name === 'PayloadTooLargeError' ||
+    err?.status === 413 ||
+    err?.statusCode === 413;
+
+  if (isPayloadTooLarge) {
+    logger.errorWithCause('webhook payload too large', err, {
+      requestId: (req as any).requestId,
+      requestUrl: req.url,
+      requestMethod: req.method,
+      webhookJsonLimit: WEBHOOK_JSON_LIMIT,
+    });
+    return res.status(413).json({
+      error: `Payload excede o limite (${WEBHOOK_JSON_LIMIT}). Ajuste WEBHOOK_JSON_LIMIT ou desative base64 no webhook da Evolution.`,
+    });
+  }
+
   logger.errorWithCause('unhandled server error', err, {
     requestId: (req as any).requestId,
     requestUrl: req.url,
     requestMethod: req.method,
     ...(process.env.NODE_ENV !== 'production' ? { requestBody: req.body } : {}),
   });
-  
+
   res.status(err.status || 500).json({
     error: err.message || 'Erro interno do servidor',
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
