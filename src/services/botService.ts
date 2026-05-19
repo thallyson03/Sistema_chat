@@ -284,6 +284,11 @@ export class BotService {
       return null;
     }
 
+    if (conversation.assignedToId) {
+      console.log('[BotService] Conversa com atendente humano atribuído, ignorando mensagem');
+      return null;
+    }
+
     // Só processar mensagens se já existir uma sessão de bot ativa para esta conversa.
     // Isso garante que o bot só atua quando foi explicitamente iniciado por uma automação (ex: Robô de vendas no pipeline).
     if (!conversation.botSession || !conversation.botSession.isActive) {
@@ -328,6 +333,7 @@ export class BotService {
       const stageMismatch = expectedStageId && deal.stageId !== expectedStageId;
 
       if (pipelineMismatch || stageMismatch) {
+        console.log('[BotService] Sessão de bot fora do escopo do pipeline, ignorando mensagem');
         await prisma.botSession.update({
           where: { conversationId },
           data: { isActive: false },
@@ -343,6 +349,7 @@ export class BotService {
       const currentSectorId = conversation.sectorId || (conversation.channel as any)?.sectorId || null;
 
       if (expectedSectorId && currentSectorId && expectedSectorId !== currentSectorId) {
+        console.log('[BotService] Setor da conversa diferente do bot da sessão, ignorando mensagem');
         await prisma.botSession.update({
           where: { conversationId },
           data: { isActive: false },
@@ -352,6 +359,7 @@ export class BotService {
 
       // Se o bot está configurado para um setor mas a conversa não tem setor definido, desativar.
       if (expectedSectorId && !currentSectorId) {
+        console.log('[BotService] Conversa sem setor para bot de setor, ignorando mensagem');
         await prisma.botSession.update({
           where: { conversationId },
           data: { isActive: false },

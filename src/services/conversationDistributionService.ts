@@ -128,6 +128,16 @@ export class ConversationDistributionService {
       },
     });
 
+    // Conversa passou para humano: desativar bot para não competir com o atendente.
+    await prisma.botSession.updateMany({
+      where: { conversationId, isActive: true },
+      data: {
+        isActive: false,
+        handoffToUserId: selectedUser.id,
+        handoffAt: new Date(),
+      },
+    });
+
     console.log(`[ConversationDistribution] Conversa ${conversationId} atribuída a ${selectedUser.name} (carga: ${selectedUser.workload.toFixed(1)})`);
 
     return selectedUser.id;

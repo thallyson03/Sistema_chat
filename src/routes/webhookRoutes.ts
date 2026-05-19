@@ -538,31 +538,65 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
       });
     }
 
-    // Tentar atribuição automática sempre que a conversa estiver sem responsável.
-    // Se não houver usuário disponível no setor, distributeConversation marca como WAITING (fila).
-    if (!conversation.assignedToId) {
-      try {
-        const distributionService = new ConversationDistributionService();
-        const assignedUserId = await distributionService.distributeConversation(conversation.id, {
-          channelId: whatsappChannel.id,
-        });
-
-        if (assignedUserId) {
-          conversation = await prisma.conversation.update({
+    // Bot primeiro na criação/reabertura; distribuição humana só se não houver bot ativo.
+    if (resolved.created || resolved.reopened) {
+      const dealOnCreate = await prisma.deal
+        .findUnique({ where: { conversationId: conversation.id } })
+        .catch(() => null);
+      let botStarted = false;
+      if (!dealOnCreate) {
+        botStarted = await conversationService.tryActivateBotForConversation(conversation.id);
+        if (botStarted) {
+          const refreshed = await prisma.conversation.findUnique({
             where: { id: conversation.id },
-            data: { assignedToId: assignedUserId },
           });
-        } else {
+          if (refreshed) conversation = refreshed;
           console.log(
-            '[WhatsAppOfficial] ℹ️ Nenhum usuário disponível; conversa ficou em WAITING (fila):',
-            conversation.id,
+            `[WhatsAppOfficial] 🤖 Bot ativado automaticamente na conversa ${conversation.id}`,
           );
         }
-      } catch (distributionError: any) {
-        console.error(
-          '[WhatsAppOfficial] ❌ Erro ao distribuir conversa automaticamente:',
-          distributionError?.message || distributionError,
-        );
+      }
+      if (!botStarted && !conversation?.assignedToId) {
+        try {
+          const distributionService = new ConversationDistributionService();
+          const assignedUserId = await distributionService.distributeConversation(conversation.id, {
+            channelId: whatsappChannel.id,
+          });
+          if (assignedUserId) {
+            conversation = await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: { assignedToId: assignedUserId },
+            });
+          } else {
+            console.log(
+              '[WhatsAppOfficial] ℹ️ Nenhum usuário disponível; conversa ficou em WAITING (fila):',
+              conversation.id,
+            );
+          }
+        } catch (distributionError: any) {
+          console.error(
+            '[WhatsAppOfficial] ❌ Erro ao distribuir conversa automaticamente:',
+            distributionError?.message || distributionError,
+          );
+        }
+      }
+    } else if (!conversation.assignedToId) {
+      const activeBot = await prisma.botSession.findUnique({
+        where: { conversationId: conversation.id },
+        select: { isActive: true },
+      });
+      if (!activeBot?.isActive) {
+        try {
+          const distributionService = new ConversationDistributionService();
+          await distributionService.distributeConversation(conversation.id, {
+            channelId: whatsappChannel.id,
+          });
+        } catch (distributionError: any) {
+          console.error(
+            '[WhatsAppOfficial] ❌ Erro ao redistribuir conversa:',
+            distributionError?.message || distributionError,
+          );
+        }
       }
     }
 
@@ -736,28 +770,28 @@ async function handleWhatsAppOfficialMessage(message: any, value: any) {
 
     if (normalizedInput) {
       try {
-        // Autoativação: na primeira mensagem da conversa, se não houver humano atribuído
-        // e ainda não existir sessão ativa, habilita o bot do canal/setor automaticamente.
-        if (!conversation.assignedToId) {
-          const currentBotSession = await prisma.botSession.findUnique({
-            where: { conversationId: conversation.id },
-            select: { isActive: true },
-          });
-          if (!currentBotSession?.isActive) {
-            await conversationService.activateBotForConversation(conversation.id);
-          }
+        const freshConversation = await prisma.conversation.findUnique({
+          where: { id: conversation.id },
+          select: { assignedToId: true },
+        });
+        const currentBotSession = await prisma.botSession.findUnique({
+          where: { conversationId: conversation.id },
+          select: { isActive: true },
+        });
+        if (!freshConversation?.assignedToId && !currentBotSession?.isActive) {
+          await conversationService.tryActivateBotForConversation(conversation.id);
         }
 
         if (phase1Flags.botQueueEnabled) {
           await botProcessQueue.enqueue(normalizedInput, conversation.id, {
-            messageType,
+            messageType: messageType.toLowerCase(),
             mediaUrl,
             mediaId,
             provider: 'whatsapp_official',
           });
         } else {
           await botService.processMessage(normalizedInput, conversation.id, {
-            messageType,
+            messageType: messageType.toLowerCase(),
             mediaUrl,
             mediaId,
             provider: 'whatsapp_official',
@@ -1154,31 +1188,57 @@ async function handleNewMessage(data: any) {
     }
 
     if (resolved.created || resolved.reopened) {
-      try {
-        const distributionService = new ConversationDistributionService();
-        const assignedUserId = await distributionService.distributeConversation(conversation.id, {
-          channelId: channel.id,
-          sectorId: channelWithSector?.sectorId || undefined,
-        });
-        if (assignedUserId) {
-          conversation = await prisma.conversation.update({
+      // Bot primeiro: só distribui para humano se não houver bot configurado/ativo no setor.
+      const dealOnCreate = await prisma.deal
+        .findUnique({ where: { conversationId: conversation.id } })
+        .catch(() => null);
+      let botStarted = false;
+      if (!dealOnCreate) {
+        botStarted = await conversationService.tryActivateBotForConversation(conversation.id);
+        if (botStarted) {
+          const refreshed = await prisma.conversation.findUnique({
             where: { id: conversation.id },
-            data: { assignedToId: assignedUserId },
             include: channelInclude,
           });
+          if (refreshed) conversation = refreshed;
+          console.log(
+            `🤖 [handleNewMessage] Bot ativado automaticamente na conversa ${conversation.id}`,
+          );
         }
-      } catch (error: any) {
-        console.error(`❌ [handleNewMessage] Erro ao distribuir conversa ${conversation.id}:`, error.message);
+      }
+      if (!botStarted && !conversation?.assignedToId) {
+        try {
+          const distributionService = new ConversationDistributionService();
+          const assignedUserId = await distributionService.distributeConversation(conversation.id, {
+            channelId: channel.id,
+            sectorId: channelWithSector?.sectorId || undefined,
+          });
+          if (assignedUserId) {
+            conversation = await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: { assignedToId: assignedUserId },
+              include: channelInclude,
+            });
+          }
+        } catch (error: any) {
+          console.error(`❌ [handleNewMessage] Erro ao distribuir conversa ${conversation.id}:`, error.message);
+        }
       }
     } else if (!conversation.assignedToId) {
-      try {
-        const distributionService = new ConversationDistributionService();
-        await distributionService.distributeConversation(conversation.id, {
-          channelId: channel.id,
-          sectorId: channelWithSector?.sectorId || undefined,
-        });
-      } catch (error: any) {
-        console.error(`❌ [handleNewMessage] Erro ao redistribuir conversa ${conversation.id}:`, error.message);
+      const activeBot = await prisma.botSession.findUnique({
+        where: { conversationId: conversation.id },
+        select: { isActive: true },
+      });
+      if (!activeBot?.isActive) {
+        try {
+          const distributionService = new ConversationDistributionService();
+          await distributionService.distributeConversation(conversation.id, {
+            channelId: channel.id,
+            sectorId: channelWithSector?.sectorId || undefined,
+          });
+        } catch (error: any) {
+          console.error(`❌ [handleNewMessage] Erro ao redistribuir conversa ${conversation.id}:`, error.message);
+        }
       }
     }
 
@@ -1348,29 +1408,33 @@ async function handleNewMessage(data: any) {
       // Verificar se há bot ativo e processar mensagem
       if (!fromMe && messageContent) {
         try {
-          // Se não existe deal (fora do pipeline) e ninguém humano está atribuído,
-          // ativar automaticamente o bot do setor atual apenas quando ainda não há sessão ativa.
           const deal = conversation.id
             ? await prisma.deal.findUnique({ where: { conversationId: conversation.id } }).catch(() => null)
             : null;
-          if (!deal && !conversation.assignedToId) {
-            const currentBotSession = await prisma.botSession.findUnique({
-              where: { conversationId: conversation.id },
-              select: { isActive: true },
-            });
-            if (!currentBotSession?.isActive) {
-              await conversationService.activateBotForConversation(conversation.id);
+          const freshConversation = await prisma.conversation.findUnique({
+            where: { id: conversation.id },
+            select: { assignedToId: true },
+          });
+          const currentBotSession = await prisma.botSession.findUnique({
+            where: { conversationId: conversation.id },
+            select: { isActive: true },
+          });
+          // Autoativar bot quando não há deal, sem humano atribuído e sem sessão ativa.
+          if (!deal && !freshConversation?.assignedToId && !currentBotSession?.isActive) {
+            const activated = await conversationService.tryActivateBotForConversation(conversation.id);
+            if (activated) {
+              console.log(`🤖 [handleNewMessage] Bot ativado antes de processar mensagem ${conversation.id}`);
             }
           }
 
           if (phase1Flags.botQueueEnabled) {
             await botProcessQueue.enqueue(messageContent, conversation.id, {
-              messageType,
+              messageType: messageType.toLowerCase(),
               provider: 'evolution',
             });
           } else {
             const botResult = await botService.processMessage(messageContent, conversation.id, {
-              messageType,
+              messageType: messageType.toLowerCase(),
               provider: 'evolution',
             });
             if (botResult) {

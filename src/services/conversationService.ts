@@ -739,6 +739,23 @@ export class ConversationService {
     return updated;
   }
 
+  /**
+   * Tenta ativar o bot do canal/setor sem lançar erro (uso em webhooks).
+   * @returns true se uma sessão de bot ficou ativa
+   */
+  async tryActivateBotForConversation(id: string): Promise<boolean> {
+    try {
+      const result = await this.activateBotForConversation(id);
+      return result != null;
+    } catch (error: any) {
+      console.warn(
+        `[ConversationService] Falha ao ativar bot para conversa ${id}:`,
+        error?.message || error,
+      );
+      return false;
+    }
+  }
+
   async activateBotForConversation(id: string) {
     const conversation = await prisma.conversation.findUnique({
       where: { id },
@@ -777,6 +794,9 @@ export class ConversationService {
           where: { conversationId: id, isActive: true },
           data: { isActive: false },
         });
+        console.warn(
+          `[ConversationService] Nenhum bot ativo para canal ${conversation.channelId} / setor ${currentSectorId}`,
+        );
         return null;
       }
 
@@ -800,6 +820,9 @@ export class ConversationService {
           where: { conversationId: id, isActive: true },
           data: { isActive: false },
         });
+        console.warn(
+          `[ConversationService] Nenhum bot legacy ativo para canal ${conversation.channelId}`,
+        );
         return null;
       }
 

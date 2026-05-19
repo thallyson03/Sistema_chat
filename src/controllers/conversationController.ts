@@ -241,6 +241,12 @@ export class ConversationController {
         return;
       }
       const conversation = await conversationService.activateBotForConversation(id);
+      if (!conversation) {
+        return res.status(400).json({
+          error:
+            'Nenhum bot ativo configurado para este canal/setor. Publique um bot no canal Evo antes de ativar.',
+        });
+      }
       res.json(conversation);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
