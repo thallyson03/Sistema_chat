@@ -38,7 +38,17 @@ export class MessageController {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
 
-      const { conversationId, content, type, mediaUrl, fileName, caption, mimetype } = req.body;
+      const {
+        conversationId,
+        content,
+        type,
+        mediaUrl,
+        fileName,
+        caption,
+        mimetype,
+        buttons,
+        metadata,
+      } = req.body;
 
       if (!conversationId) {
         return res.status(400).json({ error: 'Conversa é obrigatória' });
@@ -47,9 +57,11 @@ export class MessageController {
         return;
       }
 
+      const hasButtons = Array.isArray(buttons) && buttons.length > 0;
+
       // Para mídias, content pode ser vazio (será usado como caption)
-      if (!content && !mediaUrl) {
-        return res.status(400).json({ error: 'Conteúdo ou mídia são obrigatórios' });
+      if (!content && !mediaUrl && !hasButtons) {
+        return res.status(400).json({ error: 'Conteúdo, mídia ou botões são obrigatórios' });
       }
 
       console.log('[MessageController] Enviando mensagem:', {
@@ -60,17 +72,21 @@ export class MessageController {
         hasMediaUrl: !!mediaUrl,
         fileName,
         mimetype,
+        buttonsCount: hasButtons ? buttons.length : 0,
+        interactiveType: metadata?.interactiveType || null,
       });
 
       const sendPayload = {
         conversationId,
         userId: req.user.id,
-        content: content || caption || '',
+        content: content || caption || (hasButtons ? 'Selecione uma opção:' : ''),
         type,
         mediaUrl,
         fileName,
         caption,
-        mimetype, // Passar mimetype do arquivo para usar no envio
+        mimetype,
+        buttons: hasButtons ? buttons : undefined,
+        metadata: metadata && typeof metadata === 'object' ? metadata : undefined,
       };
 
       if (phase1Flags.messageQueueEnabled) {
@@ -85,6 +101,8 @@ export class MessageController {
               mediaUrl,
               fileName,
               caption,
+              buttons: sendPayload.buttons,
+              metadata: sendPayload.metadata,
             }),
           )
           .digest('hex');

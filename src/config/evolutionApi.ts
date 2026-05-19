@@ -234,6 +234,108 @@ class EvolutionApiClient {
     }
   }
 
+  /**
+   * Botões interativos (até 3 reply, ou url/call).
+   * @see https://docs.evolutionfoundation.com.br/evolution-api/send-buttons
+   */
+  async sendButtons(
+    instanceName: string,
+    payload: {
+      number: string;
+      title: string;
+      description: string;
+      footer: string;
+      buttons: Array<Record<string, unknown>>;
+    },
+    apiKey?: string,
+  ) {
+    try {
+      console.log('[EvolutionAPI] 🔘 Enviando botões:', {
+        instanceName,
+        number: payload.number,
+        buttonsCount: payload.buttons?.length || 0,
+        endpoint: `/message/sendButtons/${instanceName}`,
+      });
+
+      const response = await providerResilienceService.execute('evolution', 'sendButtons', async () =>
+        this.client.post(`/message/sendButtons/${instanceName}`, payload, {
+          headers: this.getHeaders(apiKey),
+        }),
+      );
+
+      console.log('[EvolutionAPI] ✅ Botões enviados:', {
+        status: response.status,
+        messageId: response.data?.key?.id,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[EvolutionAPI] ❌ Erro ao enviar botões:', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          error.message ||
+          'Erro ao enviar botões via Evolution API',
+      );
+    }
+  }
+
+  /**
+   * Lista interativa (menu com seções).
+   * @see https://docs.evolutionfoundation.com.br/evolution-api/send-list
+   */
+  async sendList(
+    instanceName: string,
+    payload: {
+      number: string;
+      title: string;
+      description: string;
+      buttonText: string;
+      footerText: string;
+      sections: Array<{ title: string; rows: Array<{ title: string; description?: string; rowId: string }> }>;
+      values?: Array<{ title: string; rows: Array<{ title: string; description?: string; rowId: string }> }>;
+    },
+    apiKey?: string,
+  ) {
+    try {
+      console.log('[EvolutionAPI] 📋 Enviando lista:', {
+        instanceName,
+        number: payload.number,
+        sectionsCount: payload.sections?.length || 0,
+        endpoint: `/message/sendList/${instanceName}`,
+      });
+
+      const response = await providerResilienceService.execute('evolution', 'sendList', async () =>
+        this.client.post(`/message/sendList/${instanceName}`, payload, {
+          headers: this.getHeaders(apiKey),
+        }),
+      );
+
+      console.log('[EvolutionAPI] ✅ Lista enviada:', {
+        status: response.status,
+        messageId: response.data?.key?.id,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[EvolutionAPI] ❌ Erro ao enviar lista:', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          error.message ||
+          'Erro ao enviar lista via Evolution API',
+      );
+    }
+  }
+
   async sendMessage(instanceName: string, number: string, text: string, apiKey?: string) {
     try {
       console.log('[EvolutionAPI] 📤 Enviando mensagem:', {

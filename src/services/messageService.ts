@@ -17,6 +17,12 @@ import {
   extractWhatsAppApiError,
   isWhatsAppOfficialChannel,
 } from '../utils/whatsappMessagingWindow';
+import {
+  buildEvolutionButtonsPayload,
+  buildEvolutionListPayload,
+  shouldSendAsInteractiveList,
+  type CrmInteractiveButton,
+} from '../utils/evolutionInteractive';
 
 // io será injetado via função (mensagens de bot/automação precisam refletir em tempo real no chat)
 let io: any = null;
@@ -712,13 +718,44 @@ export class MessageService {
               );
           }
         } else {
-          // Enviar mensagem de texto
-          evolutionResponse = await evolutionApi.sendMessage(
-            channel.evolutionInstanceId!,
-            whatsappNumber,
-            data.content,
-            apiKey
-          );
+          const buttons = (Array.isArray(data.buttons) ? data.buttons : []) as CrmInteractiveButton[];
+          const messageTypeUpper = String(data.type || 'TEXT').toUpperCase();
+
+          if (messageTypeUpper === 'TEXT' && buttons.length > 0) {
+            const meta = (data.metadata || {}) as Record<string, unknown>;
+            const interactiveParams = {
+              number: whatsappNumber,
+              bodyText: data.content || 'Selecione uma opção:',
+              footerText: String(meta.listFooterText || meta.footerText || ' '),
+              headerTitle: String(meta.listHeaderText || meta.headerTitle || ' '),
+              buttonText: String(meta.listButtonText || 'Ver opções'),
+              sectionTitle: String(meta.listSectionTitle || 'Opções'),
+              buttons,
+            };
+
+            if (shouldSendAsInteractiveList(buttons, meta)) {
+              console.log('📤 [MessageService] Enviando lista interativa via Evolution API');
+              evolutionResponse = await evolutionApi.sendList(
+                channel.evolutionInstanceId!,
+                buildEvolutionListPayload(interactiveParams),
+                apiKey,
+              );
+            } else {
+              console.log('📤 [MessageService] Enviando botões via Evolution API');
+              evolutionResponse = await evolutionApi.sendButtons(
+                channel.evolutionInstanceId!,
+                buildEvolutionButtonsPayload(interactiveParams),
+                apiKey,
+              );
+            }
+          } else {
+            evolutionResponse = await evolutionApi.sendMessage(
+              channel.evolutionInstanceId!,
+              whatsappNumber,
+              data.content,
+              apiKey,
+            );
+          }
         }
 
         console.log('✅ [MessageService] Mensagem enviada com sucesso:', {
