@@ -185,6 +185,52 @@ export class ConversationController {
     }
   }
 
+  /** Evolution: exibe digitando/gravando no WhatsApp do destinatário enquanto o atendente compõe no CRM. */
+  async sendOutboundPresence(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { state } = req.body || {};
+      if (!(await this.ensureConversationAccess(req, res, id))) {
+        return;
+      }
+
+      const allowed = ['composing', 'recording', 'paused'] as const;
+      if (!allowed.includes(state)) {
+        return res.status(400).json({
+          error: 'state deve ser composing, recording ou paused',
+        });
+      }
+
+      const conversation = await prisma.conversation.findUnique({
+        where: { id },
+        include: {
+          contact: { select: { phone: true } },
+          channel: {
+            select: {
+              evolutionInstanceId: true,
+              evolutionApiKey: true,
+            },
+          },
+        },
+      });
+
+      if (!conversation?.channel?.evolutionInstanceId || !conversation.contact?.phone) {
+        return res.json({ ok: false, skipped: true });
+      }
+
+      await evolutionApi.sendOutboundPresence(
+        conversation.channel.evolutionInstanceId,
+        conversation.contact.phone,
+        state,
+        conversation.channel.evolutionApiKey ?? undefined,
+      );
+
+      res.json({ ok: true, state });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
   async updateConversation(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;

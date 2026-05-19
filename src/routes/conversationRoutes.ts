@@ -29,6 +29,10 @@ router.post(
   '/:id/presence-subscribe',
   conversationController.subscribeContactPresence.bind(conversationController),
 );
+router.post(
+  '/:id/presence',
+  conversationController.sendOutboundPresence.bind(conversationController),
+);
 router.put('/:id', conversationController.updateConversation.bind(conversationController));
 router.post('/:id/assign', conversationController.assignConversation.bind(conversationController));
 router.post('/:id/activate-bot', conversationController.activateBot.bind(conversationController));

@@ -23,6 +23,7 @@ import TaskNotificationCard, {
 import NoteNotificationCard, {
   NoteNotificationData,
 } from '../components/chat/NoteNotificationCard';
+import { useEvolutionOutboundPresence } from '../hooks/useEvolutionOutboundPresence';
 
 // Função para gerar avatar com iniciais
 const getAvatarUrl = (name: string, size: number = 40): string => {
@@ -115,6 +116,7 @@ interface Conversation {
     id: string;
     name: string;
     type: string;
+    evolutionInstanceId?: string | null;
     config?: { provider?: string; phoneNumberId?: string; token?: string };
   } | null;
   inBot?: boolean;
@@ -181,6 +183,7 @@ function conversationFromDetailApi(raw: Record<string, unknown>): Conversation {
           id: String(ch.id),
           name: String(ch.name ?? ''),
           type: String(ch.type ?? 'WHATSAPP'),
+          evolutionInstanceId: (ch.evolutionInstanceId as string | null | undefined) ?? null,
           config: ch.config as NonNullable<Conversation['channel']>['config'],
         }
       : null,
@@ -1078,6 +1081,7 @@ export default function Conversations() {
     // Fluxo normal de mensagem de texto/mídia
     if (!messageInput.trim() && !mediaUrl) return;
 
+    stopEvolutionPresence();
     setSending(true);
     setSendError(null);
     const trimmedContent = messageInput.trim();
@@ -1643,6 +1647,21 @@ export default function Conversations() {
     }
   };
 
+  const activeMessagingWindow = getActiveMessagingWindow();
+  const messagingWindowBlockReason = getMessagingWindowBlockReason(!!pendingTemplate);
+  const isMessagingInputLocked = !!messagingWindowBlockReason;
+
+  const { stopPresence: stopEvolutionPresence } = useEvolutionOutboundPresence({
+    conversationId: selectedConversation?.id,
+    evolutionInstanceId: selectedConversation?.channel?.evolutionInstanceId,
+    enabled:
+      !!selectedConversation?.channel?.evolutionInstanceId &&
+      !selectedConversation?.inBot &&
+      !isMessagingInputLocked,
+    messageInput,
+    recording,
+  });
+
   if (loading) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background font-body text-on-surface">
@@ -1650,10 +1669,6 @@ export default function Conversations() {
       </div>
     );
   }
-
-  const activeMessagingWindow = getActiveMessagingWindow();
-  const messagingWindowBlockReason = getMessagingWindowBlockReason(!!pendingTemplate);
-  const isMessagingInputLocked = !!messagingWindowBlockReason;
 
   return (
     <div className="relative flex h-full min-h-0 w-full min-w-0 max-w-full flex-1 overflow-hidden bg-background font-body text-on-surface">

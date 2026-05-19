@@ -595,9 +595,49 @@ class EvolutionApiClient {
     }
   }
 
+  private buildSendPresenceBodies(
+    cleanNumber: string,
+    presence: 'composing' | 'recording' | 'paused',
+    delayMs: number,
+  ) {
+    return [
+      {
+        number: cleanNumber,
+        options: { delay: delayMs, presence, number: cleanNumber },
+      },
+      { number: cleanNumber, presence, delay: delayMs },
+    ];
+  }
+
   /**
-   * Inscreve na presença do contato no Baileys (necessário para receber "digitando"/"gravando").
-   * Usa sendPresence com delay mínimo e "paused" para não exibir typing ao cliente.
+   * Envia presença de saída para o destinatário no WhatsApp (digitando / gravando / parado).
+   */
+  async sendOutboundPresence(
+    instanceName: string,
+    phone: string,
+    presence: 'composing' | 'recording' | 'paused',
+    apiKey?: string,
+  ) {
+    const cleanNumber = String(phone).replace(/\D/g, '');
+    if (cleanNumber.length < 10) return;
+
+    const delayMs = presence === 'paused' ? 1 : 20_000;
+    const bodies = this.buildSendPresenceBodies(cleanNumber, presence, delayMs);
+
+    for (const body of bodies) {
+      try {
+        await this.client.post(`/chat/sendPresence/${instanceName}`, body, {
+          headers: this.getHeaders(apiKey),
+        });
+        return;
+      } catch {
+        // tenta formato alternativo
+      }
+    }
+  }
+
+  /**
+   * Inscreve na presença do contato no Baileys (necessário para receber "digitando"/"gravando" do cliente).
    */
   async fetchWhatsAppNumberInfo(instanceName: string, phone: string, apiKey?: string) {
     const cleanNumber = String(phone).replace(/\D/g, '');
@@ -617,27 +657,7 @@ class EvolutionApiClient {
   }
 
   async subscribeContactPresence(instanceName: string, number: string, apiKey?: string) {
-    const cleanNumber = String(number).replace(/\D/g, '');
-    if (cleanNumber.length < 10) return;
-
-    const payloads = [
-      {
-        number: cleanNumber,
-        options: { delay: 1, presence: 'paused', number: cleanNumber },
-      },
-      { number: cleanNumber, presence: 'paused', delay: 1 },
-    ];
-
-    for (const body of payloads) {
-      try {
-        await this.client.post(`/chat/sendPresence/${instanceName}`, body, {
-          headers: this.getHeaders(apiKey),
-        });
-        return;
-      } catch {
-        // tenta formato alternativo
-      }
-    }
+    await this.sendOutboundPresence(instanceName, number, 'paused', apiKey);
   }
 
   async setWebhook(instanceName: string, webhookUrl: string, apiKey?: string) {
