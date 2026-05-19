@@ -218,12 +218,14 @@ export class ConversationController {
         return res.json({ ok: false, skipped: true });
       }
 
-      await evolutionApi.sendOutboundPresence(
-        conversation.channel.evolutionInstanceId,
-        conversation.contact.phone,
-        state,
-        conversation.channel.evolutionApiKey ?? undefined,
-      );
+      const instanceId = conversation.channel.evolutionInstanceId;
+      const phone = conversation.contact.phone;
+      const apiKey = conversation.channel.evolutionApiKey ?? undefined;
+
+      await evolutionApi.sendOutboundPresence(instanceId, phone, state, apiKey);
+
+      // composing/recording de saída pode cancelar a inscrição inbound no Baileys — reativar.
+      await evolutionApi.subscribeContactPresence(instanceId, phone, apiKey);
 
       res.json({ ok: true, state });
     } catch (error: any) {

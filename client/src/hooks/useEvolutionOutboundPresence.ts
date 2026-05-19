@@ -74,7 +74,8 @@ export function useEvolutionOutboundPresence(options: {
     const trimmed = messageInput.trim();
     if (!trimmed) {
       clearTimers();
-      sendPresence('paused');
+      // Não envia paused aqui: evita competir com a inscrição inbound (cliente → CRM).
+      // paused só em idle, stopPresence ou ao sair da conversa.
       return;
     }
 

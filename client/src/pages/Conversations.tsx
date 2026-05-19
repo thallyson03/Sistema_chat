@@ -604,16 +604,27 @@ export default function Conversations() {
     };
   }, [selectedConversation?.id, selectedConversation?.channelId]);
 
-  // Evolution/Baileys: inscrever presença e mapear LID ao abrir a conversa
+  // Evolution: inscrever presença inbound (cliente → CRM) ao abrir e renovar periodicamente
   useEffect(() => {
     const conversationId = selectedConversation?.id;
     const phone = selectedConversation?.contact?.phone;
-    if (!conversationId || !phone) return;
+    const evolutionInstanceId = selectedConversation?.channel?.evolutionInstanceId;
+    if (!conversationId || !phone || !evolutionInstanceId) return;
 
-    api.post(`/api/conversations/${conversationId}/presence-subscribe`).catch(() => {
-      // falha silenciosa — presença é best-effort
-    });
-  }, [selectedConversation?.id, selectedConversation?.contact?.phone]);
+    const subscribeInboundPresence = () => {
+      api.post(`/api/conversations/${conversationId}/presence-subscribe`).catch(() => {
+        // falha silenciosa — presença é best-effort
+      });
+    };
+
+    subscribeInboundPresence();
+    const renewInboundPresence = setInterval(subscribeInboundPresence, 30_000);
+    return () => clearInterval(renewInboundPresence);
+  }, [
+    selectedConversation?.id,
+    selectedConversation?.contact?.phone,
+    selectedConversation?.channel?.evolutionInstanceId,
+  ]);
 
   // Buscar usuário atual para poder assumir conversas do bot
   useEffect(() => {

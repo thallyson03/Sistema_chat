@@ -609,6 +609,27 @@ class EvolutionApiClient {
     ];
   }
 
+  private async postSendPresence(
+    instanceName: string,
+    cleanNumber: string,
+    presence: 'composing' | 'recording' | 'paused',
+    delayMs: number,
+    apiKey?: string,
+  ): Promise<boolean> {
+    const bodies = this.buildSendPresenceBodies(cleanNumber, presence, delayMs);
+    for (const body of bodies) {
+      try {
+        await this.client.post(`/chat/sendPresence/${instanceName}`, body, {
+          headers: this.getHeaders(apiKey),
+        });
+        return true;
+      } catch {
+        // tenta formato alternativo
+      }
+    }
+    return false;
+  }
+
   /**
    * Envia presença de saída para o destinatário no WhatsApp (digitando / gravando / parado).
    */
@@ -622,23 +643,20 @@ class EvolutionApiClient {
     if (cleanNumber.length < 10) return;
 
     const delayMs = presence === 'paused' ? 1 : 20_000;
-    const bodies = this.buildSendPresenceBodies(cleanNumber, presence, delayMs);
-
-    for (const body of bodies) {
-      try {
-        await this.client.post(`/chat/sendPresence/${instanceName}`, body, {
-          headers: this.getHeaders(apiKey),
-        });
-        return;
-      } catch {
-        // tenta formato alternativo
-      }
-    }
+    await this.postSendPresence(instanceName, cleanNumber, presence, delayMs, apiKey);
   }
 
   /**
-   * Inscreve na presença do contato no Baileys (necessário para receber "digitando"/"gravando" do cliente).
+   * Inscreve na presença do contato (receber digitando/gravando no CRM via webhook).
+   * Usa sendPresence com delay mínimo e "paused" — não exibe typing ao cliente.
    */
+  async subscribeContactPresence(instanceName: string, number: string, apiKey?: string) {
+    const cleanNumber = String(number).replace(/\D/g, '');
+    if (cleanNumber.length < 10) return;
+    await this.postSendPresence(instanceName, cleanNumber, 'paused', 1, apiKey);
+  }
+
+  /** Consulta número no WhatsApp (inclui LID quando disponível). */
   async fetchWhatsAppNumberInfo(instanceName: string, phone: string, apiKey?: string) {
     const cleanNumber = String(phone).replace(/\D/g, '');
     if (cleanNumber.length < 10) return null;
@@ -654,10 +672,6 @@ class EvolutionApiClient {
     } catch {
       return null;
     }
-  }
-
-  async subscribeContactPresence(instanceName: string, number: string, apiKey?: string) {
-    await this.sendOutboundPresence(instanceName, number, 'paused', apiKey);
   }
 
   async setWebhook(instanceName: string, webhookUrl: string, apiKey?: string) {
