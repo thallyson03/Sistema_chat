@@ -780,7 +780,16 @@ export class BotService {
         // Quando o step MESSAGE possui botões e a execução veio de input do usuário,
         // interpretar a resposta e rotear para o nextStepId do botão escolhido.
         if (hasButtons) {
+          const interactiveReply = inputMeta?.interactiveReply as
+            | { selectedId?: string; selectedTitle?: string }
+            | undefined;
+          const botInputId = String(inputMeta?.botInputId || interactiveReply?.selectedId || '')
+            .trim()
+            .toLowerCase();
           const normalizedInput = String(input || '').trim().toLowerCase();
+          const normalizedTitle = String(interactiveReply?.selectedTitle || '')
+            .trim()
+            .toLowerCase();
           const numericIndex = Number.parseInt(normalizedInput, 10);
           const selectedByNumber =
             Number.isFinite(numericIndex) && numericIndex >= 1 && numericIndex <= effectiveButtons.length
@@ -790,7 +799,10 @@ export class BotService {
           const selectedByMatch = effectiveButtons.find((btn: any) => {
             const text = String(btn?.text || btn?.title || '').trim().toLowerCase();
             const id = String(btn?.id || btn?.value || '').trim().toLowerCase();
-            return normalizedInput.length > 0 && (normalizedInput === text || normalizedInput === id);
+            const candidates = [normalizedInput, normalizedTitle, botInputId].filter(Boolean);
+            return candidates.some(
+              (candidate) => candidate === text || candidate === id,
+            );
           });
 
           const selectedButton = selectedByNumber || selectedByMatch || null;

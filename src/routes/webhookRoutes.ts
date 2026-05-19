@@ -32,6 +32,7 @@ import {
   extractPhoneFromEvolutionPresenceData,
 } from '../utils/evolutionWebhook';
 import { normalizePhone } from '../utils/phone';
+import { extractEvolutionIncomingContent } from '../utils/evolutionInteractive';
 import { contactResolutionService } from '../services/contactResolutionService';
 import { conversationResolutionService } from '../services/conversationResolutionService';
 
@@ -1286,8 +1287,31 @@ async function handleNewMessage(data: any) {
       mediaUrl = msgObj.documentMessage.url;
       mediaMetadata = extractEvolutionMediaFields(msgObj.documentMessage);
     } else {
-      messageContent = '[Mensagem não suportada]';
-      messageType = 'TEXT';
+      const interactiveIncoming = extractEvolutionIncomingContent(msgObj, {
+        messageType: data.messageType,
+        root: data,
+      });
+      if (interactiveIncoming) {
+        messageContent = interactiveIncoming.displayText;
+        messageType = 'TEXT';
+        mediaMetadata = {
+          evolutionInteractiveReply: interactiveIncoming.interactive,
+          botInputId: interactiveIncoming.content,
+        };
+        console.log('[handleNewMessage] Resposta interativa (botão/lista):', {
+          selectedId: interactiveIncoming.content,
+          displayText: interactiveIncoming.displayText,
+          replyType: interactiveIncoming.interactive.replyType,
+          evolutionMessageType: data.messageType,
+        });
+      } else {
+        messageContent = '[Mensagem não suportada]';
+        messageType = 'TEXT';
+        console.warn('[handleNewMessage] Tipo de mensagem não mapeado:', {
+          evolutionMessageType: data.messageType,
+          messageKeys: Object.keys(msgObj || {}),
+        });
+      }
     }
 
     // Verificar se mensagem já existe (evitar duplicatas)
@@ -1436,6 +1460,9 @@ async function handleNewMessage(data: any) {
             const botResult = await botService.processMessage(messageContent, conversation.id, {
               messageType: messageType.toLowerCase(),
               provider: 'evolution',
+              botInputId:
+                typeof mediaMetadata?.botInputId === 'string' ? mediaMetadata.botInputId : undefined,
+              interactiveReply: mediaMetadata?.evolutionInteractiveReply,
             });
             if (botResult) {
               console.log('🤖 [handleNewMessage] Bot processou mensagem:', botResult);
