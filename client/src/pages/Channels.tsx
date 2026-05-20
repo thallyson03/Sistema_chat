@@ -104,7 +104,7 @@ export default function Channels() {
     type: 'WHATSAPP',
     primarySectorId: '',
     secondarySectorIds: [] as string[],
-    provider: 'evolution', // 'evolution' ou 'whatsapp_official'
+    provider: 'evolution', // evolution | evolution_go | whatsapp_official
     whatsappToken: '',
     whatsappAppSecret: '',
     whatsappPhoneNumberId: '',
@@ -266,7 +266,12 @@ export default function Channels() {
 
   const handleEditChannel = (channel: Channel) => {
     const cfg: any = channel.config || {};
-    const provider = cfg.provider === 'whatsapp_official' ? 'whatsapp_official' : 'evolution';
+    const provider =
+      cfg.provider === 'whatsapp_official'
+        ? 'whatsapp_official'
+        : cfg.provider === 'evolution_go'
+          ? 'evolution_go'
+          : 'evolution';
     const secondaryIds = (channel.secondarySectors || []).map((s) => s.sector.id);
 
     setEditingChannelId(channel.id);
@@ -795,7 +800,8 @@ export default function Channels() {
                       onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
                       className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                     >
-                      <option value="evolution">Evolution API</option>
+                      <option value="evolution">Evolution API (Node)</option>
+                      <option value="evolution_go">Evolution GO</option>
                       <option value="whatsapp_official">WhatsApp Official (Meta Cloud API)</option>
                     </select>
                   </div>
@@ -806,7 +812,9 @@ export default function Channels() {
                 <p className="text-[11px] text-on-surface-variant">
                   {formData.provider === 'whatsapp_official'
                     ? 'Usa a API oficial do WhatsApp (Meta Cloud API). Requer credenciais copiadas do Meta Developers.'
-                    : 'Usa Evolution API com a API Key configurada no servidor.'}
+                    : formData.provider === 'evolution_go'
+                      ? 'Usa Evolution GO (evoapicloud). Configure EVOLUTION_GO_API_URL e EVOLUTION_GO_API_KEY no servidor do CRM.'
+                      : 'Usa Evolution API (Node) com EVOLUTION_API_URL e EVOLUTION_API_KEY no servidor.'}
                 </p>
               )}
 

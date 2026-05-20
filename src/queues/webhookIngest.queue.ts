@@ -3,7 +3,7 @@ import { phase1Flags } from '../config/phase1Flags';
 import { queueMetricsService } from '../services/queueMetricsService';
 import { getBullRedisConnection } from './redisConnection';
 
-type WebhookProvider = 'whatsapp_official' | 'evolution';
+type WebhookProvider = 'whatsapp_official' | 'evolution' | 'evolution_go';
 
 type WebhookIngestJob = {
   provider: WebhookProvider;

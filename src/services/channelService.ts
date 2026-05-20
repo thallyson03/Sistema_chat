@@ -1,6 +1,13 @@
 import prisma from '../config/database';
 import { Channel, ChannelType, ChannelStatus } from '@prisma/client';
-import { evolutionApi } from '../config/evolutionApi';
+import {
+  getBaileysApi,
+  getBaileysWebhookPath,
+  getWhatsAppChannelProvider,
+  resolveBaileysApiKey,
+  resolveDefaultBaileysApiKey,
+  type WhatsAppChannelProvider,
+} from '../utils/channelWhatsAppProvider';
 import { toEvolutionInstanceName } from '../utils/evolutionInstanceName';
 
 export interface CreateChannelData {
@@ -78,47 +85,59 @@ export class ChannelService {
     return config?.provider === 'whatsapp_official';
   }
 
-  private resolveEvolutionApiKey(storedKey?: string | null): string | undefined {
+  private resolveEvolutionApiKey(
+    storedKey?: string | null,
+    provider: WhatsAppChannelProvider = 'evolution',
+  ): string | undefined {
     if (storedKey && storedKey !== ChannelService.SECRET_MASK) {
       return storedKey;
     }
-    return process.env.EVOLUTION_API_KEY || undefined;
+    return resolveDefaultBaileysApiKey(provider);
   }
 
   private async provisionEvolutionInstance(
     channelName: string,
-    apiKey: string
+    apiKey: string,
+    provider: WhatsAppChannelProvider,
   ): Promise<{ instanceId: string; instanceToken?: string | null }> {
     const instanceName = toEvolutionInstanceName(channelName);
-    console.log('[ChannelService] Provisionando instância Evolution:', {
+    const baileysApi = provider === 'evolution_go' ? getBaileysApi({ config: { provider } }) : getBaileysApi({ config: { provider: 'evolution' } });
+    console.log('[ChannelService] Provisionando instância Baileys:', {
       channelName,
       instanceName,
+      provider,
     });
 
-    const evolutionResponse = await evolutionApi.createInstance(instanceName, apiKey, true);
+    const evolutionResponse = await baileysApi.createInstance(instanceName, apiKey, true);
     const instanceId = evolutionResponse.instance?.instanceName || instanceName;
     const instanceToken = evolutionResponse.instance?.token ?? null;
 
-    console.log('[ChannelService] Instância Evolution provisionada:', {
+    console.log('[ChannelService] Instância provisionada:', {
       instanceId,
       hasToken: !!instanceToken,
+      provider,
     });
 
     return { instanceId, instanceToken };
   }
 
-  private async removeEvolutionInstance(instanceId: string, apiKey: string): Promise<void> {
+  private async removeEvolutionInstance(
+    instanceId: string,
+    apiKey: string,
+    provider: WhatsAppChannelProvider,
+  ): Promise<void> {
+    const baileysApi = getBaileysApi({ config: { provider } });
     try {
-      console.log('[ChannelService] Removendo instância Evolution:', instanceId);
-      await evolutionApi.deleteInstance(instanceId, apiKey);
-      console.log('[ChannelService] Instância Evolution removida:', instanceId);
+      console.log('[ChannelService] Removendo instância:', { instanceId, provider });
+      await baileysApi.deleteInstance(instanceId, apiKey);
+      console.log('[ChannelService] Instância removida:', instanceId);
     } catch (error: any) {
       const message = error.message || String(error);
       if (/not found|404/i.test(message)) {
-        console.log('[ChannelService] Instância Evolution já inexistente:', instanceId);
+        console.log('[ChannelService] Instância já inexistente:', instanceId);
         return;
       }
-      console.error('[ChannelService] Erro ao remover instância Evolution:', instanceId, message);
+      console.error('[ChannelService] Erro ao remover instância:', instanceId, message);
       throw error;
     }
   }
@@ -126,19 +145,24 @@ export class ChannelService {
   /**
    * Obtém a URL do webhook (prioriza NGROK_URL para ambiente de teste)
    */
-  private getWebhookUrl(): string | null {
+  private getWebhookUrl(channelConfig?: unknown): string | null {
     const webhookBaseUrl = process.env.NGROK_URL || process.env.APP_URL;
     if (webhookBaseUrl) {
-      return `${webhookBaseUrl}/webhooks/evolution`;
+      return `${webhookBaseUrl}${getBaileysWebhookPath({ config: channelConfig })}`;
     }
     return null;
   }
 
   /**
-   * Configura o webhook na Evolution API para uma instância
+   * Configura o webhook na API Baileys (Evolution ou Evolution GO) para uma instância
    */
-  private async configureWebhook(instanceId: string, instanceToken: string): Promise<void> {
-    const webhookUrl = this.getWebhookUrl();
+  private async configureWebhook(
+    instanceId: string,
+    instanceToken: string,
+    channelConfig?: unknown,
+  ): Promise<void> {
+    const webhookUrl = this.getWebhookUrl(channelConfig);
+    const baileysApi = getBaileysApi({ config: channelConfig });
     if (!webhookUrl) {
       console.warn('[ChannelService] ⚠️ NGROK_URL ou APP_URL não configurado. Webhook não será configurado.');
       console.warn('[ChannelService] Configure NGROK_URL no .env para ambiente de desenvolvimento');
@@ -160,7 +184,7 @@ export class ChannelService {
 
       // Verificar webhook atual (se possível)
       try {
-        const currentWebhook = await evolutionApi.getWebhook(instanceId, instanceToken);
+        const currentWebhook = await baileysApi.getWebhook(instanceId, instanceToken);
         if (currentWebhook) {
           console.log('[ChannelService] ℹ️ Webhook atual encontrado:', JSON.stringify(currentWebhook, null, 2).substring(0, 500));
         }
@@ -169,7 +193,7 @@ export class ChannelService {
       }
 
       // Configurar novo webhook - usar token da instância ao invés da API key
-      const result = await evolutionApi.setWebhook(instanceId, webhookUrl, instanceToken);
+      const result = await baileysApi.setWebhook(instanceId, webhookUrl, instanceToken);
       
       console.log('[ChannelService] ============================================');
       console.log('[ChannelService] ✅ WEBHOOK CONFIGURADO COM SUCESSO!');
@@ -213,11 +237,11 @@ export class ChannelService {
       throw new Error('Webhook disponível apenas para canais WhatsApp');
     }
 
-    if (!channel.evolutionInstanceId || !channel.evolutionApiKey) {
-      throw new Error('Canal não configurado com Evolution API');
+    if (!channel.evolutionInstanceId || !resolveBaileysApiKey(channel)) {
+      throw new Error('Canal não configurado com Evolution / Evolution GO');
     }
 
-    const webhookUrl = this.getWebhookUrl();
+    const webhookUrl = this.getWebhookUrl(channel.config);
     if (!webhookUrl) {
       return {
         success: false,
@@ -234,7 +258,11 @@ export class ChannelService {
     }
 
     try {
-      await this.configureWebhook(channel.evolutionInstanceId!, channel.evolutionInstanceToken);
+      await this.configureWebhook(
+        channel.evolutionInstanceId!,
+        channel.evolutionInstanceToken,
+        channel.config,
+      );
       return {
         success: true,
         message: 'Webhook configurado com sucesso',
@@ -292,18 +320,16 @@ export class ChannelService {
     let instanceId = data.evolutionInstanceId;
     let instanceToken = data.evolutionInstanceToken;
 
-    // Detectar se é canal WhatsApp Official (não usa Evolution)
-    const isWhatsAppOfficial = data.config?.provider === 'whatsapp_official';
+    const provider = getWhatsAppChannelProvider(data.config as Record<string, unknown>);
+    const isWhatsAppOfficial = provider === 'whatsapp_official';
 
-    // Se for WhatsApp e tiver API key (do .env ou fornecida), criar instância na Evolution API,
-    // mas apenas se NÃO for WhatsApp Official.
     const apiKey = !isWhatsAppOfficial
-      ? data.evolutionApiKey || process.env.EVOLUTION_API_KEY
+      ? data.evolutionApiKey || resolveDefaultBaileysApiKey(provider)
       : undefined;
-    
+
     if (data.type === ChannelType.WHATSAPP && apiKey && !instanceId && !isWhatsAppOfficial) {
       try {
-        const provisioned = await this.provisionEvolutionInstance(data.name, apiKey);
+        const provisioned = await this.provisionEvolutionInstance(data.name, apiKey, provider);
         instanceId = provisioned.instanceId;
         instanceToken = provisioned.instanceToken ?? undefined;
       } catch (error: any) {
@@ -383,12 +409,13 @@ export class ChannelService {
       !this.isWhatsAppOfficialConfig(existingChannel.config) &&
       existingChannel.evolutionInstanceId
     ) {
-      const apiKey = this.resolveEvolutionApiKey(existingChannel.evolutionApiKey);
+      const provider = getWhatsAppChannelProvider(existingChannel.config as Record<string, unknown>);
+      const apiKey = this.resolveEvolutionApiKey(existingChannel.evolutionApiKey, provider);
       if (apiKey) {
         const oldInstanceId = existingChannel.evolutionInstanceId;
         try {
-          await this.removeEvolutionInstance(oldInstanceId, apiKey);
-          const provisioned = await this.provisionEvolutionInstance(trimmedName, apiKey);
+          await this.removeEvolutionInstance(oldInstanceId, apiKey, provider);
+          const provisioned = await this.provisionEvolutionInstance(trimmedName, apiKey, provider);
           evolutionSync = {
             evolutionInstanceId: provisioned.instanceId,
             evolutionInstanceToken: provisioned.instanceToken ?? null,
@@ -494,7 +521,8 @@ export class ChannelService {
 
     await prisma.contactChannelIdentity.deleteMany({ where: { channelId: id } });
 
-    const apiKey = this.resolveEvolutionApiKey(channel.evolutionApiKey);
+    const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
+    const apiKey = this.resolveEvolutionApiKey(channel.evolutionApiKey, provider);
     const shouldDeleteEvolution =
       channel.type === ChannelType.WHATSAPP &&
       !!channel.evolutionInstanceId &&
@@ -503,7 +531,7 @@ export class ChannelService {
 
     if (shouldDeleteEvolution) {
       try {
-        await this.removeEvolutionInstance(channel.evolutionInstanceId!, apiKey!);
+        await this.removeEvolutionInstance(channel.evolutionInstanceId!, apiKey!, provider);
       } catch (error: any) {
         console.warn(
           '[ChannelService] Continuando exclusão do canal após falha na Evolution API:',
@@ -539,15 +567,17 @@ export class ChannelService {
       throw new Error('QR Code disponível apenas para canais WhatsApp');
     }
 
-    const apiKey = channel.evolutionApiKey || process.env.EVOLUTION_API_KEY;
+    const baileysApi = getBaileysApi(channel);
+    const apiKey = resolveBaileysApiKey(channel);
     if (!channel.evolutionInstanceId || !apiKey) {
-      throw new Error('Canal não configurado com Evolution API');
+      throw new Error('Canal não configurado com Evolution / Evolution GO');
     }
 
     console.log('[ChannelService] Obtendo QR Code:', {
       channelId,
       instanceId: channel.evolutionInstanceId,
       hasApiKey: !!apiKey,
+      provider: getWhatsAppChannelProvider(channel.config as Record<string, unknown>),
     });
 
     try {
@@ -555,7 +585,7 @@ export class ChannelService {
       console.log('[ChannelService] Tentando obter QR Code via getInstanceStatus...');
       let status;
       try {
-        status = await evolutionApi.getInstanceStatus(
+        status = await baileysApi.getInstanceStatus(
           channel.evolutionInstanceId,
           apiKey
         );
@@ -579,7 +609,7 @@ export class ChannelService {
       // Se não encontrou, tentar conectar a instância para gerar QR Code
       console.log('[ChannelService] QR Code não encontrado no status, tentando conectar instância...');
       try {
-        const qrResponse = await evolutionApi.getQRCode(
+        const qrResponse = await baileysApi.getQRCode(
           channel.evolutionInstanceId,
           apiKey
         );
@@ -637,14 +667,16 @@ export class ChannelService {
       return { status: channel.status };
     }
 
-    if (!channel.evolutionInstanceId || !channel.evolutionApiKey) {
+    const baileysApi = getBaileysApi(channel);
+    const apiKey = resolveBaileysApiKey(channel);
+    if (!channel.evolutionInstanceId || !apiKey) {
       return { status: channel.status };
     }
 
     try {
-      const evolutionStatus = await evolutionApi.getInstanceStatus(
+      const evolutionStatus = await baileysApi.getInstanceStatus(
         channel.evolutionInstanceId,
-        channel.evolutionApiKey
+        apiKey,
       );
 
       // Atualizar token se disponível e diferente
@@ -685,7 +717,11 @@ export class ChannelService {
         console.log('[ChannelService] Canal conectado! Configurando webhook...');
         if (channel.evolutionInstanceToken) {
           try {
-            await this.configureWebhook(channel.evolutionInstanceId!, channel.evolutionInstanceToken);
+            await this.configureWebhook(
+              channel.evolutionInstanceId!,
+              channel.evolutionInstanceToken,
+              channel.config,
+            );
           } catch (webhookError: any) {
             console.error('[ChannelService] ⚠️ Erro ao configurar webhook após conexão:', webhookError.message);
             // Não bloqueia a atualização de status se o webhook falhar

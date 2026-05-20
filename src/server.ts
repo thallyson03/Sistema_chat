@@ -399,6 +399,12 @@ httpServer.listen(PORT, () => {
     });
   }
 
+  if (process.env.EVOLUTION_GO_API_URL) {
+    logger.info('evolution go api configured', {
+      evolutionGoApiUrl: process.env.EVOLUTION_GO_API_URL,
+    });
+  }
+
   // Agendador simples para encerramento automático de conversas inativas
   const botService = new BotService();
   const webhookService = new WebhookService();

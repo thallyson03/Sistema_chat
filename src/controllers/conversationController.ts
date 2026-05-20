@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
-import { evolutionApi } from '../config/evolutionApi';
+import { getBaileysApi, resolveBaileysApiKey } from '../utils/channelWhatsAppProvider';
 import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
 import { DashboardPerformanceService } from '../services/dashboardPerformanceService';
@@ -120,6 +120,7 @@ export class ConversationController {
             select: {
               id: true,
               type: true,
+              config: true,
               evolutionInstanceId: true,
               evolutionApiKey: true,
             },
@@ -152,10 +153,13 @@ export class ConversationController {
         }
       }
 
-      const waInfo = await evolutionApi.fetchWhatsAppNumberInfo(
+      const baileysApi = getBaileysApi(conversation.channel);
+      const apiKey = resolveBaileysApiKey(conversation.channel);
+
+      const waInfo = await baileysApi.fetchWhatsAppNumberInfo(
         conversation.channel.evolutionInstanceId,
         conversation.contact.phone,
-        conversation.channel.evolutionApiKey ?? undefined,
+        apiKey,
       );
       const lidFromApi =
         typeof waInfo?.lid === 'string' && waInfo.lid !== 'lid'
@@ -173,10 +177,10 @@ export class ConversationController {
         });
       }
 
-      await evolutionApi.subscribeContactPresence(
+      await baileysApi.subscribeContactPresence(
         conversation.channel.evolutionInstanceId,
         conversation.contact.phone,
-        conversation.channel.evolutionApiKey ?? undefined,
+        apiKey,
       );
 
       res.json({ ok: true });
@@ -207,6 +211,7 @@ export class ConversationController {
           contact: { select: { phone: true } },
           channel: {
             select: {
+              config: true,
               evolutionInstanceId: true,
               evolutionApiKey: true,
             },
@@ -220,12 +225,13 @@ export class ConversationController {
 
       const instanceId = conversation.channel.evolutionInstanceId;
       const phone = conversation.contact.phone;
-      const apiKey = conversation.channel.evolutionApiKey ?? undefined;
+      const baileysApi = getBaileysApi(conversation.channel);
+      const apiKey = resolveBaileysApiKey(conversation.channel);
 
-      await evolutionApi.sendOutboundPresence(instanceId, phone, state, apiKey);
+      await baileysApi.sendOutboundPresence(instanceId, phone, state, apiKey);
 
       // composing/recording de saída pode cancelar a inscrição inbound no Baileys — reativar.
-      await evolutionApi.subscribeContactPresence(instanceId, phone, apiKey);
+      await baileysApi.subscribeContactPresence(instanceId, phone, apiKey);
 
       res.json({ ok: true, state });
     } catch (error: any) {

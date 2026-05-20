@@ -1,4 +1,4 @@
-type ProviderName = 'meta' | 'evolution';
+export type ProviderName = 'meta' | 'evolution' | 'evolution_go';
 
 type BreakerState = {
   failures: number;
@@ -10,6 +10,7 @@ type BreakerState = {
 const states: Record<ProviderName, BreakerState> = {
   meta: { failures: 0, successes: 0, openedAt: null, halfOpen: false },
   evolution: { failures: 0, successes: 0, openedAt: null, halfOpen: false },
+  evolution_go: { failures: 0, successes: 0, openedAt: null, halfOpen: false },
 };
 
 function now(): number {

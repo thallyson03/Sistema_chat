@@ -1,0 +1,75 @@
+# Coolify: cole este YAML no recurso "Docker Compose" (sem Git).
+# Depois do primeiro deploy, crie os bancos (uma vez) — ver docs/coolify-evolution-go.md secao "Bancos".
+#
+# Variaveis obrigatorias no Coolify > Environment:
+#   GLOBAL_API_KEY=
+#   POSTGRES_PASSWORD=
+# Opcional:
+#   WEBHOOK_URL=https://crm.chat.chatia.qzz.io/webhooks/evolution-go
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - evolution-go
+
+  postgres-init:
+    image: postgres:15-alpine
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        set -eu
+        for db in evogo_auth evogo_users; do
+          psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = '$$db'" | grep -q 1 \
+            || psql -h postgres -U postgres -c "CREATE DATABASE $$db;"
+        done
+        echo "Databases evogo_auth and evogo_users OK"
+    networks:
+      - evolution-go
+
+  evolution-go:
+    image: evoapicloud/evolution-go:latest
+    restart: unless-stopped
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+    environment:
+      SERVER_PORT: '8080'
+      CLIENT_NAME: evolution
+      GLOBAL_API_KEY: ${GLOBAL_API_KEY:?defina GLOBAL_API_KEY}
+      POSTGRES_AUTH_DB: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_auth?sslmode=disable
+      POSTGRES_USERS_DB: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_users?sslmode=disable
+      DATABASE_SAVE_MESSAGES: 'false'
+      WADEBUG: INFO
+      LOGTYPE: console
+      CONNECT_ON_STARTUP: 'true'
+      WEBHOOKFILES: 'true'
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+    expose:
+      - '8080'
+    networks:
+      - evolution-go
+
+volumes:
+  postgres-data:
+
+networks:
+  evolution-go:
+    driver: bridge

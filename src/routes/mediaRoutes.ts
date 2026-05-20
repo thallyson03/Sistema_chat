@@ -11,7 +11,11 @@ import { authenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
 import { convertWebmToOgg, convertOggToMp3 } from '../utils/audioConverter';
 import { objectStorageService } from '../services/objectStorageService';
-import { evolutionApi } from '../config/evolutionApi';
+import {
+  getBaileysApi,
+  isBaileysWhatsAppChannel,
+  resolveBaileysApiKey,
+} from '../utils/channelWhatsAppProvider';
 import { buildEvolutionMediaMessagePayload, isWhatsAppCdnUrl, normalizeWhatsAppMediaKey, resolveMediaKeyFromMetadata } from '../utils/whatsappMedia';
 
 const router = Router();
@@ -1003,6 +1007,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         select: {
           id: true,
           name: true,
+          config: true,
           evolutionInstanceId: true,
           evolutionInstanceToken: true,
           evolutionApiKey: true,
@@ -1010,11 +1015,17 @@ router.get('/:messageId', async (req: Request, res: Response) => {
       }));
 
     const instanceName = channelRecord?.evolutionInstanceId;
-    const evolutionAuthKey =
-      channelRecord?.evolutionInstanceToken ||
-      channelRecord?.evolutionApiKey ||
-      process.env.EVOLUTION_API_KEY ||
-      null;
+    const evolutionAuthKey = isBaileysWhatsAppChannel(
+      channelRecord?.config as Record<string, unknown>,
+    )
+      ? resolveBaileysApiKey(channelRecord) ||
+        channelRecord?.evolutionInstanceToken ||
+        null
+      : channelRecord?.evolutionInstanceToken ||
+        channelRecord?.evolutionApiKey ||
+        process.env.EVOLUTION_API_KEY ||
+        null;
+    const baileysApi = getBaileysApi(channelRecord);
 
     if (!evolutionAuthKey) {
       console.error('[Media] Token/API key Evolution não encontrado', {
@@ -1045,7 +1056,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           instanceName,
           messageId,
         });
-        const result = await evolutionApi.getBase64FromMediaMessage(
+        const result = await baileysApi.getBase64FromMediaMessage(
           instanceName,
           payload,
           evolutionAuthKey,

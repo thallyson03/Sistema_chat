@@ -1,5 +1,9 @@
 import prisma from '../config/database';
-import evolutionApi from '../config/evolutionApi';
+import {
+  getBaileysApi,
+  isBaileysWhatsAppChannel,
+  resolveBaileysApiKey,
+} from '../utils/channelWhatsAppProvider';
 import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
 import { WhatsAppOfficialService } from './whatsappOfficialService';
 import { WebhookService } from './webhookService';
@@ -120,16 +124,22 @@ export class SatisfactionSurveyService {
           rows,
         });
         externalId = res.messageId || null;
-      } else if (channel.evolutionInstanceId && channel.evolutionApiKey) {
+      } else if (
+        isBaileysWhatsAppChannel(channelConfig) &&
+        channel.evolutionInstanceId &&
+        resolveBaileysApiKey(channel)
+      ) {
+        const baileysApi = getBaileysApi(channel);
+        const apiKey = resolveBaileysApiKey(channel);
         const whatsappNumber = `${formattedPhone}@s.whatsapp.net`;
         const text =
           `${bodyText}\n\n` +
           `Responda com *apenas um número* de *1* a *5* (1 = muito insatisfeito, 5 = muito satisfeito).`;
-        const evolutionResponse = await evolutionApi.sendMessage(
+        const evolutionResponse = await baileysApi.sendMessage(
           channel.evolutionInstanceId,
           whatsappNumber,
           text,
-          channel.evolutionApiKey || undefined,
+          apiKey,
         );
         externalId = evolutionResponse?.key?.id || evolutionResponse?.id || null;
       } else {

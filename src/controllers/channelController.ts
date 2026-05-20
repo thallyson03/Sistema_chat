@@ -125,16 +125,23 @@ export class ChannelController {
       }
 
       // Verificar se é WhatsApp Official (não usa Evolution API)
-      const hasEvolutionApiKey = evolutionApiKey || process.env.EVOLUTION_API_KEY;
+      const provider = String(config?.provider || 'evolution').toLowerCase();
+      const hasEvolutionApiKey =
+        evolutionApiKey ||
+        (provider === 'evolution_go'
+          ? process.env.EVOLUTION_GO_API_KEY
+          : process.env.EVOLUTION_API_KEY);
       const isWhatsAppOfficial =
         type === 'WHATSAPP' &&
-        (config?.provider === 'whatsapp_official' ||
+        (provider === 'whatsapp_official' ||
           (!hasEvolutionApiKey && process.env.WHATSAPP_ENV));
 
       // Configurar config com provider se for WhatsApp Official
       const channelConfig = config || {};
       if (isWhatsAppOfficial) {
         channelConfig.provider = 'whatsapp_official';
+      } else if (provider === 'evolution_go') {
+        channelConfig.provider = 'evolution_go';
         // Preferir dados enviados pela interface; se não vierem, usar fallback do .env
         channelConfig.phoneNumberId =
           channelConfig.phoneNumberId ||
@@ -147,7 +154,12 @@ export class ChannelController {
       }
 
       // Usar API key do .env apenas se não for WhatsApp Official
-      const apiKey = isWhatsAppOfficial ? undefined : (evolutionApiKey || process.env.EVOLUTION_API_KEY);
+      const apiKey = isWhatsAppOfficial
+        ? undefined
+        : evolutionApiKey ||
+          (provider === 'evolution_go'
+            ? process.env.EVOLUTION_GO_API_KEY
+            : process.env.EVOLUTION_API_KEY);
 
       console.log('[ChannelController] Criando canal:', {
         name,
@@ -290,7 +302,8 @@ export class ChannelController {
 
       const evolutionChannels = whatsappChannels.filter((channel) => {
         const config = channel.config as any;
-        return !config?.provider || config?.provider === 'evolution';
+        const p = config?.provider;
+        return !p || p === 'evolution' || p === 'evolution_go';
       });
 
       res.json({

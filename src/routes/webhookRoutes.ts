@@ -35,6 +35,12 @@ import { normalizePhone } from '../utils/phone';
 import { parseEvolutionMessageContent } from '../utils/evolutionMessageContent';
 import { contactResolutionService } from '../services/contactResolutionService';
 import { conversationResolutionService } from '../services/conversationResolutionService';
+import {
+  getBaileysApi,
+  getBaileysWebhookPath,
+  isBaileysWhatsAppChannel,
+  resolveBaileysApiKey,
+} from '../utils/channelWhatsAppProvider';
 
 const webhookService = new WebhookService();
 const botService = new BotService();
@@ -960,6 +966,51 @@ router.post('/evolution', webhookReceiveLimiter, async (req: Request, res: Respo
   }
 });
 
+// Webhook Evolution GO — mesmo parser de eventos Baileys
+router.post('/evolution-go', webhookReceiveLimiter, async (req: Request, res: Response) => {
+  try {
+    const event = req.body;
+    console.log('📨 ============================================');
+    console.log('📨 Webhook recebido da Evolution GO');
+    console.log('📨 Timestamp:', new Date().toISOString());
+    console.log('📨 Event:', event.event || event.eventName || event.eventType);
+    console.log('📨 Data keys:', Object.keys(event.data || event));
+    if (isDevLogs) {
+      console.log('📨 Body completo:', JSON.stringify(event, null, 2));
+    }
+    console.log('📨 ============================================');
+
+    const dedupeKey = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(event))
+      .digest('hex');
+
+    if (
+      phase1Flags.webhookIdempotencyEnabled &&
+      !idempotencyService.register(`webhook:evolution-go:${dedupeKey}`, 5 * 60_000)
+    ) {
+      return res.status(200).json({ received: true, deduped: true });
+    }
+
+    if (phase1Flags.webhookQueueEnabled) {
+      await webhookIngestQueue.enqueue({
+        provider: 'evolution_go',
+        payload: event,
+        dedupeKey,
+      });
+      return res.status(200).json({ received: true, queued: true });
+    }
+
+    await processEvolutionWebhookPayload(event);
+
+    res.status(200).json({ received: true });
+  } catch (error: any) {
+    console.error('❌ Erro ao processar webhook Evolution GO:', error);
+    console.error('❌ Stack:', error.stack);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 async function handleNewMessage(data: any) {
   try {
     console.log('📩 [handleNewMessage] Processando nova mensagem...');
@@ -1105,13 +1156,14 @@ async function handleNewMessage(data: any) {
     // Buscar foto de perfil do WhatsApp
     let profilePicture: string | null = null;
     try {
-      if (channel.evolutionInstanceId && channel.evolutionApiKey && normalizedPhone) {
-        const { evolutionApi } = await import('../config/evolutionApi');
+      const apiKey = resolveBaileysApiKey(channel);
+      if (channel.evolutionInstanceId && apiKey && normalizedPhone) {
+        const baileysApi = getBaileysApi(channel);
         const whatsappNumber = `${normalizedPhone}@s.whatsapp.net`;
-        profilePicture = await evolutionApi.getProfilePicture(
+        profilePicture = await baileysApi.getProfilePicture(
           channel.evolutionInstanceId,
           whatsappNumber,
-          channel.evolutionApiKey
+          apiKey,
         );
         if (profilePicture) {
           console.log('📸 [handleNewMessage] Foto de perfil obtida:', profilePicture.substring(0, 100));
@@ -1553,15 +1605,21 @@ async function handleConnectionUpdate(data: any) {
       });
       console.log('[Webhook] ✅ Canal conectado:', channel.name);
       
-      // Configurar webhook quando o canal é conectado
-      if (channel.evolutionInstanceId && channel.evolutionApiKey) {
+      // Configurar webhook quando o canal é conectado (Evolution Node ou GO)
+      const apiKey = resolveBaileysApiKey(channel);
+      if (
+        isBaileysWhatsAppChannel(channel.config as Record<string, unknown>) &&
+        channel.evolutionInstanceId &&
+        apiKey
+      ) {
         const webhookBaseUrl = process.env.NGROK_URL || process.env.APP_URL;
         if (webhookBaseUrl) {
-          const webhookUrl = `${webhookBaseUrl}/webhooks/evolution`;
+          const webhookPath = getBaileysWebhookPath(channel);
+          const webhookUrl = `${webhookBaseUrl.replace(/\/$/, '')}${webhookPath}`;
           console.log('[Webhook] 📡 Configurando webhook após conexão:', webhookUrl);
           try {
-            const { evolutionApi } = await import('../config/evolutionApi');
-            await evolutionApi.setWebhook(channel.evolutionInstanceId, webhookUrl, channel.evolutionApiKey);
+            const baileysApi = getBaileysApi(channel);
+            await baileysApi.setWebhook(channel.evolutionInstanceId, webhookUrl, apiKey);
             console.log('[Webhook] ✅ Webhook configurado com sucesso após conexão');
           } catch (webhookError: any) {
             console.error('[Webhook] ⚠️ Erro ao configurar webhook após conexão:', webhookError.message);

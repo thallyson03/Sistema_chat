@@ -1,6 +1,11 @@
 import prisma from '../config/database';
 import { MessageType, MessageStatus } from '@prisma/client';
-import evolutionApi from '../config/evolutionApi';
+import {
+  getBaileysApi,
+  getBaileysResilienceProvider,
+  isBaileysWhatsAppChannel,
+  resolveBaileysApiKey,
+} from '../utils/channelWhatsAppProvider';
 import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
 import { WhatsAppOfficialService } from './whatsappOfficialService';
 import axios from 'axios';
@@ -63,11 +68,15 @@ export class MessageService {
       !!channelConfig.token;
     const isEvolutionChannel =
       conversation.channel.type === 'WHATSAPP' &&
+      isBaileysWhatsAppChannel(channelConfig) &&
       !!conversation.channel.evolutionInstanceId &&
-      !!conversation.channel.evolutionApiKey;
+      !!resolveBaileysApiKey(conversation.channel);
 
     if (isMetaChannel && providerResilienceService.isOpen('meta')) return true;
-    if (isEvolutionChannel && providerResilienceService.isOpen('evolution')) return true;
+    if (isEvolutionChannel) {
+      const baileysProvider = getBaileysResilienceProvider(channelConfig);
+      if (providerResilienceService.isOpen(baileysProvider)) return true;
+    }
     return false;
   }
 
@@ -459,15 +468,22 @@ export class MessageService {
     } else if (
       !!channel &&
       channel.type === 'WHATSAPP' &&
+      isBaileysWhatsAppChannel(channel.config as Record<string, unknown>) &&
       channel.evolutionInstanceId &&
-      channel.evolutionApiKey &&
       conversation.contact.phone
     ) {
+      const baileysApi = getBaileysApi(channel);
+      const apiKey = resolveBaileysApiKey(channel);
+
+      if (!apiKey) {
+        console.warn('⚠️ [MessageService] Canal Baileys sem API key (canal ou env EVOLUTION_*_API_KEY)');
+      }
+
       console.log('✅ [MessageService] Condições satisfeitas, iniciando envio...');
       try {
-        console.log('📤 Enviando mensagem via Evolution API...');
+        console.log('📤 Enviando mensagem via Baileys (Evolution)...');
         console.log('Instância:', channel.evolutionInstanceId);
-        console.log('API Key presente:', !!channel.evolutionApiKey);
+        console.log('API Key presente:', !!apiKey);
         console.log('Instance Token presente:', !!channel.evolutionInstanceToken);
         console.log('Telefone original:', conversation.contact.phone);
         
@@ -484,15 +500,13 @@ export class MessageService {
         console.log('Número formatado:', whatsappNumber);
         console.log('Conteúdo:', data.content.substring(0, 50));
         
-        // Usar API key master (não o token da instância para envio de mensagens)
-        // O token da instância é usado apenas para webhook, não para envio
-        const apiKey = channel.evolutionApiKey || process.env.EVOLUTION_API_KEY;
-        
         if (!apiKey) {
-          throw new Error('API key não encontrada. Configure EVOLUTION_API_KEY no .env ou no canal.');
+          throw new Error(
+            'API key não encontrada. Configure EVOLUTION_API_KEY ou EVOLUTION_GO_API_KEY no .env ou no canal.',
+          );
         }
-        
-        console.log('📤 [MessageService] Enviando via Evolution API:', {
+
+        console.log('📤 [MessageService] Enviando via Baileys API:', {
           instanceId: channel.evolutionInstanceId,
           number: whatsappNumber,
           contentLength: data.content.length,
@@ -539,7 +553,7 @@ export class MessageService {
 
           switch (messageType) {
             case MessageType.IMAGE:
-              evolutionResponse = await evolutionApi.sendImage(
+              evolutionResponse = await baileysApi.sendImage(
                 channel.evolutionInstanceId!,
                 whatsappNumber,
                 fullMediaUrl,
@@ -548,7 +562,7 @@ export class MessageService {
               );
               break;
             case MessageType.VIDEO:
-              evolutionResponse = await evolutionApi.sendVideo(
+              evolutionResponse = await baileysApi.sendVideo(
                 channel.evolutionInstanceId!,
                 whatsappNumber,
                 fullMediaUrl,
@@ -691,7 +705,7 @@ export class MessageService {
                 isBase64: !audioMedia.startsWith('http://') && !audioMedia.startsWith('https://'),
               });
 
-              evolutionResponse = await evolutionApi.sendAudio(
+              evolutionResponse = await baileysApi.sendAudio(
                 channel.evolutionInstanceId!,
                 whatsappNumber,
                 audioMedia,
@@ -700,7 +714,7 @@ export class MessageService {
               );
               break;
             case MessageType.DOCUMENT:
-              evolutionResponse = await evolutionApi.sendDocument(
+              evolutionResponse = await baileysApi.sendDocument(
                 channel.evolutionInstanceId!,
                 whatsappNumber,
                 fullMediaUrl,
@@ -710,7 +724,7 @@ export class MessageService {
               );
               break;
             default:
-              evolutionResponse = await evolutionApi.sendMessage(
+              evolutionResponse = await baileysApi.sendMessage(
                 channel.evolutionInstanceId!,
                 whatsappNumber,
                 data.content,
@@ -735,21 +749,21 @@ export class MessageService {
 
             if (shouldSendAsInteractiveList(buttons, meta)) {
               console.log('📤 [MessageService] Enviando lista interativa via Evolution API');
-              evolutionResponse = await evolutionApi.sendList(
+              evolutionResponse = await baileysApi.sendList(
                 channel.evolutionInstanceId!,
                 buildEvolutionListPayload(interactiveParams),
                 apiKey,
               );
             } else {
               console.log('📤 [MessageService] Enviando botões via Evolution API');
-              evolutionResponse = await evolutionApi.sendButtons(
+              evolutionResponse = await baileysApi.sendButtons(
                 channel.evolutionInstanceId!,
                 buildEvolutionButtonsPayload(interactiveParams),
                 apiKey,
               );
             }
           } else {
-            evolutionResponse = await evolutionApi.sendMessage(
+            evolutionResponse = await baileysApi.sendMessage(
               channel.evolutionInstanceId!,
               whatsappNumber,
               data.content,
@@ -791,7 +805,13 @@ export class MessageService {
       if (!channel) reasons.push('sem canal associado');
       if (channel && channel.type !== 'WHATSAPP') reasons.push('não é WhatsApp');
       if (!channel?.evolutionInstanceId) reasons.push('sem instanceId');
-      if (!channel?.evolutionApiKey) reasons.push('sem API key');
+      if (
+        channel &&
+        isBaileysWhatsAppChannel(channel.config as Record<string, unknown>) &&
+        !resolveBaileysApiKey(channel)
+      ) {
+        reasons.push('sem API key Baileys');
+      }
       if (!conversation.contact.phone) reasons.push('sem telefone do contato');
       
       console.log('ℹ️ [MessageService] Mensagem NÃO será enviada via Evolution API:', {

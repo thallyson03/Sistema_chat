@@ -1,0 +1,57 @@
+# Evolution GO + PostgreSQL — deploy no Coolify (Git: Base Directory = evolution-go)
+#
+# No Coolify > Environment do recurso Docker Compose:
+#   GLOBAL_API_KEY=<gerar-chave-forte>
+#   POSTGRES_PASSWORD=<senha-forte>
+#   WEBHOOK_URL=https://crm.chat.chatia.qzz.io/webhooks/evolution-go   (apos rota existir no CRM)
+#   GRAFANA_ROOT_URL nao aplica aqui
+#
+# Dominio: aponte HTTPS para o servico evolution-go (porta interna 8080).
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no Coolify}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - evolution-go
+
+  evolution-go:
+    image: evoapicloud/evolution-go:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: '8080'
+      CLIENT_NAME: evolution
+      GLOBAL_API_KEY: ${GLOBAL_API_KEY:?defina GLOBAL_API_KEY no Coolify}
+      POSTGRES_AUTH_DB: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_auth?sslmode=disable
+      POSTGRES_USERS_DB: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_users?sslmode=disable
+      DATABASE_SAVE_MESSAGES: 'false'
+      WADEBUG: INFO
+      LOGTYPE: console
+      CONNECT_ON_STARTUP: 'true'
+      WEBHOOKFILES: 'true'
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+    expose:
+      - '8080'
+    networks:
+      - evolution-go
+
+volumes:
+  postgres-data:
+
+networks:
+  evolution-go:
+    driver: bridge
