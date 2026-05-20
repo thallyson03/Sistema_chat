@@ -112,13 +112,20 @@ export function parseEvolutionMessagePatches(eventData: any): Array<{
     ? eventData
     : Array.isArray(eventData?.messages)
       ? eventData.messages
-      : eventData?.key || eventData?.update || eventData?.message
+      : eventData?.key ||
+          eventData?.update ||
+          eventData?.message ||
+          eventData?.keyId ||
+          eventData?.messageId
         ? [eventData]
         : [];
 
   for (const row of rows) {
     const key = row?.key ?? row?.message?.key ?? eventData?.key;
-    const externalId = extractEvolutionMessageKeyId(key);
+    const externalId =
+      extractEvolutionMessageKeyId(key) ||
+      (row?.keyId != null ? String(row.keyId) : null) ||
+      (row?.messageId != null ? String(row.messageId) : null);
     if (!externalId) continue;
 
     const update = row?.update ?? row;

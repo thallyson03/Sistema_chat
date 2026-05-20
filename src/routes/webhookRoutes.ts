@@ -32,7 +32,7 @@ import {
   extractPhoneFromEvolutionPresenceData,
 } from '../utils/evolutionWebhook';
 import { normalizePhone } from '../utils/phone';
-import { extractEvolutionIncomingContent } from '../utils/evolutionInteractive';
+import { parseEvolutionMessageContent } from '../utils/evolutionMessageContent';
 import { contactResolutionService } from '../services/contactResolutionService';
 import { conversationResolutionService } from '../services/conversationResolutionService';
 
@@ -1247,71 +1247,39 @@ async function handleNewMessage(data: any) {
       throw new Error('Conversa não foi possível ser carregada/criada');
     }
 
-    // Extrair conteúdo e tipo da mensagem
-    // A estrutura pode estar em message.message ou diretamente em message
-    let messageContent = '';
-    let messageType = 'TEXT';
-    let mediaUrl: string | null = null;
-    let mediaMetadata: any = null;
-
-    // Detectar tipo e conteúdo - verificar múltiplos formatos
     const msgObj = message.message || message;
-    
-    if (msgObj.conversation) {
-      messageContent = msgObj.conversation;
-      messageType = 'TEXT';
-    } else if (msgObj.extendedTextMessage?.text) {
-      messageContent = msgObj.extendedTextMessage.text;
-      messageType = 'TEXT';
-    } else if (message.body) {
-      messageContent = message.body;
-      messageType = 'TEXT';
-    } else if (msgObj.imageMessage) {
-      messageType = 'IMAGE';
-      messageContent = msgObj.imageMessage.caption || '';
-      mediaUrl = msgObj.imageMessage.url;
-      mediaMetadata = extractEvolutionMediaFields(msgObj.imageMessage);
-    } else if (msgObj.videoMessage) {
-      messageType = 'VIDEO';
-      messageContent = msgObj.videoMessage.caption || '';
-      mediaUrl = msgObj.videoMessage.url;
-      mediaMetadata = extractEvolutionMediaFields(msgObj.videoMessage);
-    } else if (msgObj.audioMessage) {
-      messageType = 'AUDIO';
-      messageContent = '';
-      mediaUrl = msgObj.audioMessage.url;
-      mediaMetadata = extractEvolutionMediaFields(msgObj.audioMessage);
-    } else if (msgObj.documentMessage) {
-      messageType = 'DOCUMENT';
-      messageContent = msgObj.documentMessage.fileName || '';
-      mediaUrl = msgObj.documentMessage.url;
-      mediaMetadata = extractEvolutionMediaFields(msgObj.documentMessage);
-    } else {
-      const interactiveIncoming = extractEvolutionIncomingContent(msgObj, {
-        messageType: data.messageType,
-        root: data,
+    const parsed = parseEvolutionMessageContent(msgObj, {
+      messageType: data.messageType,
+      root: data,
+      body: message.body,
+    });
+
+    if (parsed.skip) {
+      console.log('ℹ️ [handleNewMessage] Evento ignorado (sem conteúdo conversacional):', {
+        reason: parsed.reason,
+        evolutionMessageType: data.messageType,
+        messageKeys: Object.keys(msgObj || {}),
       });
-      if (interactiveIncoming) {
-        messageContent = interactiveIncoming.displayText;
-        messageType = 'TEXT';
-        mediaMetadata = {
-          evolutionInteractiveReply: interactiveIncoming.interactive,
-          botInputId: interactiveIncoming.content,
-        };
-        console.log('[handleNewMessage] Resposta interativa (botão/lista):', {
-          selectedId: interactiveIncoming.content,
-          displayText: interactiveIncoming.displayText,
-          replyType: interactiveIncoming.interactive.replyType,
-          evolutionMessageType: data.messageType,
-        });
-      } else {
-        messageContent = '[Mensagem não suportada]';
-        messageType = 'TEXT';
-        console.warn('[handleNewMessage] Tipo de mensagem não mapeado:', {
-          evolutionMessageType: data.messageType,
-          messageKeys: Object.keys(msgObj || {}),
-        });
-      }
+      return;
+    }
+
+    let messageContent = parsed.content;
+    let messageType = parsed.messageType;
+    let mediaUrl: string | null = parsed.mediaUrl ?? null;
+    let mediaMetadata: any = parsed.mediaMetadata ?? null;
+
+    if (messageContent === '[Mensagem não suportada]') {
+      console.warn('[handleNewMessage] Tipo de mensagem não mapeado:', {
+        evolutionMessageType: data.messageType,
+        messageKeys: Object.keys(msgObj || {}),
+      });
+    } else if (mediaMetadata?.evolutionInteractiveReply) {
+      console.log('[handleNewMessage] Resposta interativa (botão/lista):', {
+        selectedId: mediaMetadata.botInputId,
+        displayText: messageContent,
+        replyType: mediaMetadata.evolutionInteractiveReply.replyType,
+        evolutionMessageType: data.messageType,
+      });
     }
 
     // Verificar se mensagem já existe (evitar duplicatas)
