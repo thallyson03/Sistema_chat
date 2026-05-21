@@ -129,6 +129,94 @@ function pickKeyString(obj: Record<string, unknown>, keys: string[]): string | u
   return undefined;
 }
 
+function pickBool(obj: Record<string, unknown>, keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const v = obj[key];
+    if (v === true || v === false) return v;
+    if (v === 'true' || v === 1 || v === '1') return true;
+    if (v === 'false' || v === 0 || v === '0') return false;
+  }
+  return undefined;
+}
+
+/** Monta `key` Baileys a partir de `Info` do webhook Message da Evolution GO. */
+export function buildKeyFromGoMessageInfo(info: Record<string, unknown>): Record<string, unknown> | null {
+  const id = pickKeyString(info, ['ID', 'Id', 'id']);
+  const chat = pickKeyString(info, ['Chat', 'chat']);
+  const sender = pickKeyString(info, ['Sender', 'sender']);
+  const senderAlt = pickKeyString(info, ['SenderAlt', 'senderAlt', 'SenderPN', 'senderPn']);
+  const recipientAlt = pickKeyString(info, ['RecipientAlt', 'recipientAlt']);
+  const isFromMe = pickBool(info, ['IsFromMe', 'isFromMe', 'FromMe', 'fromMe']);
+  const isGroup = pickBool(info, ['IsGroup', 'isGroup']) === true;
+  const addressingMode = pickKeyString(info, ['AddressingMode', 'addressingMode']);
+
+  let remoteJid = chat || sender;
+  if (isGroup && chat) {
+    remoteJid = chat;
+  }
+
+  if (addressingMode?.toLowerCase() === 'pn' && senderAlt) {
+    if (!remoteJid?.includes('@s.whatsapp.net') && !remoteJid?.includes('@c.us')) {
+      remoteJid = senderAlt;
+    }
+  }
+  if (remoteJid?.includes('@lid') && senderAlt) {
+    remoteJid = senderAlt;
+  }
+
+  if (!remoteJid && !id) return null;
+
+  return (
+    normalizeEvolutionMessageKey({
+      id,
+      remoteJid,
+      fromMe: isFromMe,
+      senderPn: senderAlt,
+      remoteJidAlt: recipientAlt || (chat?.includes('@lid') ? chat : undefined),
+      participant: isGroup ? sender : undefined,
+      addressingMode,
+    }) ?? { id, remoteJid, fromMe: isFromMe }
+  );
+}
+
+function normalizeGoPresenceState(raw: unknown): EvolutionPresenceState | null {
+  if (raw === null || raw === undefined) return null;
+  const s = String(raw).toLowerCase();
+  if (s.includes('compos')) return 'composing';
+  if (s.includes('record')) return 'recording';
+  if (s.includes('pause')) return 'paused';
+  if (s.includes('available')) return 'available';
+  if (s.includes('unavailable')) return 'unavailable';
+  return null;
+}
+
+/** ChatPresence da Evolution GO (digitando / gravando). */
+export function parseGoChatPresence(
+  data: Record<string, unknown>,
+): { remoteJid: string; state: EvolutionPresenceState } | null {
+  const chat = pickKeyString(data, ['Chat', 'chat']);
+  const sender = pickKeyString(data, ['Sender', 'sender']);
+  const senderAlt = pickKeyString(data, ['SenderAlt', 'senderAlt']);
+  const addressingMode = pickKeyString(data, ['AddressingMode', 'addressingMode']);
+  const stateRaw = data.State ?? data.state ?? data.Media;
+
+  let remoteJid = chat || sender || '';
+  if (addressingMode?.toLowerCase() === 'pn' && senderAlt) {
+    if (!remoteJid.includes('@s.whatsapp.net') && !remoteJid.includes('@c.us')) {
+      remoteJid = senderAlt;
+    }
+  }
+  if (remoteJid.includes('@lid') && senderAlt) {
+    remoteJid = senderAlt;
+  }
+  if (!remoteJid) return null;
+
+  const state = normalizeGoPresenceState(stateRaw);
+  if (!state) return null;
+
+  return { remoteJid, state };
+}
+
 export type EvolutionIncomingMessageBundle = {
   message: Record<string, unknown>;
   key: Record<string, unknown> | null;
@@ -186,10 +274,41 @@ export function extractIncomingMessageBundles(
     return bundles;
   }
 
+  // Evolution GO: evento Message { Info, Message } (metadados separados do conteúdo)
+  const goInfo = root.Info ?? root.info;
+  const goBody = root.Message ?? root.message;
+  if (goInfo && typeof goInfo === 'object' && goBody && typeof goBody === 'object' && !Array.isArray(goBody)) {
+    const infoObj = goInfo as Record<string, unknown>;
+    const keyFromInfo = buildKeyFromGoMessageInfo(infoObj);
+    if (keyFromInfo) {
+      const pushFromInfo = pickKeyString(infoObj, ['PushName', 'pushName', 'SenderName', 'senderName']);
+      const msg = goBody as Record<string, unknown>;
+      const nested =
+        msg.message && typeof msg.message === 'object'
+          ? (msg.message as Record<string, unknown>)
+          : msg;
+      bundles.push({
+        message: nested,
+        key: keyFromInfo,
+        instance,
+        instanceName: instance,
+        instanceId,
+        pushName: pushFromInfo ?? pushName,
+        messageType: pickKeyString(infoObj, ['Type', 'type']) ?? messageType,
+        body: pickKeyString(msg, ['body', 'Body']) ?? pickKeyString(root, ['body', 'Body']),
+      });
+      return bundles;
+    }
+  }
+
   const envelope = root.message ?? root.Message;
-  if (envelope && typeof envelope === 'object') {
+  if (envelope && typeof envelope === 'object' && !Array.isArray(envelope)) {
     const env = envelope as Record<string, unknown>;
-    add(envelope, env.key ?? env.Key ?? root.key ?? root.Key);
+    const keyFromRootInfo =
+      root.Info && typeof root.Info === 'object'
+        ? buildKeyFromGoMessageInfo(root.Info as Record<string, unknown>)
+        : null;
+    add(envelope, keyFromRootInfo ?? env.key ?? env.Key ?? root.key ?? root.Key);
     return bundles;
   }
 
@@ -417,6 +536,14 @@ export function parseEvolutionPresence(eventData: any): {
 } | null {
   if (!eventData || typeof eventData !== 'object') return null;
 
+  if (
+    (eventData as Record<string, unknown>).Chat ||
+    (eventData as Record<string, unknown>).State ||
+    (eventData as Record<string, unknown>).chat
+  ) {
+    return parseGoChatPresence(eventData as Record<string, unknown>);
+  }
+
   const presences = eventData?.presences || eventData?.presence || {};
   const candidates = collectPresenceJidCandidates(eventData);
 
@@ -464,6 +591,17 @@ export function parseEvolutionPresence(eventData: any): {
 /** Extrai telefone E.164 a partir do payload de presença (inclui fallback LID → senderPn). */
 export function extractPhoneFromEvolutionPresenceData(eventData: any): string | null {
   if (!eventData || typeof eventData !== 'object') return null;
+
+  const goSenderAlt =
+    typeof eventData?.SenderAlt === 'string'
+      ? eventData.SenderAlt
+      : typeof eventData?.senderAlt === 'string'
+        ? eventData.senderAlt
+        : null;
+  if (goSenderAlt) {
+    const fromSender = extractPhoneFromEvolutionJid(goSenderAlt);
+    if (fromSender) return fromSender;
+  }
 
   const candidates = collectPresenceJidCandidates(eventData);
   const senderPn =

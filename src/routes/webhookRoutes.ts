@@ -2259,8 +2259,8 @@ export async function processEvolutionWebhookPayload(
     return;
   }
 
-  if (normalizedEventType.includes('presence')) {
-    console.log('📨 Processando como PRESENCE_UPDATE');
+  if (normalizedEventType.includes('presence') || normalizedEventType.includes('chatpresence')) {
+    console.log(`${logPrefix} Processando presença:`, eventType);
     await handlePresenceUpdate(eventData);
     return;
   }
