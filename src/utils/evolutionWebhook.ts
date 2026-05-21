@@ -28,6 +28,33 @@ export function extractEvolutionEventType(event: any): string {
   ).trim();
 }
 
+/** Eventos Evolution GO / Baileys que indicam mudança de conexão (não são mensagens). */
+export function isEvolutionConnectionEvent(eventType: string): boolean {
+  const normalized = eventType.toLowerCase().replace(/\./g, '_');
+  if (!normalized) return false;
+  if (normalized.includes('connection') && normalized.includes('update')) {
+    return true;
+  }
+  return (
+    normalized.includes('pair') ||
+    normalized.includes('logged') ||
+    normalized === 'connected' ||
+    normalized === 'disconnected' ||
+    normalized.includes('disconnect') ||
+    normalized.includes('logout')
+  );
+}
+
+/** Unifica payload de conexão (Evolution GO aninha em `Data`). */
+export function normalizeEvolutionConnectionPayload(data: any): Record<string, unknown> {
+  if (!data || typeof data !== 'object') return {};
+  const inner = (data as { Data?: unknown; data?: unknown }).Data ?? (data as { data?: unknown }).data;
+  if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+    return { ...(inner as Record<string, unknown>), ...data };
+  }
+  return data as Record<string, unknown>;
+}
+
 export function extractEvolutionInstanceName(event: any, eventData?: any): string | null {
   const data = eventData ?? event?.data ?? event;
   const name =

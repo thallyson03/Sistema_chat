@@ -85,8 +85,7 @@ export function emitChannelStatusUpdate(
   if (!io || !data?.channelId) return;
 
   io.to(`channel_${data.channelId}`).emit('channel_status_update', data);
-  if (!phase1Flags.realtimeScopedEventsEnabled) {
-    io.emit('channel_status_update', data);
-  }
+  // Status de canal (QR/conexão) sempre em broadcast — crítico para fechar o modal.
+  io.emit('channel_status_update', data);
 }
 

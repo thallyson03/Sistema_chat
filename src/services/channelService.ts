@@ -546,9 +546,10 @@ export class ChannelService {
     console.log('[ChannelService] Iniciando exclusão de canal:', id);
     
     const channel = await prisma.channel.findUnique({ where: { id } });
-    
+
     if (!channel) {
-      throw new Error('Canal não encontrado');
+      console.log('[ChannelService] Canal já removido (delete idempotente):', id);
+      return;
     }
 
     console.log('[ChannelService] Canal encontrado:', {
@@ -600,13 +601,23 @@ export class ChannelService {
       console.log('[ChannelService] Canal sem instância Evolution para remover');
     }
 
+    const stillExists = await prisma.channel.findUnique({ where: { id }, select: { id: true } });
+    if (!stillExists) {
+      console.log('[ChannelService] Canal já removido antes do delete no banco:', id);
+      return;
+    }
+
     try {
       await prisma.channel.delete({
         where: { id },
       });
-      
+
       console.log('[ChannelService] Canal deletado com sucesso');
     } catch (error: any) {
+      if (error?.code === 'P2025') {
+        console.log('[ChannelService] Canal já removido (P2025):', id);
+        return;
+      }
       console.error('[ChannelService] Erro ao deletar canal:', error.message);
       console.error('[ChannelService] Código:', error.code);
       console.error('[ChannelService] Stack:', error.stack?.substring(0, 500));
@@ -614,7 +625,9 @@ export class ChannelService {
     }
   }
 
-  async getQRCode(channelId: string): Promise<{ qrcode: string | null }> {
+  async getQRCode(
+    channelId: string,
+  ): Promise<{ qrcode: string | null; connected?: boolean; status?: string }> {
     const channel = await this.getChannelByIdRaw(channelId);
     
     if (!channel) {
@@ -642,6 +655,12 @@ export class ChannelService {
     });
 
     try {
+      const liveStatus = await this.getChannelStatus(channelId);
+      if (liveStatus.status === 'ACTIVE') {
+        console.log('[ChannelService] Instância já conectada; QR não necessário');
+        return { qrcode: null, connected: true, status: 'ACTIVE' };
+      }
+
       if (provider === 'evolution_go') {
         const webhookUrl = this.getWebhookUrl(channel.config);
         const connectToken = instanceAuthKey || channel.evolutionInstanceToken || undefined;

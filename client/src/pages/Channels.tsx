@@ -271,15 +271,30 @@ export default function Channels() {
 
       if (editingChannelId) {
         await api.put(`/api/channels/${editingChannelId}`, channelData);
+        setShowModal(false);
+        setEditingChannelId(null);
+        resetForm();
+        fetchChannels();
+        fetchHealthPanel();
+        alert('Canal atualizado com sucesso!');
       } else {
-        await api.post('/api/channels', channelData);
+        const response = await api.post('/api/channels', channelData);
+        const created = response.data;
+        setShowModal(false);
+        setEditingChannelId(null);
+        resetForm();
+        await fetchChannels();
+        fetchHealthPanel();
+        const isBaileys =
+          created?.type === 'WHATSAPP' &&
+          created?.config?.provider !== 'whatsapp_official';
+        if (isBaileys && created?.id) {
+          setSuccessMessage('Canal criado. Abrindo QR Code para conectar o WhatsApp...');
+          await handleViewQRCode(created.id);
+        } else {
+          alert('Canal criado com sucesso!');
+        }
       }
-      setShowModal(false);
-      setEditingChannelId(null);
-      resetForm();
-      fetchChannels();
-      fetchHealthPanel();
-      alert(editingChannelId ? 'Canal atualizado com sucesso!' : 'Canal criado com sucesso!');
     } catch (error: any) {
       alert(error.response?.data?.error || (editingChannelId ? 'Erro ao atualizar canal' : 'Erro ao criar canal'));
     } finally {
@@ -314,10 +329,28 @@ export default function Channels() {
     setShowModal(true);
   };
 
+  const closeQrModal = () => {
+    setCheckingConnection(false);
+    setShowQRModal(false);
+    setQrCode(null);
+    setQrChannelId(null);
+  };
+
   const handleRefreshStatus = async (channelId: string) => {
     try {
-      await api.get(`/api/channels/${channelId}/status`);
-      fetchChannels(); // Recarregar lista
+      const response = await api.get(`/api/channels/${channelId}/status`);
+      const status = String(response.data?.status || '').toLowerCase();
+      const isConnected =
+        status === 'active' ||
+        status === 'open' ||
+        status === 'connected' ||
+        status === 'ready' ||
+        status === 'authenticated';
+      if (qrChannelId === channelId && isConnected) {
+        closeQrModal();
+        setSuccessMessage('WhatsApp conectado com sucesso!');
+      }
+      fetchChannels();
       fetchHealthPanel();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Erro ao atualizar status');
@@ -327,6 +360,13 @@ export default function Channels() {
   const handleViewQRCode = async (channelId: string) => {
     try {
       const response = await api.get(`/api/channels/${channelId}/qrcode`);
+      if (response.data?.connected || response.data?.status === 'ACTIVE') {
+        closeQrModal();
+        await fetchChannels();
+        fetchHealthPanel();
+        setSuccessMessage('WhatsApp já está conectado neste canal.');
+        return;
+      }
       if (response.data.qrcode) {
         setQrChannelId(channelId);
         setQrCode(response.data.qrcode);
@@ -367,13 +407,10 @@ export default function Channels() {
         if (isConnected) {
           console.log('[Channels] ✅ Conexão detectada! Fechando modal...');
           if (intervalId) clearInterval(intervalId);
-          setCheckingConnection(false);
-          setShowQRModal(false);
-          setQrCode(null);
-          setQrChannelId(null);
+          closeQrModal();
           await fetchChannels();
           fetchHealthPanel();
-          alert('✅ WhatsApp conectado com sucesso!');
+          setSuccessMessage('WhatsApp conectado com sucesso!');
         } else {
           console.log(`[Channels] Ainda aguardando conexão... Status atual: ${status}`);
         }

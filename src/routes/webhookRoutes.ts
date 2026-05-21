@@ -24,6 +24,8 @@ import { hybridCacheService } from '../services/hybridCacheService';
 import { extractEvolutionMediaFields } from '../utils/whatsappMedia';
 import {
   extractEvolutionEventType,
+  isEvolutionConnectionEvent,
+  normalizeEvolutionConnectionPayload,
   extractEvolutionInstanceName,
   extractEvolutionInstanceUuid,
   extractEvolutionQrBase64,
@@ -1567,9 +1569,15 @@ async function handleNewMessage(data: any) {
 
 async function handleConnectionUpdate(data: any) {
   try {
-    const instanceName = data.instance || data.instanceName || null;
-    const instanceUuid = data.instanceId ? String(data.instanceId) : null;
-    const state = data.state || data.status || data.connectionStatus;
+    const payload = normalizeEvolutionConnectionPayload(data);
+    const instanceName =
+      (payload.instance as string) ||
+      (payload.instanceName as string) ||
+      null;
+    const instanceUuid = payload.instanceId ? String(payload.instanceId) : null;
+    const state = String(
+      payload.state || payload.status || payload.connectionStatus || '',
+    );
     
     console.log('[Webhook] 📡 Evento de conexão recebido:', {
       instanceName,
@@ -1593,11 +1601,11 @@ async function handleConnectionUpdate(data: any) {
 
     // Normalizar estado - Evolution API pode enviar em diferentes formatos
     const normalizedState = (state || '').toLowerCase();
-    const hasJid = !!(data.jid || data.myJid || data.Jid);
+    const hasJid = !!(payload.jid || payload.myJid || payload.Jid);
     const isConnected =
-      data.connected === true ||
-      data.loggedIn === true ||
-      data.LoggedIn === true ||
+      payload.connected === true ||
+      payload.loggedIn === true ||
+      payload.LoggedIn === true ||
       hasJid ||
       normalizedState === 'open' ||
       normalizedState === 'connected' ||
@@ -2075,6 +2083,12 @@ export async function processEvolutionWebhookPayload(event: any): Promise<void> 
 
   if (normalizedEventType.includes('connection') && normalizedEventType.includes('update')) {
     console.log('📨 Processando como CONNECTION_UPDATE');
+    await handleConnectionUpdate(eventData);
+    return;
+  }
+
+  if (isEvolutionConnectionEvent(eventType)) {
+    console.log('📨 Processando como evento de conexão:', eventType);
     await handleConnectionUpdate(eventData);
     return;
   }
