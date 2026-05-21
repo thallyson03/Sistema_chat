@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { randomUUID } from 'crypto';
 import { providerResilienceService } from '../services/providerResilienceService';
 
 function extractApiError(error: any, fallback: string): string {
@@ -108,23 +109,26 @@ class EvolutionGoApiClient {
   }
 
   /**
-   * Cria instância na Evolution GO (body oficial: { name }).
+   * Cria instância na Evolution GO.
+   * Header apikey = GLOBAL_API_KEY; body exige name + token (UUID da instância, não a global).
    * Retorna UUID em instanceUuid — deve ser salvo em channel.evolutionInstanceId.
    */
   async createInstance(instanceName: string, apiKey?: string, _qrcode = true) {
     const globalKey = this.resolveGlobalApiKey(apiKey);
+    const instanceToken = randomUUID();
 
     console.log('[EvolutionGO] Criando instância:', {
       name: instanceName,
       baseURL: this.baseURL,
       hasApiKey: !!globalKey,
+      hasInstanceToken: true,
     });
 
     const startedAt = Date.now();
     try {
       const response = await this.client.post(
         '/instance/create',
-        { name: instanceName },
+        { name: instanceName, token: instanceToken },
         {
           headers: this.getGlobalHeaders(globalKey),
           timeout: resolveGoTimeoutMs('instance'),

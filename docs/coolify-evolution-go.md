@@ -105,10 +105,13 @@ https://evo-go.SEU_DOMINIO/swagger/index.html
 curl -sS -X POST "https://evo-go.SEU_DOMINIO/instance/create" \
   -H "Content-Type: application/json" \
   -H "apikey: SUA_GLOBAL_API_KEY" \
-  -d '{"name":"teste-crm"}'
+  -d "{\"name\":\"teste-crm\",\"token\":\"00000000-0000-4000-8000-000000000001\"}"
 ```
 
-Resposta esperada (200): `data.id` (UUID), `data.name`, `data.token`. O CRM usa exatamente esse formato.
+- Header `apikey` = `GLOBAL_API_KEY` (admin).
+- Body `token` = UUID **da instância** (obrigatório na imagem atual; não é a global).
+
+Resposta esperada (200): `data.id` (UUID), `data.name`, `data.token`. O CRM gera o `token` automaticamente.
 
 ### QR Code
 
