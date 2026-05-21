@@ -24,6 +24,7 @@ import NoteNotificationCard, {
   NoteNotificationData,
 } from '../components/chat/NoteNotificationCard';
 import { useEvolutionOutboundPresence } from '../hooks/useEvolutionOutboundPresence';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 
 // Função para gerar avatar com iniciais
 const getAvatarUrl = (name: string, size: number = 40): string => {
@@ -230,8 +231,6 @@ export default function Conversations() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showMoreStatusFilters, setShowMoreStatusFilters] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1266,217 +1265,69 @@ export default function Conversations() {
     }
   };
 
-  const startRecording = async () => {
-    if (!ensureBotDisabledForManualInteraction()) return;
-    try {
-      // Verificar se a API está disponível
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert('Seu navegador não suporta gravação de áudio. Use Chrome, Firefox ou Edge.');
-        return;
+  const voiceRecorder = useVoiceRecorder({
+    onError: (message) => setSendError(message),
+    onSend: async (audioFile, { mimeType }) => {
+      if (!selectedConversation) {
+        throw new Error('Nenhuma conversa selecionada');
       }
-
-      // Verificar permissões primeiro
-      try {
-        const permissionResult = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-        if (permissionResult.state === 'denied') {
-          alert('Permissão de microfone negada. Por favor, permita o acesso ao microfone nas configurações do navegador.');
-          return;
-        }
-      } catch (permError) {
-        // Alguns navegadores não suportam permissions.query, continuar normalmente
-        console.log('Não foi possível verificar permissões:', permError);
+      if (selectedConversation.inBot) {
+        throw new Error(BOT_ACTIVE_BLOCK_MESSAGE);
       }
-
-      // Tentar acessar o microfone
-      let stream: MediaStream;
+      const audioBlockReason = getMessagingWindowBlockReason(false);
+      if (audioBlockReason) {
+        setSendError(audioBlockReason);
+        throw new Error(audioBlockReason);
+      }
+      setSendError(null);
+      setUploadingFile(true);
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          }
+        const formData = new FormData();
+        formData.append('file', audioFile);
+        const uploadResponse = await api.post('/api/media/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
         });
-      } catch (mediaError: any) {
-        let errorMessage = 'Erro ao acessar o microfone.';
-        
-        if (mediaError.name === 'NotAllowedError' || mediaError.name === 'PermissionDeniedError') {
-          errorMessage = 'Permissão de microfone negada. Por favor, permita o acesso ao microfone nas configurações do navegador e recarregue a página.';
-        } else if (mediaError.name === 'NotFoundError' || mediaError.name === 'DevicesNotFoundError') {
-          errorMessage = 'Nenhum microfone encontrado. Verifique se há um microfone conectado ao seu computador.';
-        } else if (mediaError.name === 'NotReadableError' || mediaError.name === 'TrackStartError') {
-          errorMessage = 'O microfone está sendo usado por outro aplicativo. Feche outros aplicativos que possam estar usando o microfone.';
-        } else if (mediaError.name === 'OverconstrainedError' || mediaError.name === 'ConstraintNotSatisfiedError') {
-          errorMessage = 'As configurações do microfone não são suportadas. Tente usar outro navegador.';
-        } else {
-          errorMessage = `Erro ao acessar o microfone: ${mediaError.message || mediaError.name}`;
-        }
-        
-        alert(errorMessage);
-        console.error('Erro ao acessar microfone:', mediaError);
-        return;
-      }
-
-      // Verificar se MediaRecorder está disponível
-      if (!window.MediaRecorder) {
-        alert('Seu navegador não suporta gravação de áudio. Use Chrome, Firefox ou Edge atualizado.');
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-
-      // Criar MediaRecorder com fallback de tipos MIME
-      // Priorizar OGG/OPUS para compatibilidade com WhatsApp PTT (push-to-talk)
-      let recorder: MediaRecorder;
-      const mimeTypes = [
-        'audio/ogg;codecs=opus',  // Priorizar OGG para PTT no WhatsApp
-        'audio/webm;codecs=opus',  // Fallback para WEBM
-        'audio/webm',
-        'audio/mp4',
-        'audio/wav',
-      ];
-
-      let selectedMimeType = '';
-      for (const mimeType of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(mimeType)) {
-          selectedMimeType = mimeType;
-          console.log('🎤 Tipo de áudio selecionado para gravação:', mimeType);
-          break;
-        }
-      }
-
-      if (!selectedMimeType) {
-        // Usar o tipo padrão do navegador
-        recorder = new MediaRecorder(stream);
-      } else {
-        recorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
-      }
-
-      const chunks: Blob[] = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
-      recorder.onerror = (e) => {
-        console.error('Erro durante a gravação:', e);
-        alert('Erro durante a gravação. Tente novamente.');
-        setRecording(false);
-        setMediaRecorder(null);
-        stream.getTracks().forEach((track) => track.stop());
-      };
-
-      recorder.onstop = async () => {
-        try {
-          if (chunks.length === 0) {
-            alert('Nenhum áudio foi gravado. Tente novamente.');
-            stream.getTracks().forEach((track) => track.stop());
-            return;
-          }
-
-          const audioBlob = new Blob(chunks, { type: selectedMimeType || 'audio/webm' });
-          
-          // Verificar se o blob tem conteúdo
-          if (audioBlob.size === 0) {
-            alert('O áudio gravado está vazio. Tente novamente.');
-            stream.getTracks().forEach((track) => track.stop());
-            return;
-          }
-
-          // Determinar extensão baseada no MIME type
-          let extension = 'ogg'; // Padrão OGG para compatibilidade com WhatsApp PTT
-          if (selectedMimeType.includes('ogg')) extension = 'ogg';
-          else if (selectedMimeType.includes('webm')) extension = 'webm';
-          else if (selectedMimeType.includes('mp4')) extension = 'm4a';
-          else if (selectedMimeType.includes('wav')) extension = 'wav';
-
-          const audioFile = new File([audioBlob], `audio.${extension}`, { type: selectedMimeType || 'audio/ogg;codecs=opus' });
-          
-          // Fazer upload do áudio
-          setUploadingFile(true);
-          try {
-            const formData = new FormData();
-            formData.append('file', audioFile);
-
-            const uploadResponse = await api.post('/api/media/upload', formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data',
-              },
-            });
-
-            const { url, mimetype } = uploadResponse.data;
-            
-            if (!selectedConversation) {
-              throw new Error('Nenhuma conversa selecionada para envio de áudio');
-            }
-            if (selectedConversation.inBot) {
-              alert(BOT_ACTIVE_BLOCK_MESSAGE);
-              return;
-            }
-
-            const audioBlockReason = getMessagingWindowBlockReason(false);
-            if (audioBlockReason) {
-              setSendError(audioBlockReason);
-              return;
-            }
-            setSendError(null);
-
-            // Enviar mensagem de áudio (incluindo mimetype)
-            const audioResponse = await api.post('/api/messages', {
-              conversationId: selectedConversation.id,
-              content: '',
-              type: 'AUDIO',
-              mediaUrl: url,
-              // O backend já converte para OGG e envia para a Meta como .ogg,
-              // então mantemos um nome coerente aqui.
-              fileName: 'audio.ogg',
-              caption: 'Áudio',
-              mimetype: mimetype, // Passar mimetype para o backend usar no envio
-            });
-
-            if (audioResponse.status === 201 && audioResponse.data?.id) {
-              appendMessageToChat(audioResponse.data as Message);
-              if ((audioResponse.data.status || '').toUpperCase() === 'FAILED') {
-                setSendError(
-                  audioResponse.data.metadata?.sendError?.message ||
-                    'Não foi possível enviar o áudio pelo WhatsApp.',
-                );
-              }
-            }
-            queueConversationsRefresh(250);
-          } catch (error: any) {
-            console.error('Erro ao fazer upload do áudio:', error);
+        const { url, mimetype } = uploadResponse.data;
+        const audioResponse = await api.post('/api/messages', {
+          conversationId: selectedConversation.id,
+          content: '',
+          type: 'AUDIO',
+          mediaUrl: url,
+          fileName: 'audio.ogg',
+          caption: 'Áudio',
+          mimetype: mimetype || mimeType,
+        });
+        if (audioResponse.status === 201 && audioResponse.data?.id) {
+          appendMessageToChat(audioResponse.data as Message);
+          if ((audioResponse.data.status || '').toUpperCase() === 'FAILED') {
             setSendError(
-              error.response?.data?.error || error.message || 'Erro ao enviar áudio.',
+              audioResponse.data.metadata?.sendError?.message ||
+                'Não foi possível enviar o áudio pelo WhatsApp.',
             );
-          } finally {
-            setUploadingFile(false);
           }
-        } catch (error: any) {
-          console.error('Erro ao processar áudio gravado:', error);
-          alert('Erro ao processar o áudio gravado. Tente novamente.');
-        } finally {
-          stream.getTracks().forEach((track) => track.stop());
         }
-      };
+        queueConversationsRefresh(250);
+      } finally {
+        setUploadingFile(false);
+      }
+    },
+  });
 
-      recorder.start();
-      setMediaRecorder(recorder);
-      setRecording(true);
-    } catch (error: any) {
-      console.error('Erro inesperado ao iniciar gravação:', error);
-      alert(`Erro inesperado: ${error.message || 'Erro desconhecido'}. Tente novamente.`);
+  const handleStartVoiceRecording = () => {
+    if (!ensureBotDisabledForManualInteraction()) return;
+    const blockReason = getMessagingWindowBlockReason(false);
+    if (blockReason) {
+      setSendError(blockReason);
+      return;
     }
+    setSendError(null);
+    void voiceRecorder.start();
   };
 
-  const stopRecording = () => {
-    if (mediaRecorder && recording) {
-      mediaRecorder.stop();
-      setRecording(false);
-      setMediaRecorder(null);
-    }
-  };
+  useEffect(() => {
+    voiceRecorder.cancelAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset ao trocar conversa
+  }, [selectedConversation?.id]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1683,7 +1534,7 @@ export default function Conversations() {
       !selectedConversation?.inBot &&
       !isMessagingInputLocked,
     messageInput,
-    recording,
+    recording: voiceRecorder.isRecordingLive,
   });
 
   if (loading) {
@@ -3168,14 +3019,101 @@ export default function Conversations() {
                 </div>
               )}
 
+              {(voiceRecorder.isRecordingSession || voiceRecorder.preview) && (
+                <motion.div
+                  className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-surface-container-low px-3 py-2"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  {voiceRecorder.isRecordingSession ? (
+                    <>
+                      <span
+                        className={`inline-flex h-2 w-2 rounded-full ${voiceRecorder.isPaused ? 'bg-amber-500' : 'bg-red-500 animate-pulse'}`}
+                        aria-hidden
+                      />
+                      <span className="text-xs font-semibold text-on-surface">
+                        {voiceRecorder.isPaused ? 'Gravação pausada' : 'Gravando'} · {voiceRecorder.formatElapsed()}
+                      </span>
+                      <div className="ml-auto flex items-center gap-1">
+                        <IconButton
+                          type="button"
+                          onClick={() => voiceRecorder.cancelAll()}
+                          icon={<span className="material-symbols-outlined text-lg">close</span>}
+                          tooltip="Cancelar gravação"
+                          className="!h-8 !w-8 !border-0 !bg-transparent"
+                        />
+                        {voiceRecorder.supportsPause && (
+                          <IconButton
+                            type="button"
+                            onClick={() =>
+                              voiceRecorder.isPaused ? voiceRecorder.resume() : voiceRecorder.pause()
+                            }
+                            icon={
+                              <span className="material-symbols-outlined text-lg">
+                                {voiceRecorder.isPaused ? 'play_arrow' : 'pause'}
+                              </span>
+                            }
+                            tooltip={voiceRecorder.isPaused ? 'Retomar gravação' : 'Pausar gravação'}
+                            className="!h-8 !w-8 !border-0 !bg-transparent"
+                          />
+                        )}
+                        <IconButton
+                          type="button"
+                          onClick={() => voiceRecorder.finish()}
+                          icon={<span className="material-symbols-outlined text-lg text-primary">check</span>}
+                          tooltip="Concluir e ouvir antes de enviar"
+                          className="!h-8 !w-8 !border-0 !bg-transparent"
+                        />
+                      </div>
+                    </>
+                  ) : voiceRecorder.preview ? (
+                    <>
+                      <IconButton
+                        type="button"
+                        onClick={() => voiceRecorder.togglePreviewPlayback()}
+                        icon={
+                          <span className="material-symbols-outlined text-xl text-primary">
+                            {voiceRecorder.previewPlaying ? 'pause' : 'play_arrow'}
+                          </span>
+                        }
+                        tooltip={voiceRecorder.previewPlaying ? 'Pausar reprodução' : 'Ouvir gravação'}
+                        className="!h-9 !w-9 !border-primary/30 !bg-primary-container/40"
+                      />
+                      <span className="text-xs font-semibold text-on-surface">Áudio pronto — ouça antes de enviar</span>
+                      <div className="ml-auto flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => voiceRecorder.discardPreview()}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-on-surface-variant hover:bg-surface-variant"
+                        >
+                          Descartar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void voiceRecorder.sendPreview()}
+                          disabled={voiceRecorder.sending || uploadingFile}
+                          className="rounded-lg bg-primary px-3 py-1 text-[11px] font-bold text-on-primary disabled:opacity-50"
+                        >
+                          {voiceRecorder.sending ? 'Enviando…' : 'Enviar áudio'}
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+                </motion.div>
+              )}
+
               <motion.form
                 onSubmit={(e) => {
-                  if (recording) {
-                    e.preventDefault();
-                    stopRecording();
-                  } else {
-                    handleSendMessage(e);
+                  e.preventDefault();
+                  if (voiceRecorder.isRecordingSession) {
+                    voiceRecorder.finish();
+                    return;
                   }
+                  if (voiceRecorder.preview) {
+                    void voiceRecorder.sendPreview();
+                    return;
+                  }
+                  handleSendMessage(e);
                 }}
                 className="flex gap-2 items-center"
                 initial={{ opacity: 0, y: 20 }}
@@ -3222,11 +3160,11 @@ export default function Conversations() {
                 />
 
                 {/* Botão Gravar Áudio */}
-                {!recording ? (
+                {!voiceRecorder.isRecordingSession && !voiceRecorder.preview ? (
                   <IconButton
                     type="button"
-                    onClick={startRecording}
-                    disabled={sending || uploadingFile || isMessagingInputLocked}
+                    onClick={handleStartVoiceRecording}
+                    disabled={sending || uploadingFile || voiceRecorder.sending || isMessagingInputLocked}
                     icon={<span className="material-symbols-outlined text-xl text-primary-fixed-dim">mic</span>}
                     tooltip={
                       isMessagingInputLocked
@@ -3235,43 +3173,48 @@ export default function Conversations() {
                     }
                     className="!border !border-[rgba(63,73,69,0.2)] !bg-transparent !text-primary-fixed-dim hover:!bg-emerald-900/25 focus:!ring-primary/30"
                   />
-                ) : (
+                ) : voiceRecorder.isRecordingSession ? (
                   <motion.button
                     type="button"
-                    onClick={stopRecording}
-                    className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center text-white"
-                    title="Parar gravação"
-                    animate={{
-                      scale: [1, 1.1, 1],
-                    }}
+                    onClick={() => voiceRecorder.finish()}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-red-600 text-white"
+                    title="Concluir gravação e ouvir"
+                    animate={{ scale: voiceRecorder.isPaused ? 1 : [1, 1.1, 1] }}
                     transition={{
                       duration: 1,
-                      repeat: Infinity,
-                      ease: "easeInOut",
+                      repeat: voiceRecorder.isPaused ? 0 : Infinity,
+                      ease: 'easeInOut',
                     }}
-                    whileHover={{ scale: 1.15 }}
-                    whileTap={{ scale: 0.95 }}
                   >
-                    <span className="text-xl">⏹</span>
+                    <span className="material-symbols-outlined text-xl">stop</span>
                   </motion.button>
-                )}
+                ) : null}
 
                 <motion.input
                   type="text"
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   placeholder={
-                    recording
-                      ? 'Gravando áudio...'
-                      : uploadingFile
-                        ? 'Enviando arquivo...'
-                        : pendingTemplate
-                          ? 'Texto do template...'
-                          : isMessagingInputLocked
-                            ? 'Janela 24h encerrada — use template'
-                            : 'Digite sua mensagem...'
+                    voiceRecorder.isRecordingSession
+                      ? voiceRecorder.isPaused
+                        ? 'Gravação pausada...'
+                        : 'Gravando áudio...'
+                      : voiceRecorder.preview
+                        ? 'Ouça o áudio acima e clique em Enviar áudio'
+                        : uploadingFile
+                          ? 'Enviando arquivo...'
+                          : pendingTemplate
+                            ? 'Texto do template...'
+                            : isMessagingInputLocked
+                              ? 'Janela 24h encerrada — use template'
+                              : 'Digite sua mensagem...'
                   }
-                  disabled={recording || uploadingFile || (isMessagingInputLocked && !pendingTemplate)}
+                  disabled={
+                    voiceRecorder.isRecordingSession ||
+                    !!voiceRecorder.preview ||
+                    uploadingFile ||
+                    (isMessagingInputLocked && !pendingTemplate)
+                  }
                   className="min-w-0 flex-1 rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-lowest px-4 py-2.5 text-sm text-on-surface outline-none transition focus:border-primary/40 focus:ring-1 focus:ring-primary/30 disabled:opacity-60"
                   whileFocus={{ scale: 1.01 }}
                 />
@@ -3279,9 +3222,13 @@ export default function Conversations() {
                 <motion.button
                   type="submit"
                   disabled={
-                    (!messageInput.trim() && !recording && !uploadingFile) ||
+                    (!messageInput.trim() &&
+                      !voiceRecorder.isRecordingSession &&
+                      !voiceRecorder.preview &&
+                      !uploadingFile) ||
                     sending ||
                     uploadingFile ||
+                    voiceRecorder.sending ||
                     (isMessagingInputLocked && !pendingTemplate)
                   }
                   className="flex min-w-[3rem] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-on-primary shadow-emerald-send transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 active-gradient-emerald hover:brightness-110"
@@ -3292,9 +3239,13 @@ export default function Conversations() {
                     <span className="max-w-[4.5rem] truncate text-center text-[11px] font-bold leading-tight">
                       Enviando…
                     </span>
-                  ) : recording ? (
+                  ) : voiceRecorder.isRecordingSession ? (
                     <span className="max-w-[4.5rem] truncate text-center text-[11px] font-bold leading-tight">
-                      Gravando…
+                      {voiceRecorder.isPaused ? 'Pausado' : 'Gravando…'}
+                    </span>
+                  ) : voiceRecorder.preview ? (
+                    <span className="max-w-[4.5rem] truncate text-center text-[11px] font-bold leading-tight">
+                      Enviar
                     </span>
                   ) : (
                     <span
