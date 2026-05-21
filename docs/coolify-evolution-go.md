@@ -104,11 +104,11 @@ https://evo-go.SEU_DOMINIO/swagger/index.html
 ```bash
 curl -sS -X POST "https://evo-go.SEU_DOMINIO/instance/create" \
   -H "Content-Type: application/json" \
-  -H "apikey: SUA_API_KEY" \
-  -d '{"instanceName":"teste-crm","integration":"WHATSAPP-BAILEYS"}'
+  -H "apikey: SUA_GLOBAL_API_KEY" \
+  -d '{"name":"teste-crm"}'
 ```
 
-Se a API retornar erro de campo, confira no Swagger se o body usa `name` em vez de `instanceName` (varia por versão da imagem).
+Resposta esperada (200): `data.id` (UUID), `data.name`, `data.token`. O CRM usa exatamente esse formato.
 
 ### QR Code
 

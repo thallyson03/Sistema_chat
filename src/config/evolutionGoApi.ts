@@ -4,13 +4,27 @@ import { providerResilienceService } from '../services/providerResilienceService
 function extractApiError(error: any, fallback: string): string {
   const data = error?.response?.data;
   if (typeof data === 'string') return data;
+  // Formato Evolution GO: { success: false, error: { code, message } }
   if (data?.error?.message) return String(data.error.message);
+  if (data?.error?.code && data?.error?.message) {
+    return `${data.error.code}: ${data.error.message}`;
+  }
   if (data?.message) return String(data.message);
   if (data?.error && typeof data.error === 'string') return data.error;
   const status = error?.response?.status;
   const url = error?.config?.url;
   const base = error?.message || fallback;
   return status ? `${base} (HTTP ${status}${url ? ` ${url}` : ''})` : base;
+}
+
+function logGoApiError(context: string, error: any): void {
+  const status = error?.response?.status;
+  const data = error?.response?.data;
+  console.error(`[EvolutionGO] ${context}:`, {
+    status,
+    message: extractApiError(error, context),
+    response: data ?? null,
+  });
 }
 
 function unwrapData<T = any>(payload: any): T {
@@ -107,38 +121,71 @@ class EvolutionGoApiClient {
     });
 
     const startedAt = Date.now();
-    const response = await this.client.post(
-      '/instance/create',
-      { name: instanceName },
-      {
-        headers: this.getGlobalHeaders(globalKey),
-        timeout: resolveGoTimeoutMs('instance'),
-      },
-    );
-    console.log('[EvolutionGO] /instance/create concluído em', `${Date.now() - startedAt}ms`);
-
-    const data = unwrapData(response.data);
-    const normalized = this.normalizeInstanceRecord(data, instanceName);
-
-    if (!normalized.instanceUuid) {
-      throw new Error(
-        'Evolution GO não retornou o id (UUID) da instância. Verifique EVOLUTION_GO_API_URL e a versão da API.',
+    try {
+      const response = await this.client.post(
+        '/instance/create',
+        { name: instanceName },
+        {
+          headers: this.getGlobalHeaders(globalKey),
+          timeout: resolveGoTimeoutMs('instance'),
+        },
       );
-    }
+      console.log('[EvolutionGO] /instance/create concluído em', `${Date.now() - startedAt}ms`);
 
-    console.log('[EvolutionGO] Instância criada:', {
-      instanceUuid: normalized.instanceUuid,
-      instanceName: normalized.instanceName,
-      hasToken: !!normalized.token,
-    });
+      const data = unwrapData(response.data);
+      const normalized = this.normalizeInstanceRecord(data, instanceName);
 
-    return {
-      instance: {
-        instanceName: normalized.instanceName,
+      if (!normalized.instanceUuid) {
+        throw new Error(
+          'Evolution GO não retornou o id (UUID) da instância. Verifique EVOLUTION_GO_API_URL e a versão da API.',
+        );
+      }
+
+      console.log('[EvolutionGO] Instância criada:', {
         instanceUuid: normalized.instanceUuid,
-        token: normalized.token,
-      },
-    };
+        instanceName: normalized.instanceName,
+        hasToken: !!normalized.token,
+      });
+
+      return {
+        instance: {
+          instanceName: normalized.instanceName,
+          instanceUuid: normalized.instanceUuid,
+          token: normalized.token,
+        },
+      };
+    } catch (error: any) {
+      logGoApiError('Erro em /instance/create', error);
+      const existing = await this.findInstanceByName(instanceName, globalKey);
+      if (existing?.instanceUuid) {
+        console.log('[EvolutionGO] Reutilizando instância existente:', existing.instanceUuid);
+        return {
+          instance: {
+            instanceName: existing.instanceName,
+            instanceUuid: existing.instanceUuid,
+            token: existing.token,
+          },
+        };
+      }
+      throw new Error(extractApiError(error, 'Erro ao criar instância na Evolution GO'));
+    }
+  }
+
+  private async findInstanceByName(instanceName: string, apiKey?: string) {
+    try {
+      const response = await this.client.get('/instance/all', {
+        headers: this.getGlobalHeaders(apiKey),
+      });
+      const data = unwrapData(response.data);
+      const list = Array.isArray(data) ? data : [];
+      const found = list.find((row: any) => {
+        const n = this.normalizeInstanceRecord(row, '');
+        return n.instanceName === instanceName;
+      });
+      return found ? this.normalizeInstanceRecord(found, instanceName) : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
