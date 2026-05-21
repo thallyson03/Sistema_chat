@@ -1,6 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
 import { providerResilienceService } from '../services/providerResilienceService';
-import { EVOLUTION_WEBHOOK_EVENTS } from '../utils/evolutionWebhook';
 
 function extractApiError(error: any, fallback: string): string {
   const data = error?.response?.data;
@@ -8,7 +7,10 @@ function extractApiError(error: any, fallback: string): string {
   if (data?.error?.message) return String(data.error.message);
   if (data?.message) return String(data.message);
   if (data?.error && typeof data.error === 'string') return data.error;
-  return error?.message || fallback;
+  const status = error?.response?.status;
+  const url = error?.config?.url;
+  const base = error?.message || fallback;
+  return status ? `${base} (HTTP ${status}${url ? ` ${url}` : ''})` : base;
 }
 
 function unwrapData<T = any>(payload: any): T {
@@ -21,7 +23,7 @@ class EvolutionGoApiClient {
   private apiKey: string;
 
   constructor() {
-    this.baseURL = process.env.EVOLUTION_GO_API_URL || 'http://localhost:8080';
+    this.baseURL = (process.env.EVOLUTION_GO_API_URL || 'http://localhost:8080').replace(/\/$/, '');
     this.apiKey = process.env.EVOLUTION_GO_API_KEY || '';
 
     this.client = axios.create({
@@ -31,98 +33,157 @@ class EvolutionGoApiClient {
     });
   }
 
-  private getHeaders(apiKeyOrToken?: string) {
+  private resolveGlobalApiKey(apiKey?: string): string {
+    const key = apiKey || this.apiKey;
+    if (!key) {
+      throw new Error(
+        'EVOLUTION_GO_API_KEY não configurada no CRM. Defina a variável no Coolify do backend.',
+      );
+    }
+    return key;
+  }
+
+  private getGlobalHeaders(apiKey?: string) {
+    return {
+      apikey: this.resolveGlobalApiKey(apiKey),
+      'Content-Type': 'application/json',
+    };
+  }
+
+  /** instanceId = UUID retornado em /instance/create */
+  private getInstanceHeaders(instanceUuid: string, apiKeyOrToken?: string) {
     return {
       apikey: apiKeyOrToken || this.apiKey,
+      instanceId: instanceUuid,
       'Content-Type': 'application/json',
     };
   }
 
   private normalizeInstanceRecord(raw: any, fallbackName: string) {
     const inst = raw?.instance ?? raw;
-    const instanceName =
-      inst?.instanceName ?? inst?.name ?? inst?.id ?? fallbackName;
+    const instanceUuid = inst?.id ? String(inst.id) : null;
+    const instanceName = String(inst?.name ?? inst?.instanceName ?? fallbackName);
     const token = inst?.token ?? raw?.token ?? null;
     const connected =
       inst?.connected === true ||
       String(inst?.connectionStatus || inst?.status || '').toLowerCase() === 'open';
-    return { instanceName: String(instanceName), token, connected, raw: inst };
+    const qrcode =
+      inst?.qrcode ??
+      inst?.Qrcode ??
+      raw?.qrcode ??
+      raw?.Qrcode ??
+      null;
+    return { instanceUuid, instanceName, token, connected, qrcode, raw: inst };
   }
 
+  /**
+   * Cria instância na Evolution GO (body oficial: { name }).
+   * Retorna UUID em instanceUuid — deve ser salvo em channel.evolutionInstanceId.
+   */
   async createInstance(instanceName: string, apiKey?: string, _qrcode = true) {
-    const bodies = [
-      { instanceName, integration: 'WHATSAPP-BAILEYS' },
+    const globalKey = this.resolveGlobalApiKey(apiKey);
+
+    console.log('[EvolutionGO] Criando instância:', {
+      name: instanceName,
+      baseURL: this.baseURL,
+      hasApiKey: !!globalKey,
+    });
+
+    const response = await this.client.post(
+      '/instance/create',
       { name: instanceName },
-      { instanceName, name: instanceName },
-    ];
+      { headers: this.getGlobalHeaders(globalKey) },
+    );
 
-    let lastError: any;
-    for (const body of bodies) {
-      try {
-        const response = await this.client.post('/instance/create', body, {
-          headers: this.getHeaders(apiKey),
-        });
-        const normalized = this.normalizeInstanceRecord(unwrapData(response.data), instanceName);
-        return {
-          instance: {
-            instanceName: normalized.instanceName,
-            token: normalized.token,
-          },
-        };
-      } catch (error: any) {
-        lastError = error;
-      }
+    const data = unwrapData(response.data);
+    const normalized = this.normalizeInstanceRecord(data, instanceName);
+
+    if (!normalized.instanceUuid) {
+      throw new Error(
+        'Evolution GO não retornou o id (UUID) da instância. Verifique EVOLUTION_GO_API_URL e a versão da API.',
+      );
     }
 
-    throw new Error(extractApiError(lastError, 'Erro ao criar instância na Evolution GO'));
+    console.log('[EvolutionGO] Instância criada:', {
+      instanceUuid: normalized.instanceUuid,
+      instanceName: normalized.instanceName,
+      hasToken: !!normalized.token,
+    });
+
+    return {
+      instance: {
+        instanceName: normalized.instanceName,
+        instanceUuid: normalized.instanceUuid,
+        token: normalized.token,
+      },
+    };
   }
 
-  async getQRCode(instanceName: string, apiKey?: string) {
-    const paths = [
-      `/instance/${encodeURIComponent(instanceName)}/qrcode`,
-      `/instance/connect/${encodeURIComponent(instanceName)}`,
-    ];
-
-    let lastError: any;
-    for (const path of paths) {
-      try {
-        const response = await this.client.get(path, { headers: this.getHeaders(apiKey) });
-        const data = unwrapData(response.data);
-        const qrcode =
-          data?.qrcode?.base64 ??
-          data?.qrcode ??
-          data?.base64 ??
-          (typeof data?.qrcode === 'string' ? data.qrcode : null);
-        return { qrcode, base64: qrcode, ...data };
-      } catch (error: any) {
-        lastError = error;
-      }
+  /**
+   * Conecta instância e registra webhook (documentação Evolution GO).
+   */
+  async connectInstance(instanceUuid: string, webhookUrl: string | null, apiKey?: string) {
+    const globalKey = this.resolveGlobalApiKey(apiKey);
+    const body: Record<string, unknown> = {
+      subscribe: ['ALL'],
+      immediate: true,
+    };
+    if (webhookUrl) {
+      body.webhookUrl = webhookUrl;
     }
 
-    throw new Error(extractApiError(lastError, 'Erro ao obter QR Code na Evolution GO'));
+    console.log('[EvolutionGO] Conectando instância:', {
+      instanceUuid,
+      webhookUrl: webhookUrl || '(sem webhook)',
+    });
+
+    const response = await this.client.post('/instance/connect', body, {
+      headers: {
+        ...this.getGlobalHeaders(globalKey),
+        instanceId: instanceUuid,
+      },
+    });
+
+    return unwrapData(response.data);
   }
 
-  async getInstanceStatus(instanceName: string, apiKey?: string) {
-    const listPaths = ['/instance/get-all-instances', '/instance/fetchInstances'];
+  async getQRCode(instanceUuid: string, apiKeyOrToken?: string) {
+    const response = await this.client.get('/instance/qr', {
+      headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken),
+    });
+    const data = unwrapData(response.data);
+    const qrcode =
+      data?.Qrcode ??
+      data?.qrcode ??
+      data?.qrCode ??
+      data?.base64 ??
+      (typeof data === 'string' ? data : null);
+    return { qrcode, base64: qrcode, ...data };
+  }
+
+  async getInstanceStatus(instanceUuid: string, apiKey?: string) {
+    const globalKey = this.resolveGlobalApiKey(apiKey);
 
     try {
-      for (const path of listPaths) {
-        try {
-          const response = await this.client.get(path, { headers: this.getHeaders(apiKey) });
-          const data = unwrapData(response.data);
-          const list = Array.isArray(data) ? data : Array.isArray(data?.instances) ? data.instances : [data];
-          const found = list.find((row: any) => {
-            const n = this.normalizeInstanceRecord(row, '');
-            return n.instanceName === instanceName;
-          });
-          if (found) {
-            const n = this.normalizeInstanceRecord(found, instanceName);
-            const status = n.connected ? 'open' : 'close';
-            return { status, token: n.token, qrcode: found?.qrcode?.base64 ?? found?.qrcode ?? null };
-          }
-        } catch {
-          // tenta próximo path
-        }
+      const response = await this.client.get('/instance/all', {
+        headers: this.getGlobalHeaders(globalKey),
+      });
+      const data = unwrapData(response.data);
+      const list = Array.isArray(data) ? data : [];
+
+      const found = list.find((row: any) => {
+        const n = this.normalizeInstanceRecord(row, '');
+        return n.instanceUuid === instanceUuid || n.instanceName === instanceUuid;
+      });
+
+      if (found) {
+        const n = this.normalizeInstanceRecord(found, instanceUuid);
+        const status = n.connected ? 'open' : 'close';
+        return {
+          status,
+          token: n.token,
+          qrcode: n.qrcode,
+        };
       }
 
       return { status: 'NOT_FOUND' };
@@ -131,71 +192,103 @@ class EvolutionGoApiClient {
     }
   }
 
-  async sendMessage(instanceName: string, number: string, text: string, apiKey?: string) {
-    const payload = { number, text };
-    const response = await providerResilienceService.execute('evolution_go', 'sendText', async () =>
-      this.client.post(`/message/sendText/${instanceName}`, payload, {
-        headers: this.getHeaders(apiKey),
+  private async postInstanceMessage(
+    instanceUuid: string,
+    path: string,
+    payload: Record<string, unknown>,
+    apiKeyOrToken?: string,
+    operation = 'send',
+  ) {
+    const response = await providerResilienceService.execute('evolution_go', operation, async () =>
+      this.client.post(path, payload, {
+        headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken),
       }),
     );
     return response.data;
   }
 
-  async sendImage(instanceName: string, number: string, imageUrl: string, caption?: string, apiKey?: string) {
-    const payload = { number, mediatype: 'image', media: imageUrl, caption: caption || '' };
-    const response = await providerResilienceService.execute('evolution_go', 'sendImage', async () =>
-      this.client.post(`/message/sendMedia/${instanceName}`, payload, {
-        headers: this.getHeaders(apiKey),
-      }),
+  async sendMessage(instanceUuid: string, number: string, text: string, apiKeyOrToken?: string) {
+    const cleanNumber = String(number).replace(/\D/g, '');
+    return this.postInstanceMessage(
+      instanceUuid,
+      '/send/text',
+      { number: cleanNumber, text },
+      apiKeyOrToken,
+      'sendText',
     );
-    return response.data;
   }
 
-  async sendVideo(instanceName: string, number: string, videoUrl: string, caption?: string, apiKey?: string) {
-    const payload = { number, mediatype: 'video', media: videoUrl, caption: caption || '' };
-    const response = await providerResilienceService.execute('evolution_go', 'sendVideo', async () =>
-      this.client.post(`/message/sendMedia/${instanceName}`, payload, {
-        headers: this.getHeaders(apiKey),
-      }),
+  async sendImage(
+    instanceUuid: string,
+    number: string,
+    imageUrl: string,
+    caption?: string,
+    apiKeyOrToken?: string,
+  ) {
+    const cleanNumber = String(number).replace(/\D/g, '');
+    return this.postInstanceMessage(
+      instanceUuid,
+      '/send/media',
+      { number: cleanNumber, url: imageUrl, type: 'image', caption: caption || '' },
+      apiKeyOrToken,
+      'sendImage',
     );
-    return response.data;
   }
 
-  async sendAudio(instanceName: string, number: string, audioUrl: string, apiKey?: string) {
-    const payload = { number, audio: audioUrl };
-    const response = await providerResilienceService.execute('evolution_go', 'sendAudio', async () =>
-      this.client.post(`/message/sendWhatsAppAudio/${instanceName}`, payload, {
-        headers: this.getHeaders(apiKey),
-      }),
+  async sendVideo(
+    instanceUuid: string,
+    number: string,
+    videoUrl: string,
+    caption?: string,
+    apiKeyOrToken?: string,
+  ) {
+    const cleanNumber = String(number).replace(/\D/g, '');
+    return this.postInstanceMessage(
+      instanceUuid,
+      '/send/media',
+      { number: cleanNumber, url: videoUrl, type: 'video', caption: caption || '' },
+      apiKeyOrToken,
+      'sendVideo',
     );
-    return response.data;
+  }
+
+  async sendAudio(instanceUuid: string, number: string, audioUrl: string, apiKeyOrToken?: string) {
+    const cleanNumber = String(number).replace(/\D/g, '');
+    return this.postInstanceMessage(
+      instanceUuid,
+      '/send/media',
+      { number: cleanNumber, url: audioUrl, type: 'audio' },
+      apiKeyOrToken,
+      'sendAudio',
+    );
   }
 
   async sendDocument(
-    instanceName: string,
+    instanceUuid: string,
     number: string,
     documentUrl: string,
     fileName: string,
     caption?: string,
-    apiKey?: string,
+    apiKeyOrToken?: string,
   ) {
-    const payload = {
-      number,
-      mediatype: 'document',
-      media: documentUrl,
-      fileName,
-      caption: caption || '',
-    };
-    const response = await providerResilienceService.execute('evolution_go', 'sendDocument', async () =>
-      this.client.post(`/message/sendMedia/${instanceName}`, payload, {
-        headers: this.getHeaders(apiKey),
-      }),
+    const cleanNumber = String(number).replace(/\D/g, '');
+    return this.postInstanceMessage(
+      instanceUuid,
+      '/send/media',
+      {
+        number: cleanNumber,
+        url: documentUrl,
+        type: 'document',
+        filename: fileName,
+        caption: caption || '',
+      },
+      apiKeyOrToken,
+      'sendDocument',
     );
-    return response.data;
   }
 
   async sendButtons(
-    instanceName: string,
+    instanceUuid: string,
     payload: {
       number: string;
       title: string;
@@ -203,18 +296,23 @@ class EvolutionGoApiClient {
       footer: string;
       buttons: Array<Record<string, unknown>>;
     },
-    apiKey?: string,
+    apiKeyOrToken?: string,
   ) {
-    const response = await providerResilienceService.execute('evolution_go', 'sendButtons', async () =>
-      this.client.post(`/message/sendButtons/${instanceName}`, payload, {
-        headers: this.getHeaders(apiKey),
-      }),
+    const cleanNumber = String(payload.number).replace(/\D/g, '');
+    return this.postInstanceMessage(
+      instanceUuid,
+      '/send/text',
+      {
+        number: cleanNumber,
+        text: `${payload.title}\n\n${payload.description}\n\n${payload.footer}`,
+      },
+      apiKeyOrToken,
+      'sendButtons',
     );
-    return response.data;
   }
 
   async sendList(
-    instanceName: string,
+    instanceUuid: string,
     payload: {
       number: string;
       title: string;
@@ -224,173 +322,128 @@ class EvolutionGoApiClient {
       sections: Array<{ title: string; rows: Array<{ title: string; description?: string; rowId: string }> }>;
       values?: Array<{ title: string; rows: Array<{ title: string; description?: string; rowId: string }> }>;
     },
-    apiKey?: string,
+    apiKeyOrToken?: string,
   ) {
-    const response = await providerResilienceService.execute('evolution_go', 'sendList', async () =>
-      this.client.post(`/message/sendList/${instanceName}`, payload, {
-        headers: this.getHeaders(apiKey),
-      }),
+    const cleanNumber = String(payload.number).replace(/\D/g, '');
+    const lines = (payload.sections || [])
+      .flatMap((section) =>
+        (section.rows || []).map((row, index) => {
+          const label = row.title || `Opção ${index + 1}`;
+          const desc = row.description ? ` — ${row.description}` : '';
+          return `${index + 1}. ${label}${desc}`;
+        }),
+      )
+      .join('\n');
+    const text = [payload.title, payload.description, lines, payload.footerText]
+      .filter(Boolean)
+      .join('\n\n');
+    return this.postInstanceMessage(
+      instanceUuid,
+      '/send/text',
+      { number: cleanNumber, text: text || payload.description },
+      apiKeyOrToken,
+      'sendList',
     );
-    return response.data;
   }
 
-  async getProfilePicture(instanceName: string, number: string, apiKey?: string) {
+  async getProfilePicture(instanceUuid: string, number: string, apiKeyOrToken?: string) {
     try {
-      const response = await this.client.get(
-        `/chat/fetchProfilePictureUrl/${instanceName}`,
-        { params: { number }, headers: this.getHeaders(apiKey) },
+      const cleanNumber = String(number).replace(/\D/g, '');
+      const response = await this.client.post(
+        '/user/avatar',
+        { number: cleanNumber },
+        { headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken) },
       );
       const data = unwrapData(response.data);
-      return data?.profilePictureUrl || data?.url || data || null;
+      return data?.profilePictureUrl || data?.url || data?.avatar || null;
     } catch {
       return null;
-    }
-  }
-
-  private buildSendPresenceBodies(
-    cleanNumber: string,
-    presence: 'composing' | 'recording' | 'paused',
-    delayMs: number,
-  ) {
-    return [
-      { number: cleanNumber, options: { delay: delayMs, presence, number: cleanNumber } },
-      { number: cleanNumber, presence, delay: delayMs },
-    ];
-  }
-
-  private async postSendPresence(
-    instanceName: string,
-    cleanNumber: string,
-    presence: 'composing' | 'recording' | 'paused',
-    delayMs: number,
-    apiKey?: string,
-  ) {
-    const bodies = this.buildSendPresenceBodies(cleanNumber, presence, delayMs);
-    for (const body of bodies) {
-      try {
-        await this.client.post(`/chat/sendPresence/${instanceName}`, body, {
-          headers: this.getHeaders(apiKey),
-        });
-        return;
-      } catch {
-        // formato alternativo
-      }
     }
   }
 
   async sendOutboundPresence(
-    instanceName: string,
+    instanceUuid: string,
     phone: string,
     presence: 'composing' | 'recording' | 'paused',
-    apiKey?: string,
+    apiKeyOrToken?: string,
   ) {
     const cleanNumber = String(phone).replace(/\D/g, '');
     if (cleanNumber.length < 10) return;
-    const delayMs = presence === 'paused' ? 1 : 20_000;
-    await this.postSendPresence(instanceName, cleanNumber, presence, delayMs, apiKey);
+    try {
+      await this.client.post(
+        '/message/presence',
+        { number: cleanNumber, presence },
+        { headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken) },
+      );
+    } catch {
+      // presença é best-effort
+    }
   }
 
-  async subscribeContactPresence(instanceName: string, number: string, apiKey?: string) {
-    const cleanNumber = String(number).replace(/\D/g, '');
-    if (cleanNumber.length < 10) return;
-    await this.postSendPresence(instanceName, cleanNumber, 'paused', 1, apiKey);
+  async subscribeContactPresence(instanceUuid: string, number: string, apiKeyOrToken?: string) {
+    await this.sendOutboundPresence(instanceUuid, number, 'paused', apiKeyOrToken);
   }
 
-  async fetchWhatsAppNumberInfo(instanceName: string, phone: string, apiKey?: string) {
+  async fetchWhatsAppNumberInfo(instanceUuid: string, phone: string, apiKeyOrToken?: string) {
     const cleanNumber = String(phone).replace(/\D/g, '');
     if (cleanNumber.length < 10) return null;
     try {
       const response = await this.client.post(
-        `/chat/whatsappNumbers/${instanceName}`,
-        { numbers: [cleanNumber] },
-        { headers: this.getHeaders(apiKey) },
+        '/user/check',
+        { number: cleanNumber },
+        { headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken) },
       );
-      const data = unwrapData(response.data);
-      const list = Array.isArray(data) ? data : [];
-      return list[0] ?? null;
+      return unwrapData(response.data);
     } catch {
       return null;
     }
   }
 
-  async setWebhook(instanceName: string, webhookUrl: string, apiKey?: string) {
-    const webhookConfig = {
-      instance: instanceName,
-      webhook: {
-        enabled: true,
-        url: webhookUrl,
-        webhookByEvents: false,
-        events: [...EVOLUTION_WEBHOOK_EVENTS],
-      },
-    };
-
-    const paths = [
-      `/webhook/set/${instanceName}`,
-      `/instance/${encodeURIComponent(instanceName)}/webhook`,
-    ];
-
-    let lastError: any;
-    for (const path of paths) {
-      try {
-        const response = await this.client.post(path, webhookConfig, {
-          headers: this.getHeaders(apiKey),
-        });
-        return response.data;
-      } catch (error: any) {
-        lastError = error;
-      }
-    }
-
-    throw new Error(extractApiError(lastError, 'Erro ao configurar webhook na Evolution GO'));
+  /** Na Evolution GO o webhook é configurado via POST /instance/connect */
+  async setWebhook(instanceUuid: string, webhookUrl: string, globalApiKey?: string) {
+    return this.connectInstance(instanceUuid, webhookUrl, globalApiKey);
   }
 
-  async getWebhook(instanceName: string, apiKey?: string) {
+  async getWebhook(_instanceUuid: string, _apiKey?: string) {
+    return null;
+  }
+
+  async deleteInstance(instanceUuid: string, apiKey?: string) {
+    const globalKey = this.resolveGlobalApiKey(apiKey);
     try {
-      const response = await this.client.get(`/webhook/find/${instanceName}`, {
-        headers: this.getHeaders(apiKey),
+      const response = await this.client.delete(`/instance/delete/${encodeURIComponent(instanceUuid)}`, {
+        headers: this.getGlobalHeaders(globalKey),
       });
       return response.data;
     } catch (error: any) {
       if (error.response?.status === 404) return null;
-      throw new Error(extractApiError(error, 'Erro ao verificar webhook na Evolution GO'));
+      throw new Error(extractApiError(error, 'Erro ao deletar instância na Evolution GO'));
     }
-  }
-
-  async deleteInstance(instanceName: string, apiKey?: string) {
-    const paths = [
-      `/instance/delete/${encodeURIComponent(instanceName)}`,
-      `/instance/${encodeURIComponent(instanceName)}`,
-    ];
-
-    let lastError: any;
-    for (const path of paths) {
-      try {
-        const response = await this.client.delete(path, { headers: this.getHeaders(apiKey) });
-        return response.data;
-      } catch (error: any) {
-        lastError = error;
-        if (error.response?.status === 404) return null;
-      }
-    }
-
-    throw new Error(extractApiError(lastError, 'Erro ao deletar instância na Evolution GO'));
   }
 
   async getBase64FromMediaMessage(
-    instanceName: string,
+    instanceUuid: string,
     messagePayload: Record<string, any>,
-    apiKey?: string,
+    apiKeyOrToken?: string,
     convertToMp4 = false,
   ) {
     const response = await this.client.post(
-      `/chat/getBase64FromMediaMessage/${instanceName}`,
+      '/message/download',
       { message: messagePayload, convertToMp4 },
       {
-        headers: this.getHeaders(apiKey),
-        timeout: Number(process.env.EVOLUTION_GO_MEDIA_TIMEOUT_MS || process.env.EVOLUTION_MEDIA_TIMEOUT_MS || 120000),
+        headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken),
+        timeout: Number(
+          process.env.EVOLUTION_GO_MEDIA_TIMEOUT_MS ||
+            process.env.EVOLUTION_MEDIA_TIMEOUT_MS ||
+            120000,
+        ),
       },
     );
-    return unwrapData(response.data);
+    const data = unwrapData(response.data);
+    return {
+      base64: data?.base64 ?? data?.data,
+      mimetype: data?.mimetype,
+    };
   }
 }
 

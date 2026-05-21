@@ -32,7 +32,11 @@ export function getBaileysResilienceProvider(
 }
 
 export function resolveBaileysApiKey(
-  channel?: { config?: unknown; evolutionApiKey?: string | null } | null,
+  channel?: {
+    config?: unknown;
+    evolutionApiKey?: string | null;
+    evolutionInstanceToken?: string | null;
+  } | null,
 ): string | undefined {
   if (!channel) return undefined;
   const masked = '***';
@@ -40,6 +44,8 @@ export function resolveBaileysApiKey(
   const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
 
   if (provider === 'evolution_go') {
+    // Envio de mensagens: token da instância (header apikey) tem prioridade
+    if (channel.evolutionInstanceToken) return channel.evolutionInstanceToken;
     if (stored && stored !== masked) return stored;
     return process.env.EVOLUTION_GO_API_KEY || undefined;
   }

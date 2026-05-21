@@ -25,6 +25,7 @@ import { extractEvolutionMediaFields } from '../utils/whatsappMedia';
 import {
   extractEvolutionEventType,
   extractEvolutionInstanceName,
+  extractEvolutionInstanceUuid,
   extractEvolutionQrBase64,
   extractPhoneFromEvolutionJid,
   parseEvolutionMessagePatches,
@@ -38,8 +39,10 @@ import { conversationResolutionService } from '../services/conversationResolutio
 import {
   getBaileysApi,
   getBaileysWebhookPath,
+  getWhatsAppChannelProvider,
   isBaileysWhatsAppChannel,
   resolveBaileysApiKey,
+  resolveDefaultBaileysApiKey,
 } from '../utils/channelWhatsAppProvider';
 
 const webhookService = new WebhookService();
@@ -1064,19 +1067,17 @@ async function handleNewMessage(data: any) {
       return;
     }
 
-    // A instância pode estar em data.instance, data.instanceName, ou no root do evento
-    const instanceName = data.instance || data.instanceName;
-    if (!instanceName) {
+    const instanceName = data.instance || data.instanceName || null;
+    const instanceUuid = data.instanceId ? String(data.instanceId) : null;
+    if (!instanceName && !instanceUuid) {
       console.log('⚠️ [handleNewMessage] Instância não encontrada no webhook');
       console.log('⚠️ [handleNewMessage] Data keys disponíveis:', Object.keys(data));
       return;
     }
-    
-    console.log('📩 [handleNewMessage] Instância encontrada:', instanceName);
 
-    const channel = await prisma.channel.findFirst({
-      where: { evolutionInstanceId: instanceName },
-    });
+    console.log('📩 [handleNewMessage] Instância no webhook:', { instanceName, instanceUuid });
+
+    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
 
     if (!channel) {
       console.log('Canal não encontrado para instância:', instanceName);
@@ -1555,27 +1556,27 @@ async function handleNewMessage(data: any) {
 
 async function handleConnectionUpdate(data: any) {
   try {
-    const instanceName = data.instance || data.instanceName;
+    const instanceName = data.instance || data.instanceName || null;
+    const instanceUuid = data.instanceId ? String(data.instanceId) : null;
     const state = data.state || data.status;
     
     console.log('[Webhook] 📡 Evento de conexão recebido:', {
       instanceName,
+      instanceUuid,
       state,
       dataKeys: Object.keys(data),
       fullData: JSON.stringify(data).substring(0, 500),
     });
 
-    if (!instanceName) {
+    if (!instanceName && !instanceUuid) {
       console.warn('[Webhook] ⚠️ Instância não encontrada no evento de conexão');
       return;
     }
 
-    const channel = await prisma.channel.findFirst({
-      where: { evolutionInstanceId: instanceName },
-    });
+    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
 
     if (!channel) {
-      console.warn('[Webhook] ⚠️ Canal não encontrado para instância:', instanceName);
+      console.warn('[Webhook] ⚠️ Canal não encontrado para instância:', { instanceName, instanceUuid });
       return;
     }
 
@@ -1606,11 +1607,15 @@ async function handleConnectionUpdate(data: any) {
       console.log('[Webhook] ✅ Canal conectado:', channel.name);
       
       // Configurar webhook quando o canal é conectado (Evolution Node ou GO)
-      const apiKey = resolveBaileysApiKey(channel);
+      const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
+      const webhookApiKey =
+        provider === 'evolution_go'
+          ? resolveDefaultBaileysApiKey('evolution_go')
+          : resolveBaileysApiKey(channel);
       if (
         isBaileysWhatsAppChannel(channel.config as Record<string, unknown>) &&
         channel.evolutionInstanceId &&
-        apiKey
+        webhookApiKey
       ) {
         const webhookBaseUrl = process.env.NGROK_URL || process.env.APP_URL;
         if (webhookBaseUrl) {
@@ -1619,7 +1624,7 @@ async function handleConnectionUpdate(data: any) {
           console.log('[Webhook] 📡 Configurando webhook após conexão:', webhookUrl);
           try {
             const baileysApi = getBaileysApi(channel);
-            await baileysApi.setWebhook(channel.evolutionInstanceId, webhookUrl, apiKey);
+            await baileysApi.setWebhook(channel.evolutionInstanceId, webhookUrl, webhookApiKey);
             console.log('[Webhook] ✅ Webhook configurado com sucesso após conexão');
           } catch (webhookError: any) {
             console.error('[Webhook] ⚠️ Erro ao configurar webhook após conexão:', webhookError.message);
@@ -1652,11 +1657,37 @@ async function handleConnectionUpdate(data: any) {
   }
 }
 
-async function resolveChannelByEvolutionInstance(instanceName: string | null) {
-  if (!instanceName) return null;
-  return prisma.channel.findFirst({
-    where: { evolutionInstanceId: instanceName },
-  });
+async function resolveChannelByEvolutionInstance(
+  instanceName: string | null,
+  instanceUuid?: string | null,
+) {
+  const identifiers = [instanceUuid, instanceName].filter(
+    (v): v is string => typeof v === 'string' && v.trim().length > 0,
+  );
+  if (identifiers.length === 0) return null;
+
+  for (const id of identifiers) {
+    const byInstanceId = await prisma.channel.findFirst({
+      where: { evolutionInstanceId: id },
+    });
+    if (byInstanceId) return byInstanceId;
+  }
+
+  if (instanceName) {
+    const channels = await prisma.channel.findMany({
+      where: { type: 'WHATSAPP' },
+      select: { id: true, config: true, evolutionInstanceId: true },
+    });
+    const match = channels.find((ch) => {
+      const cfg = (ch.config || {}) as Record<string, unknown>;
+      return String(cfg.evolutionInstanceName || '') === instanceName;
+    });
+    if (match) {
+      return prisma.channel.findUnique({ where: { id: match.id } });
+    }
+  }
+
+  return null;
 }
 
 async function resolveConversationByChannelAndPhone(
@@ -1745,9 +1776,10 @@ async function applyEvolutionMessagePatches(
 async function handleMessagesUpdate(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
-    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    const instanceUuid = extractEvolutionInstanceUuid(null, data);
+    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
     if (!channel) {
-      console.warn('[Webhook] MESSAGES_UPDATE: canal não encontrado', instanceName);
+      console.warn('[Webhook] MESSAGES_UPDATE: canal não encontrado', { instanceName, instanceUuid });
       return;
     }
 
@@ -1767,7 +1799,8 @@ async function handleMessagesUpdate(data: any) {
 async function handleMessagesEdited(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
-    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    const instanceUuid = extractEvolutionInstanceUuid(null, data);
+    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
     if (!channel) return;
 
     const patches = parseEvolutionMessagePatches(data);
@@ -1781,7 +1814,8 @@ async function handleMessagesEdited(data: any) {
 async function handleSendMessageEvent(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
-    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    const instanceUuid = extractEvolutionInstanceUuid(null, data);
+    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
     if (!channel) return;
 
     const patches = parseEvolutionMessagePatches(data);
@@ -1800,7 +1834,8 @@ async function handleSendMessageEvent(data: any) {
 async function handlePresenceUpdate(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
-    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    const instanceUuid = extractEvolutionInstanceUuid(null, data);
+    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
     if (!channel || !io) return;
 
     const batches = Array.isArray(data) ? data : [data];
@@ -1884,7 +1919,8 @@ async function handlePresenceUpdate(data: any) {
 async function handleQRCodeUpdate(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data) || data.instance;
-    const channel = await resolveChannelByEvolutionInstance(instanceName);
+    const instanceUuid = extractEvolutionInstanceUuid(null, data) || data.instanceId;
+    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
 
     if (!channel) return;
 
@@ -1969,15 +2005,20 @@ export async function processWhatsAppOfficialWebhookPayload(payload: any): Promi
 export async function processEvolutionWebhookPayload(event: any): Promise<void> {
   const eventType = extractEvolutionEventType(event);
   const instanceName = extractEvolutionInstanceName(event);
+  const instanceUuid = extractEvolutionInstanceUuid(event);
   const eventData = event.data ?? event;
 
   if (instanceName && eventData && typeof eventData === 'object') {
     if (!eventData.instance) eventData.instance = instanceName;
     if (!eventData.instanceName) eventData.instanceName = instanceName;
   }
+  if (instanceUuid && eventData && typeof eventData === 'object') {
+    if (!eventData.instanceId) eventData.instanceId = instanceUuid;
+  }
 
   console.log('📨 Event Type detectado:', eventType);
   console.log('📨 Instance Name:', instanceName);
+  console.log('📨 Instance UUID:', instanceUuid);
   console.log(
     '📨 Event Data keys:',
     eventData && typeof eventData === 'object' ? Object.keys(eventData) : [],

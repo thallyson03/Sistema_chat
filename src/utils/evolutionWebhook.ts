@@ -39,6 +39,13 @@ export function extractEvolutionInstanceName(event: any, eventData?: any): strin
   return name ? String(name) : null;
 }
 
+/** UUID da instância (Evolution GO envia instanceId no webhook). */
+export function extractEvolutionInstanceUuid(event: any, eventData?: any): string | null {
+  const data = eventData ?? event?.data ?? event;
+  const id = event?.instanceId ?? data?.instanceId ?? null;
+  return id ? String(id) : null;
+}
+
 /** Mapeia status ACK do Baileys/Evolution para MessageStatus do CRM. */
 export function mapEvolutionAckToMessageStatus(
   raw: unknown,

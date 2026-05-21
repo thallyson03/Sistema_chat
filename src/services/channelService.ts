@@ -99,16 +99,58 @@ export class ChannelService {
     channelName: string,
     apiKey: string,
     provider: WhatsAppChannelProvider,
-  ): Promise<{ instanceId: string; instanceToken?: string | null }> {
+  ): Promise<{
+    instanceId: string;
+    instanceToken?: string | null;
+    instanceDisplayName?: string;
+  }> {
     const instanceName = toEvolutionInstanceName(channelName);
-    const baileysApi = provider === 'evolution_go' ? getBaileysApi({ config: { provider } }) : getBaileysApi({ config: { provider: 'evolution' } });
+    const baileysApi = getBaileysApi({ config: { provider } });
     console.log('[ChannelService] Provisionando instância Baileys:', {
       channelName,
       instanceName,
       provider,
+      evolutionGoUrl: provider === 'evolution_go' ? process.env.EVOLUTION_GO_API_URL : undefined,
     });
 
     const evolutionResponse = await baileysApi.createInstance(instanceName, apiKey, true);
+
+    if (provider === 'evolution_go') {
+      const instanceUuid =
+        (evolutionResponse.instance as { instanceUuid?: string })?.instanceUuid ||
+        evolutionResponse.instance?.instanceName;
+      const instanceToken = evolutionResponse.instance?.token ?? null;
+      const displayName =
+        (evolutionResponse.instance as { instanceName?: string })?.instanceName || instanceName;
+
+      if (!instanceUuid) {
+        throw new Error('Evolution GO não retornou UUID da instância após /instance/create');
+      }
+
+      const webhookUrl = this.getWebhookUrl({ config: { provider: 'evolution_go' } });
+      try {
+        await baileysApi.setWebhook(instanceUuid, webhookUrl || '', apiKey);
+      } catch (connectError: any) {
+        console.warn(
+          '[ChannelService] ⚠️ Instância GO criada, mas falha ao conectar/webhook:',
+          connectError.message,
+        );
+      }
+
+      console.log('[ChannelService] Instância Evolution GO provisionada:', {
+        instanceUuid,
+        displayName,
+        hasToken: !!instanceToken,
+        webhookUrl: webhookUrl || null,
+      });
+
+      return {
+        instanceId: instanceUuid,
+        instanceToken,
+        instanceDisplayName: displayName,
+      };
+    }
+
     const instanceId = evolutionResponse.instance?.instanceName || instanceName;
     const instanceToken = evolutionResponse.instance?.token ?? null;
 
@@ -118,7 +160,7 @@ export class ChannelService {
       provider,
     });
 
-    return { instanceId, instanceToken };
+    return { instanceId, instanceToken, instanceDisplayName: instanceName };
   }
 
   private async removeEvolutionInstance(
@@ -178,13 +220,18 @@ export class ChannelService {
       console.log('[ChannelService] Usando ngrok:', !!process.env.NGROK_URL);
       console.log('[ChannelService] ============================================');
 
-      if (!instanceToken) {
+      const isGo = getWhatsAppChannelProvider(channelConfig as Record<string, unknown>) === 'evolution_go';
+      const webhookAuthKey = isGo
+        ? resolveDefaultBaileysApiKey('evolution_go')
+        : instanceToken;
+
+      if (!isGo && !instanceToken) {
         throw new Error('Token da instância não encontrado. Aguarde a instância conectar primeiro.');
       }
 
       // Verificar webhook atual (se possível)
       try {
-        const currentWebhook = await baileysApi.getWebhook(instanceId, instanceToken);
+        const currentWebhook = await baileysApi.getWebhook(instanceId, webhookAuthKey);
         if (currentWebhook) {
           console.log('[ChannelService] ℹ️ Webhook atual encontrado:', JSON.stringify(currentWebhook, null, 2).substring(0, 500));
         }
@@ -193,7 +240,7 @@ export class ChannelService {
       }
 
       // Configurar novo webhook - usar token da instância ao invés da API key
-      const result = await baileysApi.setWebhook(instanceId, webhookUrl, instanceToken);
+      const result = await baileysApi.setWebhook(instanceId, webhookUrl, webhookAuthKey);
       
       console.log('[ChannelService] ============================================');
       console.log('[ChannelService] ✅ WEBHOOK CONFIGURADO COM SUCESSO!');
@@ -327,14 +374,24 @@ export class ChannelService {
       ? data.evolutionApiKey || resolveDefaultBaileysApiKey(provider)
       : undefined;
 
+    let mergedConfig = { ...(data.config || {}) } as Record<string, unknown>;
+
     if (data.type === ChannelType.WHATSAPP && apiKey && !instanceId && !isWhatsAppOfficial) {
       try {
         const provisioned = await this.provisionEvolutionInstance(data.name, apiKey, provider);
         instanceId = provisioned.instanceId;
         instanceToken = provisioned.instanceToken ?? undefined;
+        if (provider === 'evolution_go' && provisioned.instanceDisplayName) {
+          mergedConfig.evolutionInstanceName = provisioned.instanceDisplayName;
+        }
       } catch (error: any) {
-        console.error('Erro ao criar instância na Evolution API:', error.message);
-        // Continua criando o canal mesmo se falhar a criação da instância
+        console.error('[ChannelService] Erro ao provisionar instância:', error.message);
+        if (provider === 'evolution_go') {
+          throw new Error(
+            `Não foi possível criar a instância na Evolution GO: ${error.message}. Verifique EVOLUTION_GO_API_URL e EVOLUTION_GO_API_KEY no CRM.`,
+          );
+        }
+        // Evolution Node: mantém comportamento anterior (canal sem instância)
       }
     }
 
@@ -354,7 +411,7 @@ export class ChannelService {
         name: data.name,
         type: data.type,
         status: channelStatus,
-        config: data.config || {},
+        config: mergedConfig as object,
         evolutionApiKey: apiKey || null,
         evolutionInstanceId: instanceId || null,
         evolutionInstanceToken: instanceToken || null,
