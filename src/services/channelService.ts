@@ -232,7 +232,7 @@ export class ChannelService {
 
       // Verificar webhook atual (se possível)
       try {
-        const currentWebhook = await baileysApi.getWebhook(instanceId, webhookAuthKey);
+        const currentWebhook = await baileysApi.getWebhook(instanceId, instanceToken);
         if (currentWebhook) {
           console.log('[ChannelService] ℹ️ Webhook atual encontrado:', JSON.stringify(currentWebhook, null, 2).substring(0, 500));
         }

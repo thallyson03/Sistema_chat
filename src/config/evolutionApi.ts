@@ -71,7 +71,7 @@ class EvolutionApiClient {
     }
   }
 
-  async getInstanceStatus(instanceName: string, apiKey?: string) {
+  async getInstanceStatus(instanceName: string, apiKey?: string, _instanceToken?: string) {
     try {
       console.log('[EvolutionAPI] Verificando status da instância:', {
         instanceName,
