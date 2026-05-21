@@ -132,7 +132,9 @@ export class ChannelService {
 
       const webhookUrl = this.getWebhookUrl({ config: { provider: 'evolution_go' } });
       // Connect pode demorar (Baileys); não bloqueia a criação do canal no CRM.
-      void baileysApi.setWebhook(instanceUuid, webhookUrl || '', apiKey).then(() => {
+      void baileysApi
+        .setWebhook(instanceUuid, webhookUrl || '', instanceToken || undefined)
+        .then(() => {
         console.log('[ChannelService] ✅ Evolution GO connect/webhook em background OK:', instanceUuid);
       }).catch((connectError: any) => {
         console.warn(
@@ -224,12 +226,7 @@ export class ChannelService {
       console.log('[ChannelService] Usando ngrok:', !!process.env.NGROK_URL);
       console.log('[ChannelService] ============================================');
 
-      const isGo = getWhatsAppChannelProvider(channelConfig as Record<string, unknown>) === 'evolution_go';
-      const webhookAuthKey = isGo
-        ? resolveDefaultBaileysApiKey('evolution_go')
-        : instanceToken;
-
-      if (!isGo && !instanceToken) {
+      if (!instanceToken) {
         throw new Error('Token da instância não encontrado. Aguarde a instância conectar primeiro.');
       }
 
@@ -244,7 +241,7 @@ export class ChannelService {
       }
 
       // Configurar novo webhook - usar token da instância ao invés da API key
-      const result = await baileysApi.setWebhook(instanceId, webhookUrl, webhookAuthKey);
+      const result = await baileysApi.setWebhook(instanceId, webhookUrl, instanceToken);
       
       console.log('[ChannelService] ============================================');
       console.log('[ChannelService] ✅ WEBHOOK CONFIGURADO COM SUCESSO!');
@@ -647,11 +644,22 @@ export class ChannelService {
     try {
       if (provider === 'evolution_go') {
         const webhookUrl = this.getWebhookUrl(channel.config);
-        try {
-          console.log('[ChannelService] Evolution GO: connect antes do QR...');
-          await baileysApi.setWebhook(channel.evolutionInstanceId, webhookUrl || '', globalApiKey);
-        } catch (connectErr: any) {
-          console.warn('[ChannelService] Evolution GO connect antes do QR:', connectErr?.message);
+        const connectToken = instanceAuthKey || channel.evolutionInstanceToken || undefined;
+        if (connectToken) {
+          try {
+            console.log('[ChannelService] Evolution GO: connect antes do QR...');
+            await baileysApi.setWebhook(
+              channel.evolutionInstanceId,
+              webhookUrl || '',
+              connectToken,
+            );
+          } catch (connectErr: any) {
+            console.warn('[ChannelService] Evolution GO connect antes do QR:', connectErr?.message);
+          }
+        } else {
+          console.warn(
+            '[ChannelService] Evolution GO: sem evolutionInstanceToken no canal; connect/QR pode falhar',
+          );
         }
       }
 
@@ -801,11 +809,12 @@ export class ChannelService {
 
         // Configurar webhook quando o canal é conectado
         console.log('[ChannelService] Canal conectado! Configurando webhook...');
-        if (channel.evolutionInstanceToken) {
+        const webhookToken = evolutionStatus.token || instanceToken || channel.evolutionInstanceToken;
+        if (webhookToken) {
           try {
             await this.configureWebhook(
               channel.evolutionInstanceId!,
-              channel.evolutionInstanceToken,
+              webhookToken,
               channel.config,
             );
           } catch (webhookError: any) {
@@ -823,6 +832,10 @@ export class ChannelService {
         console.log('[ChannelService] ⚠️ Detectada desconexão! Atualizando status para INACTIVE...');
         await this.updateChannelStatus(channelId, ChannelStatus.INACTIVE);
         return { status: 'INACTIVE' };
+      }
+
+      if (isConnected) {
+        return { status: 'ACTIVE' };
       }
 
       console.log('[ChannelService] Status não mudou:', {

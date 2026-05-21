@@ -1084,6 +1084,17 @@ async function handleNewMessage(data: any) {
       return;
     }
 
+    if (channel.status !== 'ACTIVE' && isBaileysWhatsAppChannel(channel.config as Record<string, unknown>)) {
+      await prisma.channel.update({
+        where: { id: channel.id },
+        data: { status: 'ACTIVE' },
+      });
+      console.log('[Webhook] ✅ Canal marcado ACTIVE (mensagem recebida):', channel.name);
+      if (io) {
+        emitChannelStatusUpdate(io, { channelId: channel.id, status: 'ACTIVE' });
+      }
+    }
+
     // Extrair número do telefone
     // O remoteJid pode estar em message.key.remoteJid, message.from, ou data.key.remoteJid
     // Quando message = data.message, o key está em data.key, não em message.key
@@ -1616,7 +1627,7 @@ async function handleConnectionUpdate(data: any) {
       const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
       const webhookApiKey =
         provider === 'evolution_go'
-          ? resolveDefaultBaileysApiKey('evolution_go')
+          ? channel.evolutionInstanceToken || resolveBaileysApiKey(channel)
           : resolveBaileysApiKey(channel);
       if (
         isBaileysWhatsAppChannel(channel.config as Record<string, unknown>) &&

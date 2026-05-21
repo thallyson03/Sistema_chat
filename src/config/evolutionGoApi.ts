@@ -160,7 +160,7 @@ class EvolutionGoApiClient {
         instance: {
           instanceName: normalized.instanceName,
           instanceUuid: normalized.instanceUuid,
-          token: normalized.token,
+          token: normalized.token || instanceToken,
         },
       };
     } catch (error: any) {
@@ -172,7 +172,7 @@ class EvolutionGoApiClient {
           instance: {
             instanceName: existing.instanceName,
             instanceUuid: existing.instanceUuid,
-            token: existing.token,
+            token: existing.token || undefined,
           },
         };
       }
@@ -198,10 +198,17 @@ class EvolutionGoApiClient {
   }
 
   /**
-   * Conecta instância e registra webhook (documentação Evolution GO).
+   * Conecta instância e registra webhook.
+   * Na GO o header apikey deve ser o token da instância (não a GLOBAL_API_KEY).
    */
-  async connectInstance(instanceUuid: string, webhookUrl: string | null, apiKey?: string) {
-    const globalKey = this.resolveGlobalApiKey(apiKey);
+  async connectInstance(instanceUuid: string, webhookUrl: string | null, instanceToken?: string) {
+    const token = instanceToken?.trim();
+    if (!token) {
+      throw new Error(
+        'Token da instância é obrigatório para /instance/connect na Evolution GO. Verifique evolutionInstanceToken no canal.',
+      );
+    }
+
     const body: Record<string, unknown> = {
       subscribe: ['ALL'],
       immediate: true,
@@ -213,19 +220,21 @@ class EvolutionGoApiClient {
     console.log('[EvolutionGO] Conectando instância:', {
       instanceUuid,
       webhookUrl: webhookUrl || '(sem webhook)',
+      hasInstanceToken: true,
     });
 
     const startedAt = Date.now();
-    const response = await this.client.post('/instance/connect', body, {
-      headers: {
-        ...this.getGlobalHeaders(globalKey),
-        instanceId: instanceUuid,
-      },
-      timeout: resolveGoTimeoutMs('instance'),
-    });
-    console.log('[EvolutionGO] /instance/connect concluído em', `${Date.now() - startedAt}ms`);
-
-    return unwrapData(response.data);
+    try {
+      const response = await this.client.post('/instance/connect', body, {
+        headers: this.getInstanceHeaders(instanceUuid, token),
+        timeout: resolveGoTimeoutMs('instance'),
+      });
+      console.log('[EvolutionGO] /instance/connect concluído em', `${Date.now() - startedAt}ms`);
+      return unwrapData(response.data);
+    } catch (error: any) {
+      logGoApiError('Erro em /instance/connect', error);
+      throw new Error(extractApiError(error, 'Erro ao conectar instância na Evolution GO'));
+    }
   }
 
   async getQRCode(instanceUuid: string, apiKeyOrToken?: string) {
@@ -242,7 +251,37 @@ class EvolutionGoApiClient {
     return { qrcode, base64: qrcode, ...data };
   }
 
+  private async fetchInstanceInfo(instanceUuid: string, globalApiKey: string) {
+    const response = await this.client.get(
+      `/instance/info/${encodeURIComponent(instanceUuid)}`,
+      { headers: this.getGlobalHeaders(globalApiKey) },
+    );
+    return unwrapData(response.data);
+  }
+
   async getInstanceStatus(instanceUuid: string, apiKey?: string, instanceToken?: string) {
+    const globalKey = this.resolveGlobalApiKey(apiKey);
+
+    try {
+      const info = await this.fetchInstanceInfo(instanceUuid, globalKey);
+      const n = this.normalizeInstanceRecord(info, instanceUuid);
+      console.log('[EvolutionGO] Status via /instance/info:', {
+        instanceUuid,
+        connected: n.connected,
+        hasJid: !!n.raw?.jid,
+        hasToken: !!n.token,
+      });
+      if (n.connected) {
+        return {
+          status: 'open',
+          token: n.token ?? instanceToken ?? null,
+          qrcode: n.qrcode,
+        };
+      }
+    } catch (error: any) {
+      logGoApiError('Erro em /instance/info', error);
+    }
+
     const tokenForLive = instanceToken?.trim() || undefined;
     if (tokenForLive) {
       try {
@@ -264,8 +303,6 @@ class EvolutionGoApiClient {
         logGoApiError('Erro em /instance/status', error);
       }
     }
-
-    const globalKey = this.resolveGlobalApiKey(apiKey);
 
     try {
       const response = await this.client.get('/instance/all', {
@@ -503,8 +540,8 @@ class EvolutionGoApiClient {
   }
 
   /** Na Evolution GO o webhook é configurado via POST /instance/connect */
-  async setWebhook(instanceUuid: string, webhookUrl: string, globalApiKey?: string) {
-    return this.connectInstance(instanceUuid, webhookUrl, globalApiKey);
+  async setWebhook(instanceUuid: string, webhookUrl: string, instanceToken?: string) {
+    return this.connectInstance(instanceUuid, webhookUrl, instanceToken);
   }
 
   async getWebhook(_instanceUuid: string, _apiKey?: string) {
