@@ -3,6 +3,7 @@ import { MessageType, MessageStatus } from '@prisma/client';
 import {
   getBaileysApi,
   getBaileysResilienceProvider,
+  getWhatsAppChannelProvider,
   isBaileysWhatsAppChannel,
   resolveBaileysApiKey,
 } from '../utils/channelWhatsAppProvider';
@@ -487,17 +488,21 @@ export class MessageService {
         console.log('Instance Token presente:', !!channel.evolutionInstanceToken);
         console.log('Telefone original:', conversation.contact.phone);
         
+        const baileysProvider = getWhatsAppChannelProvider(
+          channel.config as Record<string, unknown>,
+        );
+
         // Formatar telefone corretamente
-        let phone = conversation.contact.phone.replace(/\D/g, ''); // Remove caracteres não numéricos
-        
-        // Se não começar com código do país, adicionar 55 (Brasil)
+        let phone = conversation.contact.phone.replace(/\D/g, '');
+
         if (!phone.startsWith('55') && phone.length <= 11) {
           phone = `55${phone}`;
         }
-        
-        // Formato para WhatsApp: número@s.whatsapp.net
-        const whatsappNumber = `${phone}@s.whatsapp.net`;
-        console.log('Número formatado:', whatsappNumber);
+
+        // Evolution GO: /send/text usa só dígitos; Evolution API: JID completo
+        const whatsappNumber =
+          baileysProvider === 'evolution_go' ? phone : `${phone}@s.whatsapp.net`;
+        console.log('Número formatado:', whatsappNumber, 'provider:', baileysProvider);
         console.log('Conteúdo:', data.content.substring(0, 50));
         
         if (!apiKey) {

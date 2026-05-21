@@ -136,16 +136,26 @@ export class ConversationService {
     });
   }
 
-  async getContactConversations(contactId: string, viewer?: ConversationViewer) {
+  async canViewerAccessConversation(conversationId: string, viewer?: ConversationViewer): Promise<boolean> {
+    if (!viewer) return true;
+    if (viewer.role === 'ADMIN') return true;
     const visibilityWhere = await this.buildVisibilityWhere(viewer);
+    const count = await prisma.conversation.count({
+      where: { id: conversationId, ...visibilityWhere },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Lista todas as conversas do contato (abas de thread por canal).
+   * Não filtra por setor aqui — o acesso à conversa individual continua em getConversationById.
+   */
+  async getContactConversations(contactId: string, viewer?: ConversationViewer) {
     const conversations = await prisma.conversation.findMany({
-      where: {
-        contactId,
-        ...visibilityWhere,
-      },
+      where: { contactId },
       orderBy: { lastMessageAt: 'desc' },
       include: {
-        channel: { select: { id: true, name: true, type: true, status: true } },
+        channel: { select: { id: true, name: true, type: true, status: true, config: true } },
         assignedTo: { select: { id: true, name: true, email: true } },
         messages: {
           take: 1,
@@ -155,12 +165,17 @@ export class ConversationService {
       },
     });
 
-    return conversations.map((conv) => ({
-      ...conv,
-      channelDisplayName: getChannelDisplayName(conv),
-      lastMessage: conv.messages[0]?.content || '',
-      messagingWindow: getConversationMessagingWindow(conv),
-    }));
+    const withMeta = await Promise.all(
+      conversations.map(async (conv) => ({
+        ...conv,
+        channelDisplayName: getChannelDisplayName(conv),
+        lastMessage: conv.messages[0]?.content || '',
+        messagingWindow: getConversationMessagingWindow(conv),
+        accessible: await this.canViewerAccessConversation(conv.id, viewer),
+      })),
+    );
+
+    return withMeta;
   }
 
   async getConversations(
@@ -403,16 +418,6 @@ export class ConversationService {
       messagingWindow: getConversationMessagingWindow(conv),
       inBot,
     } as any;
-  }
-
-  async canViewerAccessConversation(conversationId: string, viewer?: ConversationViewer) {
-    const visibilityWhere = await this.buildVisibilityWhere(viewer);
-    const total = await prisma.conversation.count({
-      where: {
-        AND: [{ id: conversationId }, visibilityWhere],
-      },
-    });
-    return total > 0;
   }
 
   async updateConversation(

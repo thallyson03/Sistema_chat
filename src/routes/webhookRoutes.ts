@@ -1943,6 +1943,43 @@ async function applyEvolutionMessagePatches(
   }
 }
 
+/** Evolution GO: confirmação de leitura (Receipt). */
+async function handleGoReceipt(data: any) {
+  try {
+    const instanceName = extractEvolutionInstanceName(null, data);
+    const instanceUuid = extractEvolutionInstanceUuid(null, data);
+    const webhookSource = getWebhookSourceFromEventData(data);
+    const channel = await resolveChannelByEvolutionInstance(
+      instanceName,
+      instanceUuid,
+      webhookSource,
+    );
+    if (!channel) return;
+
+    const rawIds = (data as Record<string, unknown>).MessageIDs;
+    const ids = Array.isArray(rawIds) ? rawIds.map((id) => String(id)).filter(Boolean) : [];
+    if (ids.length === 0) return;
+
+    const receiptType = String((data as Record<string, unknown>).Type || '').toLowerCase();
+    const status = receiptType === 'read' ? 'READ' : receiptType === 'delivery' ? 'DELIVERED' : null;
+    if (!status) return;
+
+    const patches = ids.map((externalId) => ({
+      externalId,
+      status: status as 'READ' | 'DELIVERED',
+    }));
+
+    await applyEvolutionMessagePatches(channel.id, patches, { allowContentEdit: false });
+    console.log(
+      `${evolutionWebhookLogPrefix(webhookSource)} Receipt aplicado:`,
+      ids.length,
+      status,
+    );
+  } catch (error: any) {
+    console.error('[Webhook] Erro em Receipt (GO):', error.message);
+  }
+}
+
 async function handleMessagesUpdate(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
@@ -2238,6 +2275,12 @@ export async function processEvolutionWebhookPayload(
   if (isEvolutionIncomingMessageEvent(eventType)) {
     console.log(`${logPrefix} Processando mensagem recebida:`, eventType);
     await handleNewMessage(eventData, eventType);
+    return;
+  }
+
+  if (normalizedEventType === 'receipt') {
+    console.log(`${logPrefix} Processando Receipt (confirmação de leitura)`);
+    await handleGoReceipt(eventData);
     return;
   }
 

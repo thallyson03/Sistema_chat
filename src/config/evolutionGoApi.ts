@@ -531,10 +531,14 @@ class EvolutionGoApiClient {
       const response = await this.client.post(
         '/user/check',
         { number: cleanNumber },
-        { headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken) },
+        {
+          headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken),
+          timeout: Math.min(resolveGoTimeoutMs('default'), 8_000),
+        },
       );
       return unwrapData(response.data);
-    } catch {
+    } catch (error: any) {
+      console.warn('[EvolutionGO] /user/check falhou ou expirou:', extractApiError(error, 'user/check'));
       return null;
     }
   }

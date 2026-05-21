@@ -156,11 +156,14 @@ export class ConversationController {
       const baileysApi = getBaileysApi(conversation.channel);
       const apiKey = resolveBaileysApiKey(conversation.channel);
 
-      const waInfo = await baileysApi.fetchWhatsAppNumberInfo(
-        conversation.channel.evolutionInstanceId,
-        conversation.contact.phone,
-        apiKey,
-      );
+      const waInfo = await Promise.race([
+        baileysApi.fetchWhatsAppNumberInfo(
+          conversation.channel.evolutionInstanceId,
+          conversation.contact.phone,
+          apiKey,
+        ),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000)),
+      ]);
       const lidFromApi =
         typeof waInfo?.lid === 'string' && waInfo.lid !== 'lid'
           ? waInfo.lid.includes('@')

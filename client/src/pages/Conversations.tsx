@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
@@ -84,9 +84,10 @@ interface ContactThread {
   channelId: string | null;
   status: string;
   channelDisplayName?: string;
-  channel?: { id: string; name: string; type: string } | null;
-  channelSnapshot?: { name?: string; channelId?: string } | null;
+  channel?: { id: string; name: string; type: string; config?: { provider?: string } } | null;
+  channelSnapshot?: { name?: string; channelId?: string; provider?: string } | null;
   lastMessageAt?: string | null;
+  accessible?: boolean;
 }
 
 interface Conversation {
@@ -351,6 +352,18 @@ export default function Conversations() {
       setContactThreads([]);
     }
   }, [selectedConversation?.contact?.id, fetchContactThreads]);
+
+  const contactThreadTabs = useMemo(() => {
+    const seen = new Set<string>();
+    const tabs: ContactThread[] = [];
+    for (const thread of contactThreads) {
+      const key = thread.channelId || thread.channelSnapshot?.channelId || thread.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tabs.push(thread);
+    }
+    return tabs;
+  }, [contactThreads]);
 
   useEffect(() => {
     if (!selectedConversation) return undefined;
@@ -1946,9 +1959,9 @@ export default function Conversations() {
                     {getConversationChannelLabel(selectedConversation)} •{' '}
                     {selectedConversation.contact?.phone || 'Sem telefone'}
                   </p>
-                  {contactThreads.length > 1 && (
+                  {contactThreadTabs.length > 1 && (
                     <motion.div className="mt-2 flex flex-wrap gap-1.5">
-                      {contactThreads.map((thread) => {
+                      {contactThreadTabs.map((thread: ContactThread) => {
                         const isActive = thread.id === selectedConversation.id;
                         const statusLabel =
                           thread.status === 'OPEN'
@@ -1958,10 +1971,25 @@ export default function Conversations() {
                             : thread.status === 'CLOSED'
                             ? 'Fechada'
                             : 'Arquivada';
+                        const provider =
+                          thread.channel?.config?.provider ||
+                          thread.channelSnapshot?.provider;
+                        const providerTag =
+                          provider === 'evolution_go'
+                            ? 'GO'
+                            : provider === 'evolution'
+                              ? 'Evo'
+                              : null;
                         return (
                           <button
                             key={thread.id}
                             type="button"
+                            disabled={thread.accessible === false}
+                            title={
+                              thread.accessible === false
+                                ? 'Sem permissão para este setor/canal'
+                                : undefined
+                            }
                             onClick={async () => {
                               if (thread.id === selectedConversation.id) return;
                               const convResp = await api.get(`/api/conversations/${thread.id}`);
@@ -1972,10 +2000,13 @@ export default function Conversations() {
                             className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
                               isActive
                                 ? 'border-primary bg-primary-container text-on-secondary-container'
-                                : 'border-primary/20 bg-surface-container text-on-surface-variant hover:border-primary/40'
+                                : thread.accessible === false
+                                  ? 'cursor-not-allowed border-outline/30 bg-surface-container-low text-on-surface-variant/50'
+                                  : 'border-primary/20 bg-surface-container text-on-surface-variant hover:border-primary/40'
                             }`}
                           >
-                            {getConversationChannelLabel(thread)} · {statusLabel}
+                            {getConversationChannelLabel(thread)}
+                            {providerTag ? ` (${providerTag})` : ''} · {statusLabel}
                           </button>
                         );
                       })}

@@ -45,7 +45,8 @@ export function resolveBaileysApiKey(
 
   if (provider === 'evolution_go') {
     // Envio de mensagens: token da instância (header apikey) tem prioridade
-    if (channel.evolutionInstanceToken) return channel.evolutionInstanceToken;
+    const instanceToken = channel.evolutionInstanceToken;
+    if (instanceToken && instanceToken !== masked) return instanceToken;
     if (stored && stored !== masked) return stored;
     return process.env.EVOLUTION_GO_API_KEY || undefined;
   }
