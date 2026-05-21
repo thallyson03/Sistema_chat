@@ -40,13 +40,36 @@ function pickFirstString(...values: unknown[]): string {
   return '';
 }
 
-/** Desembrulha ephemeral / view once / edited / documentWithCaption. */
-export function unwrapEvolutionMessageObject(msgObj: unknown, depth = 0): Record<string, unknown> | null {
-  if (!msgObj || typeof msgObj !== 'object' || depth > 6) {
+/** Converte chaves PascalCase do Go (ExtendedTextMessage → extendedTextMessage). */
+export function normalizeEvolutionMessageObjectKeys(
+  msgObj: unknown,
+  depth = 0,
+): Record<string, unknown> | null {
+  if (!msgObj || typeof msgObj !== 'object' || depth > 10) {
     return (msgObj && typeof msgObj === 'object' ? msgObj : null) as Record<string, unknown> | null;
   }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(msgObj as Record<string, unknown>)) {
+    const normalizedKey =
+      key.length > 1 && key[0] === key[0].toUpperCase() && key[1] === key[1].toLowerCase()
+        ? key[0].toLowerCase() + key.slice(1)
+        : key;
+    out[normalizedKey] =
+      value && typeof value === 'object'
+        ? normalizeEvolutionMessageObjectKeys(value, depth + 1)
+        : value;
+  }
+  return out;
+}
 
-  const obj = msgObj as Record<string, unknown>;
+/** Desembrulha ephemeral / view once / edited / documentWithCaption. */
+export function unwrapEvolutionMessageObject(msgObj: unknown, depth = 0): Record<string, unknown> | null {
+  const normalized = normalizeEvolutionMessageObjectKeys(msgObj, 0);
+  if (!normalized || typeof normalized !== 'object' || depth > 6) {
+    return normalized;
+  }
+
+  const obj = normalized as Record<string, unknown>;
   for (const key of MESSAGE_WRAPPER_KEYS) {
     const wrapper = obj[key];
     if (wrapper && typeof wrapper === 'object' && (wrapper as Record<string, unknown>).message) {

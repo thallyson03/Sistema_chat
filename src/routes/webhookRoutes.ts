@@ -25,6 +25,10 @@ import { extractEvolutionMediaFields } from '../utils/whatsappMedia';
 import {
   extractEvolutionEventType,
   isEvolutionConnectionEvent,
+  isEvolutionHistorySyncEvent,
+  isEvolutionIncomingMessageEvent,
+  extractIncomingMessageBundles,
+  normalizeEvolutionMessageKey,
   normalizeEvolutionConnectionPayload,
   extractEvolutionInstanceName,
   extractEvolutionInstanceUuid,
@@ -1016,35 +1020,61 @@ router.post('/evolution-go', webhookReceiveLimiter, async (req: Request, res: Re
   }
 });
 
-async function handleNewMessage(data: any) {
+async function handleNewMessage(data: any, eventTypeHint?: string) {
   try {
-    console.log('📩 [handleNewMessage] Processando nova mensagem...');
-    console.log('📩 [handleNewMessage] Data keys:', Object.keys(data));
-    console.log('📩 [handleNewMessage] Data completa:', JSON.stringify(data, null, 2).substring(0, 1000));
-    
-    // A Evolution API pode enviar mensagens em diferentes formatos
-    // Pode ser: data.messages (array), data.message (objeto único), ou data diretamente (objeto único)
+    const bundles = extractIncomingMessageBundles(data, eventTypeHint);
+    if (bundles.length > 1) {
+      for (let i = 1; i < bundles.length; i++) {
+        const b = bundles[i];
+        await handleNewMessage({
+          ...data,
+          ...b,
+          message: b.message,
+          key: b.key,
+          instance: b.instance ?? data.instance,
+          instanceName: b.instanceName ?? data.instanceName,
+          instanceId: b.instanceId ?? data.instanceId,
+          pushName: b.pushName ?? data.pushName,
+          messageType: b.messageType ?? data.messageType,
+          body: b.body ?? data.body,
+        }, eventTypeHint);
+      }
+    }
+
     let message: any;
-    
-    if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+    let messageKey: Record<string, unknown> | null;
+
+    if (bundles.length >= 1) {
+      const b = bundles[0];
+      message = b.message;
+      messageKey = b.key;
+      if (b.instance) data.instance = data.instance ?? b.instance;
+      if (b.instanceName) data.instanceName = data.instanceName ?? b.instanceName;
+      if (b.instanceId) data.instanceId = data.instanceId ?? b.instanceId;
+      if (b.pushName) data.pushName = data.pushName ?? b.pushName;
+      if (b.messageType) data.messageType = data.messageType ?? b.messageType;
+      if (b.body) data.body = data.body ?? b.body;
+      console.log('📩 [handleNewMessage] Bundle Evolution normalizado (GO/Node)');
+    } else if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
       message = data.messages[0];
+      messageKey = normalizeEvolutionMessageKey(message.key || data.key);
       console.log('📩 [handleNewMessage] Mensagem encontrada em data.messages[0]');
     } else if (data.message) {
       message = data.message;
+      messageKey = normalizeEvolutionMessageKey(message.key || data.key);
       console.log('📩 [handleNewMessage] Mensagem encontrada em data.message');
-    } else if (data.key) {
-      // A mensagem está diretamente em data (formato da Evolution API)
+    } else if (data.key || data.Key) {
       message = data;
+      messageKey = normalizeEvolutionMessageKey(data.key || data.Key);
       console.log('📩 [handleNewMessage] Mensagem encontrada diretamente em data');
     } else {
       console.log('⚠️ [handleNewMessage] Nenhuma mensagem encontrada no webhook');
       console.log('⚠️ [handleNewMessage] Estrutura recebida:', JSON.stringify(data, null, 2).substring(0, 500));
       return;
     }
-    
-    // O key pode estar em message.key OU diretamente em data.key
-    // Quando message = data.message, o key está em data.key, não em message.key
-    const messageKey = message.key || data.key;
+
+    console.log('📩 [handleNewMessage] Processando nova mensagem...');
+    console.log('📩 [handleNewMessage] Data keys:', Object.keys(data));
     
     const rawFromMe =
       messageKey?.fromMe ??
@@ -1053,12 +1083,15 @@ async function handleNewMessage(data: any) {
       (data as any).fromMe;
 
     console.log('📩 [handleNewMessage] Processando mensagem:', {
-      hasMessageKey: !!message.key,
-      hasDataKey: !!data.key,
-      hasMessageKeyFinal: !!messageKey,
+      hasMessageKey: !!messageKey,
       fromMe: rawFromMe,
-      remoteJid: messageKey?.remoteJid || message.from || data.key?.remoteJid,
-      messageId: messageKey?.id || data.key?.id,
+      remoteJid:
+        (messageKey?.remoteJid as string) ||
+        message.from ||
+        (data.key?.remoteJid as string) ||
+        (data.key?.remoteJID as string),
+      messageId: (messageKey?.id as string) || data.key?.id || data.key?.ID,
+      eventTypeHint: eventTypeHint || undefined,
     });
     
     // Ignorar mensagens enviadas pelo próprio sistema (fromMe)
@@ -1100,10 +1133,12 @@ async function handleNewMessage(data: any) {
     // Extrair número do telefone
     // O remoteJid pode estar em message.key.remoteJid, message.from, ou data.key.remoteJid
     // Quando message = data.message, o key está em data.key, não em message.key
-    let remoteJid = messageKey?.remoteJid || 
-                     message.from || 
-                     data.key?.remoteJid ||
-                     message.remoteJid;
+    let remoteJid =
+      (messageKey?.remoteJid as string) ||
+      message.from ||
+      (data.key?.remoteJid as string) ||
+      (data.key?.remoteJID as string) ||
+      message.remoteJid;
     
     if (!remoteJid) {
       console.log('⚠️ [handleNewMessage] RemoteJid não encontrado na mensagem');
@@ -1349,7 +1384,8 @@ async function handleNewMessage(data: any) {
     }
 
     // Verificar se mensagem já existe (evitar duplicatas)
-    const messageId = messageKey?.id || data.key?.id;
+    const messageId =
+      (messageKey?.id as string) || data.key?.id || data.key?.ID || undefined;
 
     if (messageType === 'TEXT' && messageId) {
       const t = String(messageContent || '').trim();
@@ -2051,9 +2087,14 @@ export async function processEvolutionWebhookPayload(event: any): Promise<void> 
 
   const normalizedEventType = eventType.toLowerCase().replace(/\./g, '_');
 
-  if (normalizedEventType.includes('messages') && normalizedEventType.includes('upsert')) {
-    console.log('📨 Processando como MESSAGES_UPSERT');
-    await handleNewMessage(eventData);
+  if (isEvolutionHistorySyncEvent(eventType)) {
+    console.log('ℹ️ HistorySync ignorado (histórico em massa não vira inbox)');
+    return;
+  }
+
+  if (isEvolutionIncomingMessageEvent(eventType)) {
+    console.log('📨 Processando como mensagem recebida:', eventType);
+    await handleNewMessage(eventData, eventType);
     return;
   }
 
@@ -2100,11 +2141,15 @@ export async function processEvolutionWebhookPayload(event: any): Promise<void> 
   }
 
   console.log('📨 Tentando detectar tipo de evento automaticamente...');
-  if (eventData?.messages || event.messages || eventData?.message || event.message) {
+  const autoBundles = extractIncomingMessageBundles(eventData, eventType);
+  if (autoBundles.length > 0) {
+    console.log('📨 Mensagem detectada por estrutura do payload');
+    await handleNewMessage(eventData, eventType);
+  } else if (eventData?.messages || event.messages || eventData?.message || event.message) {
     if (eventData?.update || (Array.isArray(eventData) && eventData[0]?.update)) {
       await handleMessagesUpdate(eventData);
     } else {
-      await handleNewMessage(eventData);
+      await handleNewMessage(eventData, eventType);
     }
   } else if (eventData?.presences || eventData?.lastKnownPresence) {
     await handlePresenceUpdate(eventData);

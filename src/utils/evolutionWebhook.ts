@@ -45,6 +45,136 @@ export function isEvolutionConnectionEvent(eventType: string): boolean {
   );
 }
 
+/** HistorySync em massa — não vira mensagem no inbox. */
+export function isEvolutionHistorySyncEvent(eventType: string): boolean {
+  const normalized = eventType.toLowerCase().replace(/\./g, '_');
+  return normalized.includes('history') && normalized.includes('sync');
+}
+
+/** Evento de mensagem recebida (Evolution Node ou GO). */
+export function isEvolutionIncomingMessageEvent(eventType: string): boolean {
+  const normalized = eventType.toLowerCase().replace(/\./g, '_');
+  if (!normalized || isEvolutionHistorySyncEvent(eventType)) return false;
+  if (normalized.includes('messages') && normalized.includes('upsert')) return true;
+  if (normalized.includes('send') && normalized.includes('message')) return false;
+  if (normalized === 'message' || normalized === 'messages') return true;
+  if (
+    normalized.includes('message') &&
+    !normalized.includes('update') &&
+    !normalized.includes('edited') &&
+    !normalized.includes('delete') &&
+    !normalized.includes('reaction') &&
+    !normalized.includes('ack') &&
+    !normalized.includes('history')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Normaliza key Baileys (GO usa PascalCase: remoteJID, ID, FromMe). */
+export function normalizeEvolutionMessageKey(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const k = raw as Record<string, unknown>;
+  const remoteJid = pickKeyString(k, ['remoteJid', 'remoteJID', 'RemoteJid', 'RemoteJID']);
+  const id = pickKeyString(k, ['id', 'ID', 'Id']);
+  const fromMe = k.fromMe ?? k.FromMe ?? k.fromme;
+  const senderPn = pickKeyString(k, ['senderPn', 'SenderPn', 'senderPN']);
+  const remoteJidAlt = pickKeyString(k, ['remoteJidAlt', 'remoteJIDAlt', 'RemoteJidAlt']);
+  const participant = pickKeyString(k, ['participant', 'Participant']);
+  const addressingMode = pickKeyString(k, ['addressingMode', 'AddressingMode']);
+  return {
+    ...k,
+    ...(remoteJid ? { remoteJid } : {}),
+    ...(id ? { id } : {}),
+    ...(fromMe !== undefined ? { fromMe } : {}),
+    ...(senderPn ? { senderPn } : {}),
+    ...(remoteJidAlt ? { remoteJidAlt } : {}),
+    ...(participant ? { participant } : {}),
+    ...(addressingMode ? { addressingMode } : {}),
+  };
+}
+
+function pickKeyString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const v = obj[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+export type EvolutionIncomingMessageBundle = {
+  message: Record<string, unknown>;
+  key: Record<string, unknown> | null;
+  instance?: string;
+  instanceName?: string;
+  instanceId?: string;
+  pushName?: string;
+  messageType?: string;
+  body?: string;
+};
+
+/** Extrai uma ou mais mensagens do payload (Evolution Node + Evolution GO). */
+export function extractIncomingMessageBundles(
+  data: unknown,
+  eventType?: string,
+): EvolutionIncomingMessageBundle[] {
+  if (!data || typeof data !== 'object') return [];
+  if (eventType && isEvolutionHistorySyncEvent(eventType)) return [];
+
+  const root = data as Record<string, unknown>;
+  const inner = (root.Data ?? root.data) as Record<string, unknown> | undefined;
+  if (inner && Array.isArray(inner.conversations)) {
+    return [];
+  }
+
+  const bundles: EvolutionIncomingMessageBundle[] = [];
+  const instance = pickKeyString(root, ['instance', 'instanceName', 'Instance', 'InstanceName']);
+  const instanceId = root.instanceId != null ? String(root.instanceId) : undefined;
+  const pushName = pickKeyString(root, ['pushName', 'PushName', 'pushname']);
+  const messageType = pickKeyString(root, ['messageType', 'MessageType']);
+
+  const add = (rawMsg: unknown, rawKey?: unknown) => {
+    if (!rawMsg || typeof rawMsg !== 'object') return;
+    const msg = rawMsg as Record<string, unknown>;
+    const nested =
+      msg.message && typeof msg.message === 'object'
+        ? (msg.message as Record<string, unknown>)
+        : msg;
+    const key = normalizeEvolutionMessageKey(rawKey ?? msg.key ?? msg.Key ?? root.key ?? root.Key);
+    bundles.push({
+      message: nested,
+      key,
+      instance,
+      instanceName: instance,
+      instanceId,
+      pushName,
+      messageType,
+      body: pickKeyString(msg, ['body', 'Body']) ?? pickKeyString(root, ['body', 'Body']),
+    });
+  };
+
+  const messages = root.messages;
+  if (Array.isArray(messages) && messages.length > 0) {
+    for (const m of messages) add(m);
+    return bundles;
+  }
+
+  const envelope = root.message ?? root.Message;
+  if (envelope && typeof envelope === 'object') {
+    const env = envelope as Record<string, unknown>;
+    add(envelope, env.key ?? env.Key ?? root.key ?? root.Key);
+    return bundles;
+  }
+
+  if (root.key || root.Key) {
+    add(root, root.key ?? root.Key);
+    return bundles;
+  }
+
+  return bundles;
+}
+
 /** Unifica payload de conexão (Evolution GO aninha em `Data`). */
 export function normalizeEvolutionConnectionPayload(data: any): Record<string, unknown> {
   if (!data || typeof data !== 'object') return {};
