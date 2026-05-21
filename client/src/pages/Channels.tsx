@@ -155,8 +155,29 @@ export default function Channels() {
     socketRef.current = socket;
 
     socket.on('qrcode_update', (data: { channelId: string; qrcode: string | null }) => {
-      if (!data?.qrcode) return;
       if (qrChannelId && data.channelId !== qrChannelId) return;
+      if (!data?.qrcode) {
+        if (qrChannelId && data.channelId === qrChannelId) {
+          void api.get(`/api/channels/${data.channelId}/status`).then((response) => {
+            const status = String(response.data?.status || '').toLowerCase();
+            const isConnected =
+              status === 'active' ||
+              status === 'open' ||
+              status === 'connected' ||
+              status === 'ready' ||
+              status === 'authenticated';
+            if (isConnected) {
+              setCheckingConnection(false);
+              setShowQRModal(false);
+              setQrCode(null);
+              setQrChannelId(null);
+              fetchChannels();
+              fetchHealthPanel();
+            }
+          });
+        }
+        return;
+      }
       setQrCode(data.qrcode);
       setShowQRModal(true);
     });
@@ -167,7 +188,9 @@ export default function Channels() {
           data.status === 'ACTIVE' ||
           data.status === 'active' ||
           data.status === 'open' ||
-          data.status === 'connected';
+          data.status === 'connected' ||
+          data.status === 'ready' ||
+          data.status === 'authenticated';
         if (isConnected) {
           setCheckingConnection(false);
           setShowQRModal(false);
@@ -321,37 +344,35 @@ export default function Channels() {
   const startConnectionCheck = (channelId: string) => {
     setCheckingConnection(true);
     let checkCount = 0;
-    const maxChecks = 100; // 100 verificações = 5 minutos (100 * 3s = 300s)
-    
-    const interval = setInterval(async () => {
+    const maxChecks = 150;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const pollStatus = async () => {
       checkCount++;
       try {
         console.log(`[Channels] Verificando status (tentativa ${checkCount}/${maxChecks})...`);
         const response = await api.get(`/api/channels/${channelId}/status`);
         const status = response.data.status;
-        
+
         console.log(`[Channels] Status recebido:`, status);
-        
-        // Aceitar múltiplos formatos de status conectado
-        const isConnected = status === 'ACTIVE' || 
-                           status === 'active' || 
-                           status === 'open' || 
-                           status === 'connected' ||
-                           status === 'ready' ||
-                           status === 'authenticated';
-        
+
+        const isConnected =
+          status === 'ACTIVE' ||
+          status === 'active' ||
+          status === 'open' ||
+          status === 'connected' ||
+          status === 'ready' ||
+          status === 'authenticated';
+
         if (isConnected) {
-          // Conexão estabelecida!
           console.log('[Channels] ✅ Conexão detectada! Fechando modal...');
-          clearInterval(interval);
+          if (intervalId) clearInterval(intervalId);
           setCheckingConnection(false);
           setShowQRModal(false);
           setQrCode(null);
           setQrChannelId(null);
-          
-          // Atualizar lista de canais
           await fetchChannels();
-          
+          fetchHealthPanel();
           alert('✅ WhatsApp conectado com sucesso!');
         } else {
           console.log(`[Channels] Ainda aguardando conexão... Status atual: ${status}`);
@@ -360,15 +381,17 @@ export default function Channels() {
         console.error('[Channels] Erro ao verificar status:', error);
         console.error('[Channels] Erro detalhado:', error.response?.data);
       }
-      
-      // Limpar intervalo após maxChecks verificações
+
       if (checkCount >= maxChecks) {
         console.log('[Channels] ⚠️ Timeout: Parando verificação após 5 minutos');
-        clearInterval(interval);
+        if (intervalId) clearInterval(intervalId);
         setCheckingConnection(false);
         alert('⏱️ Tempo de espera esgotado. Verifique manualmente o status do canal.');
       }
-    }, 3000); // Verificar a cada 3 segundos
+    };
+
+    void pollStatus();
+    intervalId = setInterval(() => void pollStatus(), 2000);
   };
 
   const handleDeleteChannel = async (channelId: string, channelName: string) => {

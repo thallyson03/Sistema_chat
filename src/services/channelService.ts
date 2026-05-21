@@ -10,6 +10,8 @@ import {
   type WhatsAppChannelProvider,
 } from '../utils/channelWhatsAppProvider';
 import { toEvolutionInstanceName } from '../utils/evolutionInstanceName';
+import { getSocketIO } from '../routes/webhookRoutes';
+import { emitChannelStatusUpdate } from '../utils/realtimeEvents';
 
 export interface CreateChannelData {
   name: string;
@@ -740,15 +742,21 @@ export class ChannelService {
     }
 
     const baileysApi = getBaileysApi(channel);
-    const apiKey = resolveBaileysApiKey(channel);
-    if (!channel.evolutionInstanceId || !apiKey) {
+    const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
+    const globalApiKey = resolveBaileysGlobalApiKey(channel);
+    const instanceToken =
+      channel.evolutionInstanceToken && channel.evolutionInstanceToken !== ChannelService.SECRET_MASK
+        ? channel.evolutionInstanceToken
+        : undefined;
+    if (!channel.evolutionInstanceId || !globalApiKey) {
       return { status: channel.status };
     }
 
     try {
       const evolutionStatus = await baileysApi.getInstanceStatus(
         channel.evolutionInstanceId,
-        apiKey,
+        globalApiKey,
+        provider === 'evolution_go' ? instanceToken : undefined,
       );
 
       // Atualizar token se disponível e diferente
@@ -763,10 +771,11 @@ export class ChannelService {
 
       // Normalizar status - Evolution API pode retornar em diferentes formatos
       const normalizedStatus = (evolutionStatus.status || '').toLowerCase();
-      const isConnected = normalizedStatus === 'open' || 
-                         normalizedStatus === 'connected' || 
-                         normalizedStatus === 'ready' ||
-                         normalizedStatus === 'authenticated';
+      const isConnected =
+        normalizedStatus === 'open' ||
+        normalizedStatus === 'connected' ||
+        normalizedStatus === 'ready' ||
+        normalizedStatus === 'authenticated';
       const isDisconnected = normalizedStatus === 'close' || 
                             normalizedStatus === 'closed' || 
                             normalizedStatus === 'disconnected' ||
@@ -784,7 +793,12 @@ export class ChannelService {
       if (isConnected && channel.status !== ChannelStatus.ACTIVE) {
         console.log('[ChannelService] ✅ Detectada conexão! Atualizando status para ACTIVE...');
         await this.updateChannelStatus(channelId, ChannelStatus.ACTIVE);
-        
+
+        const io = getSocketIO();
+        if (io) {
+          emitChannelStatusUpdate(io, { channelId, status: 'ACTIVE' });
+        }
+
         // Configurar webhook quando o canal é conectado
         console.log('[ChannelService] Canal conectado! Configurando webhook...');
         if (channel.evolutionInstanceToken) {

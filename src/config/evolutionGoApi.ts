@@ -96,8 +96,13 @@ class EvolutionGoApiClient {
     const instanceUuid = inst?.id ? String(inst.id) : null;
     const instanceName = String(inst?.name ?? inst?.instanceName ?? fallbackName);
     const token = inst?.token ?? raw?.token ?? null;
+    const jid = inst?.jid ?? raw?.jid ?? inst?.myJid ?? raw?.myJid ?? null;
+    const hasJid = typeof jid === 'string' && jid.includes('@');
     const connected =
       inst?.connected === true ||
+      inst?.loggedIn === true ||
+      inst?.LoggedIn === true ||
+      hasJid ||
       String(inst?.connectionStatus || inst?.status || '').toLowerCase() === 'open';
     const qrcode =
       inst?.qrcode ??
@@ -237,7 +242,29 @@ class EvolutionGoApiClient {
     return { qrcode, base64: qrcode, ...data };
   }
 
-  async getInstanceStatus(instanceUuid: string, apiKey?: string) {
+  async getInstanceStatus(instanceUuid: string, apiKey?: string, instanceToken?: string) {
+    const tokenForLive = instanceToken?.trim() || undefined;
+    if (tokenForLive) {
+      try {
+        const response = await this.client.get('/instance/status', {
+          headers: this.getInstanceHeaders(instanceUuid, tokenForLive),
+        });
+        const data = unwrapData(response.data);
+        const loggedIn = data?.loggedIn === true || data?.LoggedIn === true;
+        const connected = data?.connected === true || data?.Connected === true;
+        const jid = data?.myJid ?? data?.jid ?? data?.Jid ?? null;
+        const hasJid = typeof jid === 'string' && jid.includes('@');
+        const status = loggedIn || hasJid ? 'open' : connected ? 'connecting' : 'close';
+        return {
+          status,
+          token: tokenForLive,
+          qrcode: null,
+        };
+      } catch (error: any) {
+        logGoApiError('Erro em /instance/status', error);
+      }
+    }
+
     const globalKey = this.resolveGlobalApiKey(apiKey);
 
     try {
@@ -257,7 +284,7 @@ class EvolutionGoApiClient {
         const status = n.connected ? 'open' : 'close';
         return {
           status,
-          token: n.token,
+          token: n.token ?? tokenForLive ?? null,
           qrcode: n.qrcode,
         };
       }

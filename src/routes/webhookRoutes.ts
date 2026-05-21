@@ -1558,7 +1558,7 @@ async function handleConnectionUpdate(data: any) {
   try {
     const instanceName = data.instance || data.instanceName || null;
     const instanceUuid = data.instanceId ? String(data.instanceId) : null;
-    const state = data.state || data.status;
+    const state = data.state || data.status || data.connectionStatus;
     
     console.log('[Webhook] 📡 Evento de conexão recebido:', {
       instanceName,
@@ -1582,10 +1582,16 @@ async function handleConnectionUpdate(data: any) {
 
     // Normalizar estado - Evolution API pode enviar em diferentes formatos
     const normalizedState = (state || '').toLowerCase();
-    const isConnected = normalizedState === 'open' || 
-                       normalizedState === 'connected' || 
-                       normalizedState === 'ready' ||
-                       normalizedState === 'authenticated';
+    const hasJid = !!(data.jid || data.myJid || data.Jid);
+    const isConnected =
+      data.connected === true ||
+      data.loggedIn === true ||
+      data.LoggedIn === true ||
+      hasJid ||
+      normalizedState === 'open' ||
+      normalizedState === 'connected' ||
+      normalizedState === 'ready' ||
+      normalizedState === 'authenticated';
     const isDisconnected = normalizedState === 'close' || 
                           normalizedState === 'closed' || 
                           normalizedState === 'disconnected' ||
