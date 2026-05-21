@@ -32,6 +32,11 @@ import {
   normalizeEvolutionConnectionPayload,
   extractEvolutionInstanceName,
   extractEvolutionInstanceUuid,
+  attachWebhookSourceToEventData,
+  getWebhookSourceFromEventData,
+  evolutionWebhookLogPrefix,
+  CRM_WEBHOOK_SOURCE_KEY,
+  type EvolutionWebhookSource,
   extractEvolutionQrBase64,
   extractPhoneFromEvolutionJid,
   parseEvolutionMessagePatches,
@@ -965,29 +970,31 @@ router.post('/evolution', webhookReceiveLimiter, async (req: Request, res: Respo
       return res.status(200).json({ received: true, queued: true });
     }
 
-    await processEvolutionWebhookPayload(event);
+    await processEvolutionWebhookWithRouting(event, 'evolution');
 
     res.status(200).json({ received: true });
   } catch (error: any) {
-    console.error('❌ Erro ao processar webhook:', error);
+    console.error('[Evolution] ❌ Erro ao processar webhook:', error);
     console.error('❌ Stack:', error.stack);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Webhook Evolution GO — mesmo parser de eventos Baileys
+// Webhook Evolution GO — rota dedicada (não misturar com Evolution API Node)
 router.post('/evolution-go', webhookReceiveLimiter, async (req: Request, res: Response) => {
   try {
     const event = req.body;
-    console.log('📨 ============================================');
-    console.log('📨 Webhook recebido da Evolution GO');
-    console.log('📨 Timestamp:', new Date().toISOString());
-    console.log('📨 Event:', event.event || event.eventName || event.eventType);
-    console.log('📨 Data keys:', Object.keys(event.data || event));
+    const prefix = evolutionWebhookLogPrefix('evolution_go');
+    console.log(`${prefix} ============================================`);
+    console.log(`${prefix} Webhook POST /webhooks/evolution-go`);
+    console.log(`${prefix} Timestamp:`, new Date().toISOString());
+    console.log(`${prefix} Event:`, event.event || event.eventName || event.eventType);
+    console.log(`${prefix} Instance:`, extractEvolutionInstanceName(event), extractEvolutionInstanceUuid(event));
+    console.log(`${prefix} Data keys:`, Object.keys(event.data || event));
     if (isDevLogs) {
-      console.log('📨 Body completo:', JSON.stringify(event, null, 2));
+      console.log(`${prefix} Body completo:`, JSON.stringify(event, null, 2));
     }
-    console.log('📨 ============================================');
+    console.log(`${prefix} ============================================`);
 
     const dedupeKey = crypto
       .createHash('sha256')
@@ -1010,11 +1017,11 @@ router.post('/evolution-go', webhookReceiveLimiter, async (req: Request, res: Re
       return res.status(200).json({ received: true, queued: true });
     }
 
-    await processEvolutionWebhookPayload(event);
+    await processEvolutionWebhookWithRouting(event, 'evolution_go');
 
     res.status(200).json({ received: true });
   } catch (error: any) {
-    console.error('❌ Erro ao processar webhook Evolution GO:', error);
+    console.error('[EvolutionGO] ❌ Erro ao processar webhook:', error);
     console.error('❌ Stack:', error.stack);
     res.status(500).json({ error: error.message });
   }
@@ -1026,18 +1033,22 @@ async function handleNewMessage(data: any, eventTypeHint?: string) {
     if (bundles.length > 1) {
       for (let i = 1; i < bundles.length; i++) {
         const b = bundles[i];
-        await handleNewMessage({
-          ...data,
-          ...b,
-          message: b.message,
-          key: b.key,
-          instance: b.instance ?? data.instance,
-          instanceName: b.instanceName ?? data.instanceName,
-          instanceId: b.instanceId ?? data.instanceId,
-          pushName: b.pushName ?? data.pushName,
-          messageType: b.messageType ?? data.messageType,
-          body: b.body ?? data.body,
-        }, eventTypeHint);
+        await handleNewMessage(
+          {
+            ...data,
+            ...b,
+            message: b.message,
+            key: b.key,
+            instance: b.instance ?? data.instance,
+            instanceName: b.instanceName ?? data.instanceName,
+            instanceId: b.instanceId ?? data.instanceId,
+            pushName: b.pushName ?? data.pushName,
+            messageType: b.messageType ?? data.messageType,
+            body: b.body ?? data.body,
+            [CRM_WEBHOOK_SOURCE_KEY]: data[CRM_WEBHOOK_SOURCE_KEY],
+          },
+          eventTypeHint,
+        );
       }
     }
 
@@ -1110,12 +1121,19 @@ async function handleNewMessage(data: any, eventTypeHint?: string) {
       return;
     }
 
-    console.log('📩 [handleNewMessage] Instância no webhook:', { instanceName, instanceUuid });
+    const webhookSource = getWebhookSourceFromEventData(data);
+    const logPrefix = evolutionWebhookLogPrefix(webhookSource);
 
-    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
+    console.log(`${logPrefix} Instância no webhook:`, { instanceName, instanceUuid, webhookSource });
+
+    const channel = await resolveChannelByEvolutionInstance(
+      instanceName,
+      instanceUuid,
+      webhookSource,
+    );
 
     if (!channel) {
-      console.log('Canal não encontrado para instância:', instanceName);
+      await logWebhookChannelMiss(instanceName, instanceUuid, webhookSource);
       return;
     }
 
@@ -1150,9 +1168,12 @@ async function handleNewMessage(data: any, eventTypeHint?: string) {
 
     console.log('📩 [handleNewMessage] RemoteJid encontrado:', remoteJid);
     
-    // Ignorar mensagens de grupos (@g.us)
+    // Ignorar mensagens de grupos (@g.us) — CRM atende conversas 1:1
     if (remoteJid.includes('@g.us')) {
-      console.log('ℹ️ [handleNewMessage] Mensagem de grupo ignorada:', remoteJid);
+      console.log(
+        `${logPrefix} Mensagem de grupo ignorada (canal "${channel.name}", instância ${instanceName || instanceUuid}):`,
+        remoteJid,
+      );
       return;
     }
     
@@ -1628,10 +1649,15 @@ async function handleConnectionUpdate(data: any) {
       return;
     }
 
-    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
+    const webhookSource = getWebhookSourceFromEventData(payload);
+    const channel = await resolveChannelByEvolutionInstance(
+      instanceName,
+      instanceUuid,
+      webhookSource,
+    );
 
     if (!channel) {
-      console.warn('[Webhook] ⚠️ Canal não encontrado para instância:', { instanceName, instanceUuid });
+      await logWebhookChannelMiss(instanceName, instanceUuid, webhookSource);
       return;
     }
 
@@ -1718,7 +1744,7 @@ async function handleConnectionUpdate(data: any) {
   }
 }
 
-async function resolveChannelByEvolutionInstance(
+async function findChannelByEvolutionIdentifiers(
   instanceName: string | null,
   instanceUuid?: string | null,
 ) {
@@ -1737,7 +1763,7 @@ async function resolveChannelByEvolutionInstance(
   if (instanceName) {
     const channels = await prisma.channel.findMany({
       where: { type: 'WHATSAPP' },
-      select: { id: true, config: true, evolutionInstanceId: true },
+      select: { id: true, config: true, evolutionInstanceId: true, name: true },
     });
     const match = channels.find((ch) => {
       const cfg = (ch.config || {}) as Record<string, unknown>;
@@ -1749,6 +1775,89 @@ async function resolveChannelByEvolutionInstance(
   }
 
   return null;
+}
+
+function channelProviderToWebhookSource(
+  config: unknown,
+): EvolutionWebhookSource {
+  return getWhatsAppChannelProvider(config as Record<string, unknown>) === 'evolution_go'
+    ? 'evolution_go'
+    : 'evolution';
+}
+
+async function logWebhookChannelMiss(
+  instanceName: string | null,
+  instanceUuid: string | null | undefined,
+  webhookSource: EvolutionWebhookSource,
+): Promise<void> {
+  const prefix = evolutionWebhookLogPrefix(webhookSource);
+  const any = await findChannelByEvolutionIdentifiers(instanceName, instanceUuid);
+  if (!any) {
+    console.warn(
+      `${prefix} Nenhum canal CRM para instância name=${instanceName || '-'} uuid=${instanceUuid || '-'}`,
+    );
+    return;
+  }
+  const provider = getWhatsAppChannelProvider(any.config as Record<string, unknown>);
+  const expectedRoute =
+    provider === 'evolution_go' ? '/webhooks/evolution-go' : '/webhooks/evolution';
+  const appUrl = (process.env.APP_URL || process.env.NGROK_URL || 'https://SEU-CRM').replace(
+    /\/$/,
+    '',
+  );
+  console.warn(
+    `${prefix} Canal "${any.name}" existe (provider=${provider}) mas não foi resolvido nesta rota (${webhookSource}). ` +
+      `Use POST ${appUrl}${expectedRoute} e configure WEBHOOK_URL na ${provider === 'evolution_go' ? 'Evolution GO' : 'Evolution API'}.`,
+  );
+}
+
+/** Corrige webhook na rota errada (GO vs Node) e processa com o provider do canal. */
+async function processEvolutionWebhookWithRouting(
+  event: any,
+  routeSource: EvolutionWebhookSource,
+): Promise<void> {
+  const instanceName = extractEvolutionInstanceName(event);
+  const instanceUuid = extractEvolutionInstanceUuid(event);
+  const channel = await findChannelByEvolutionIdentifiers(instanceName, instanceUuid);
+
+  if (channel) {
+    const channelSource = channelProviderToWebhookSource(channel.config);
+    if (channelSource !== routeSource) {
+      const routePrefix = evolutionWebhookLogPrefix(routeSource);
+      const correctPrefix = evolutionWebhookLogPrefix(channelSource);
+      const wrongPath = routeSource === 'evolution_go' ? '/webhooks/evolution-go' : '/webhooks/evolution';
+      const rightPath = channelSource === 'evolution_go' ? '/webhooks/evolution-go' : '/webhooks/evolution';
+      console.warn(
+        `${routePrefix} Webhook na rota ${wrongPath} mas a instância pertence ao canal "${channel.name}" (${channelSource}). ` +
+          `${correctPrefix} Reprocessando com provider correto. Ajuste WEBHOOK_URL para ${(process.env.APP_URL || '').replace(/\/$/, '')}${rightPath}`,
+      );
+      await processEvolutionWebhookPayload(event, channelSource);
+      return;
+    }
+  }
+
+  await processEvolutionWebhookPayload(event, routeSource);
+}
+
+async function resolveChannelByEvolutionInstance(
+  instanceName: string | null,
+  instanceUuid?: string | null,
+  webhookSource: EvolutionWebhookSource = 'evolution',
+) {
+  const channel = await findChannelByEvolutionIdentifiers(instanceName, instanceUuid);
+  if (!channel) return null;
+
+  const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
+  const expectedProvider = webhookSource === 'evolution_go' ? 'evolution_go' : 'evolution';
+
+  if (provider !== expectedProvider) {
+    console.warn(
+      `${evolutionWebhookLogPrefix(webhookSource)} Canal "${channel.name}" ignorado: provider=${provider}, esperado=${expectedProvider} (instância ${instanceUuid || instanceName})`,
+    );
+    return null;
+  }
+
+  return channel;
 }
 
 async function resolveConversationByChannelAndPhone(
@@ -1838,9 +1947,17 @@ async function handleMessagesUpdate(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
     const instanceUuid = extractEvolutionInstanceUuid(null, data);
-    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
+    const webhookSource = getWebhookSourceFromEventData(data);
+    const channel = await resolveChannelByEvolutionInstance(
+      instanceName,
+      instanceUuid,
+      webhookSource,
+    );
     if (!channel) {
-      console.warn('[Webhook] MESSAGES_UPDATE: canal não encontrado', { instanceName, instanceUuid });
+      console.warn(
+        `${evolutionWebhookLogPrefix(webhookSource)} MESSAGES_UPDATE: canal não encontrado`,
+        { instanceName, instanceUuid },
+      );
       return;
     }
 
@@ -1861,7 +1978,12 @@ async function handleMessagesEdited(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
     const instanceUuid = extractEvolutionInstanceUuid(null, data);
-    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
+    const webhookSource = getWebhookSourceFromEventData(data);
+    const channel = await resolveChannelByEvolutionInstance(
+      instanceName,
+      instanceUuid,
+      webhookSource,
+    );
     if (!channel) return;
 
     const patches = parseEvolutionMessagePatches(data);
@@ -1876,7 +1998,12 @@ async function handleSendMessageEvent(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
     const instanceUuid = extractEvolutionInstanceUuid(null, data);
-    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
+    const webhookSource = getWebhookSourceFromEventData(data);
+    const channel = await resolveChannelByEvolutionInstance(
+      instanceName,
+      instanceUuid,
+      webhookSource,
+    );
     if (!channel) return;
 
     const patches = parseEvolutionMessagePatches(data);
@@ -1896,7 +2023,12 @@ async function handlePresenceUpdate(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data);
     const instanceUuid = extractEvolutionInstanceUuid(null, data);
-    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
+    const webhookSource = getWebhookSourceFromEventData(data);
+    const channel = await resolveChannelByEvolutionInstance(
+      instanceName,
+      instanceUuid,
+      webhookSource,
+    );
     if (!channel || !io) return;
 
     const batches = Array.isArray(data) ? data : [data];
@@ -1981,7 +2113,12 @@ async function handleQRCodeUpdate(data: any) {
   try {
     const instanceName = extractEvolutionInstanceName(null, data) || data.instance;
     const instanceUuid = extractEvolutionInstanceUuid(null, data) || data.instanceId;
-    const channel = await resolveChannelByEvolutionInstance(instanceName, instanceUuid);
+    const webhookSource = getWebhookSourceFromEventData(data);
+    const channel = await resolveChannelByEvolutionInstance(
+      instanceName,
+      instanceUuid,
+      webhookSource,
+    );
 
     if (!channel) return;
 
@@ -2063,11 +2200,17 @@ export async function processWhatsAppOfficialWebhookPayload(payload: any): Promi
   }
 }
 
-export async function processEvolutionWebhookPayload(event: any): Promise<void> {
+export async function processEvolutionWebhookPayload(
+  event: any,
+  webhookSource: EvolutionWebhookSource = 'evolution',
+): Promise<void> {
+  const logPrefix = evolutionWebhookLogPrefix(webhookSource);
   const eventType = extractEvolutionEventType(event);
   const instanceName = extractEvolutionInstanceName(event);
   const instanceUuid = extractEvolutionInstanceUuid(event);
   const eventData = event.data ?? event;
+
+  attachWebhookSourceToEventData(eventData, webhookSource);
 
   if (instanceName && eventData && typeof eventData === 'object') {
     if (!eventData.instance) eventData.instance = instanceName;
@@ -2077,29 +2220,29 @@ export async function processEvolutionWebhookPayload(event: any): Promise<void> 
     if (!eventData.instanceId) eventData.instanceId = instanceUuid;
   }
 
-  console.log('📨 Event Type detectado:', eventType);
-  console.log('📨 Instance Name:', instanceName);
-  console.log('📨 Instance UUID:', instanceUuid);
+  console.log(`${logPrefix} Event Type detectado:`, eventType);
+  console.log(`${logPrefix} Instance Name:`, instanceName);
+  console.log(`${logPrefix} Instance UUID:`, instanceUuid);
   console.log(
-    '📨 Event Data keys:',
+    `${logPrefix} Event Data keys:`,
     eventData && typeof eventData === 'object' ? Object.keys(eventData) : [],
   );
 
   const normalizedEventType = eventType.toLowerCase().replace(/\./g, '_');
 
   if (isEvolutionHistorySyncEvent(eventType)) {
-    console.log('ℹ️ HistorySync ignorado (histórico em massa não vira inbox)');
+    console.log(`${logPrefix} HistorySync ignorado (histórico em massa não vira inbox)`);
     return;
   }
 
   if (isEvolutionIncomingMessageEvent(eventType)) {
-    console.log('📨 Processando como mensagem recebida:', eventType);
+    console.log(`${logPrefix} Processando mensagem recebida:`, eventType);
     await handleNewMessage(eventData, eventType);
     return;
   }
 
   if (normalizedEventType.includes('messages') && normalizedEventType.includes('edited')) {
-    console.log('📨 Processando como MESSAGES_EDITED');
+    console.log(`${logPrefix} Processando MESSAGES_EDITED`);
     await handleMessagesEdited(eventData);
     return;
   }

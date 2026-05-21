@@ -14,7 +14,7 @@ type WebhookIngestJob = {
 
 type WebhookHandlers = {
   processWhatsAppOfficial: (payload: any) => Promise<void>;
-  processEvolution: (payload: any) => Promise<void>;
+  processEvolution: (payload: any, source?: 'evolution' | 'evolution_go') => Promise<void>;
 };
 
 class WebhookIngestQueue {
@@ -42,8 +42,10 @@ class WebhookIngestQueue {
         const data = job.data as Omit<WebhookIngestJob, 'attempt'>;
         if (data.provider === 'whatsapp_official') {
           await this.handlers.processWhatsAppOfficial(data.payload);
+        } else if (data.provider === 'evolution_go') {
+          await this.handlers.processEvolution(data.payload, 'evolution_go');
         } else {
-          await this.handlers.processEvolution(data.payload);
+          await this.handlers.processEvolution(data.payload, 'evolution');
         }
       },
       { connection },
@@ -123,8 +125,10 @@ class WebhookIngestQueue {
     try {
       if (job.provider === 'whatsapp_official') {
         await this.handlers.processWhatsAppOfficial(job.payload);
+      } else if (job.provider === 'evolution_go') {
+        await this.handlers.processEvolution(job.payload, 'evolution_go');
       } else {
-        await this.handlers.processEvolution(job.payload);
+        await this.handlers.processEvolution(job.payload, 'evolution');
       }
       queueMetricsService.incrementProcessed(this.queueName);
     } catch (error: any) {

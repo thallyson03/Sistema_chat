@@ -1,3 +1,29 @@
+/** Origem do webhook HTTP (rotas separadas no CRM). */
+export type EvolutionWebhookSource = 'evolution' | 'evolution_go';
+
+export const CRM_WEBHOOK_SOURCE_KEY = '__crmWebhookSource';
+
+export function evolutionWebhookLogPrefix(source: EvolutionWebhookSource): string {
+  return source === 'evolution_go' ? '[EvolutionGO]' : '[Evolution]';
+}
+
+export function attachWebhookSourceToEventData(
+  eventData: unknown,
+  source: EvolutionWebhookSource,
+): void {
+  if (eventData && typeof eventData === 'object' && !Array.isArray(eventData)) {
+    (eventData as Record<string, unknown>)[CRM_WEBHOOK_SOURCE_KEY] = source;
+  }
+}
+
+export function getWebhookSourceFromEventData(data: unknown): EvolutionWebhookSource {
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const raw = (data as Record<string, unknown>)[CRM_WEBHOOK_SOURCE_KEY];
+    if (raw === 'evolution_go') return 'evolution_go';
+  }
+  return 'evolution';
+}
+
 /** Eventos Evolution registrados no webhook do CRM. */
 export const EVOLUTION_WEBHOOK_EVENTS = [
   'MESSAGES_UPSERT',
