@@ -17,6 +17,23 @@ function unwrapData<T = any>(payload: any): T {
   return (payload?.data ?? payload) as T;
 }
 
+function resolveGoTimeoutMs(kind: 'default' | 'instance'): number {
+  if (kind === 'instance') {
+    return Math.max(
+      15_000,
+      Number(
+        process.env.EVOLUTION_GO_INSTANCE_TIMEOUT_MS ||
+          process.env.EVOLUTION_GO_TIMEOUT_MS ||
+          90_000,
+      ),
+    );
+  }
+  return Math.max(
+    5_000,
+    Number(process.env.EVOLUTION_GO_TIMEOUT_MS || process.env.EVOLUTION_TIMEOUT_MS || 30_000),
+  );
+}
+
 class EvolutionGoApiClient {
   private client: AxiosInstance;
   private baseURL: string;
@@ -28,7 +45,7 @@ class EvolutionGoApiClient {
 
     this.client = axios.create({
       baseURL: this.baseURL,
-      timeout: Number(process.env.EVOLUTION_GO_TIMEOUT_MS || process.env.EVOLUTION_TIMEOUT_MS || 12000),
+      timeout: resolveGoTimeoutMs('default'),
       headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -89,11 +106,16 @@ class EvolutionGoApiClient {
       hasApiKey: !!globalKey,
     });
 
+    const startedAt = Date.now();
     const response = await this.client.post(
       '/instance/create',
       { name: instanceName },
-      { headers: this.getGlobalHeaders(globalKey) },
+      {
+        headers: this.getGlobalHeaders(globalKey),
+        timeout: resolveGoTimeoutMs('instance'),
+      },
     );
+    console.log('[EvolutionGO] /instance/create concluído em', `${Date.now() - startedAt}ms`);
 
     const data = unwrapData(response.data);
     const normalized = this.normalizeInstanceRecord(data, instanceName);
@@ -137,12 +159,15 @@ class EvolutionGoApiClient {
       webhookUrl: webhookUrl || '(sem webhook)',
     });
 
+    const startedAt = Date.now();
     const response = await this.client.post('/instance/connect', body, {
       headers: {
         ...this.getGlobalHeaders(globalKey),
         instanceId: instanceUuid,
       },
+      timeout: resolveGoTimeoutMs('instance'),
     });
+    console.log('[EvolutionGO] /instance/connect concluído em', `${Date.now() - startedAt}ms`);
 
     return unwrapData(response.data);
   }

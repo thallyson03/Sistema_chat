@@ -5,6 +5,7 @@ import {
   getBaileysWebhookPath,
   getWhatsAppChannelProvider,
   resolveBaileysApiKey,
+  resolveBaileysGlobalApiKey,
   resolveDefaultBaileysApiKey,
   type WhatsAppChannelProvider,
 } from '../utils/channelWhatsAppProvider';
@@ -128,14 +129,15 @@ export class ChannelService {
       }
 
       const webhookUrl = this.getWebhookUrl({ config: { provider: 'evolution_go' } });
-      try {
-        await baileysApi.setWebhook(instanceUuid, webhookUrl || '', apiKey);
-      } catch (connectError: any) {
+      // Connect pode demorar (Baileys); não bloqueia a criação do canal no CRM.
+      void baileysApi.setWebhook(instanceUuid, webhookUrl || '', apiKey).then(() => {
+        console.log('[ChannelService] ✅ Evolution GO connect/webhook em background OK:', instanceUuid);
+      }).catch((connectError: any) => {
         console.warn(
-          '[ChannelService] ⚠️ Instância GO criada, mas falha ao conectar/webhook:',
-          connectError.message,
+          '[ChannelService] ⚠️ Instância GO criada; connect/webhook em background falhou (tente QR de novo):',
+          connectError?.message || connectError,
         );
-      }
+      });
 
       console.log('[ChannelService] Instância Evolution GO provisionada:', {
         instanceUuid,
@@ -625,26 +627,39 @@ export class ChannelService {
     }
 
     const baileysApi = getBaileysApi(channel);
-    const apiKey = resolveBaileysApiKey(channel);
-    if (!channel.evolutionInstanceId || !apiKey) {
+    const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
+    const globalApiKey = resolveBaileysGlobalApiKey(channel);
+    const instanceAuthKey = resolveBaileysApiKey(channel);
+    if (!channel.evolutionInstanceId || !globalApiKey) {
       throw new Error('Canal não configurado com Evolution / Evolution GO');
     }
 
     console.log('[ChannelService] Obtendo QR Code:', {
       channelId,
       instanceId: channel.evolutionInstanceId,
-      hasApiKey: !!apiKey,
-      provider: getWhatsAppChannelProvider(channel.config as Record<string, unknown>),
+      hasGlobalApiKey: !!globalApiKey,
+      hasInstanceAuth: !!instanceAuthKey,
+      provider,
     });
 
     try {
+      if (provider === 'evolution_go') {
+        const webhookUrl = this.getWebhookUrl(channel.config);
+        try {
+          console.log('[ChannelService] Evolution GO: connect antes do QR...');
+          await baileysApi.setWebhook(channel.evolutionInstanceId, webhookUrl || '', globalApiKey);
+        } catch (connectErr: any) {
+          console.warn('[ChannelService] Evolution GO connect antes do QR:', connectErr?.message);
+        }
+      }
+
       // Primeiro, tentar obter pelo status da instância
       console.log('[ChannelService] Tentando obter QR Code via getInstanceStatus...');
       let status;
       try {
         status = await baileysApi.getInstanceStatus(
           channel.evolutionInstanceId,
-          apiKey
+          globalApiKey,
         );
       } catch (statusError: any) {
         console.error('[ChannelService] Erro ao obter status, tentando conectar diretamente...', statusError.message);
@@ -668,7 +683,7 @@ export class ChannelService {
       try {
         const qrResponse = await baileysApi.getQRCode(
           channel.evolutionInstanceId,
-          apiKey
+          instanceAuthKey || globalApiKey,
         );
 
         console.log('[ChannelService] Resposta completa do getQRCode:', JSON.stringify(qrResponse, null, 2).substring(0, 1000));

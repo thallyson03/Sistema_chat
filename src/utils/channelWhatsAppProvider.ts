@@ -64,3 +64,14 @@ export function resolveDefaultBaileysApiKey(provider: WhatsAppChannelProvider): 
   if (provider === 'evolution_go') return process.env.EVOLUTION_GO_API_KEY || undefined;
   return process.env.EVOLUTION_API_KEY || undefined;
 }
+
+/** API key global (create, list, connect, delete) — não usar token da instância. */
+export function resolveBaileysGlobalApiKey(
+  channel?: { config?: unknown; evolutionApiKey?: string | null } | null,
+): string | undefined {
+  const masked = '***';
+  const provider = getWhatsAppChannelProvider(channel?.config as Record<string, unknown>);
+  const stored = channel?.evolutionApiKey;
+  if (stored && stored !== masked) return stored;
+  return resolveDefaultBaileysApiKey(provider);
+}
