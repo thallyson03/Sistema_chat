@@ -1,5 +1,14 @@
 import { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { JOURNEY_CONTROL_META, type JourneyControlType } from '../utils/journeyControlLabels';
+import {
+  applyDelayPartsToConfig,
+  normalizeJourneyDelayConfig,
+  formatJourneyDelayParts,
+  isJourneyDelayConfigured,
+  journeyDelayPartsToMs,
+  JOURNEY_MAX_SYNC_DELAY_MS,
+} from '../utils/journeyDelay';
 
 interface Channel {
   id: string;
@@ -54,7 +63,16 @@ export default function JourneyNodeConfigModal({
     if (nodeType === 'ACTION' && !initialConfig.actionType) {
       initialConfig.actionType = 'send_message';
     }
-    
+
+    if (nodeType === 'CONTROL' && initialConfig.controlType === 'delay') {
+      const parts = normalizeJourneyDelayConfig(initialConfig);
+      Object.assign(initialConfig, {
+        delayHours: parts.hours,
+        delayMinutes: parts.minutes,
+        delaySeconds: parts.seconds,
+      });
+    }
+
     setConfig(initialConfig);
   }, [nodeId, nodeLabel, nodeConfig, nodeType]);
 
@@ -94,7 +112,12 @@ export default function JourneyNodeConfigModal({
   };
 
   const handleSave = () => {
-    onSave(config, label);
+    let payload = { ...config };
+    if (nodeType === 'CONTROL' && config.controlType === 'delay') {
+      const parts = normalizeJourneyDelayConfig(config);
+      payload = applyDelayPartsToConfig(payload, parts);
+    }
+    onSave(payload, label);
     onClose();
   };
 
@@ -671,8 +694,19 @@ export default function JourneyNodeConfigModal({
                 Tipo de controle *
               </label>
               <select
-                value={config.controlType || 'delay'}
-                onChange={(e) => setConfig({ ...config, controlType: e.target.value })}
+                value={config.controlType || ''}
+                onChange={(e) => {
+                  const controlType = e.target.value as JourneyControlType;
+                  const meta = JOURNEY_CONTROL_META[controlType];
+                  const next: Record<string, unknown> = { ...config, controlType };
+                  if (controlType === 'delay' && next.delayHours === undefined && next.delayMinutes === undefined) {
+                    Object.assign(next, { delayHours: 0, delayMinutes: 5, delaySeconds: 0 });
+                  }
+                  setConfig(next);
+                  if (meta && (!label.trim() || label.startsWith('Controle'))) {
+                    setLabel(meta.defaultLabel);
+                  }
+                }}
                 style={{
                   width: '100%',
                   padding: '10px',
@@ -681,52 +715,101 @@ export default function JourneyNodeConfigModal({
                   fontSize: '14px',
                 }}
               >
+                <option value="" disabled>
+                  Selecione o tipo…
+                </option>
                 <option value="delay">⏱️ Esperar (delay)</option>
                 <option value="split">🔀 Dividir tráfego (A/B)</option>
                 <option value="wait_event">⏳ Aguardar evento</option>
-                <option value="loop">🔁 Loop / Repetir</option>
-                <option value="stop">🛑 Parar jornada</option>
+                <option value="loop">🔁 Repetir (loop)</option>
+                <option value="stop">🛑 Para o fluxo (fim)</option>
               </select>
+              {config.controlType && JOURNEY_CONTROL_META[config.controlType as JourneyControlType] && (
+                <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '6px' }}>
+                  {JOURNEY_CONTROL_META[config.controlType as JourneyControlType].description}
+                </p>
+              )}
             </div>
 
             {config.controlType === 'delay' && (
-              <>
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>
-                    Tempo de espera *
-                  </label>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <input
-                      type="number"
-                      value={config.delayValue || 1}
-                      onChange={(e) => setConfig({ ...config, delayValue: parseInt(e.target.value) || 1 })}
-                      min="1"
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>
+                  Tempo de espera *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                  {(
+                    [
+                      { key: 'delayHours' as const, label: 'Horas', max: 999, min: 0 },
+                      { key: 'delayMinutes' as const, label: 'Minutos', max: 59, min: 0 },
+                      { key: 'delaySeconds' as const, label: 'Segundos', max: 59, min: 0 },
+                    ] as const
+                  ).map((field) => (
+                    <div key={field.key}>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: '11px',
+                          color: '#9ca3af',
+                          marginBottom: '4px',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {field.label}
+                      </span>
+                      <input
+                        type="number"
+                        value={config[field.key] ?? 0}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value, 10);
+                          const clamped = Number.isFinite(raw)
+                            ? Math.max(field.min, Math.min(field.max, raw))
+                            : 0;
+                          setConfig({ ...config, [field.key]: clamped });
+                        }}
+                        min={field.min}
+                        max={field.max}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid rgba(63, 73, 69, 0.55)',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
+                  {isJourneyDelayConfigured(config) ? (
+                    <>
+                      Total:{' '}
+                      <strong style={{ color: '#a7f3d0' }}>
+                        {formatJourneyDelayParts(normalizeJourneyDelayConfig(config))}
+                      </strong>
+                    </>
+                  ) : (
+                    <span style={{ color: '#f87171' }}>
+                      Informe pelo menos 1 segundo de espera
+                    </span>
+                  )}
+                </p>
+                {isJourneyDelayConfigured(config) &&
+                  journeyDelayPartsToMs(normalizeJourneyDelayConfig(config)) >
+                    JOURNEY_MAX_SYNC_DELAY_MS && (
+                    <p
                       style={{
-                        flex: 1,
-                        padding: '10px',
-                        border: '1px solid rgba(63, 73, 69, 0.55)',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                      }}
-                    />
-                    <select
-                      value={config.delayUnit || 'hours'}
-                      onChange={(e) => setConfig({ ...config, delayUnit: e.target.value })}
-                      style={{
-                        flex: 1,
-                        padding: '10px',
-                        border: '1px solid rgba(63, 73, 69, 0.55)',
-                        borderRadius: '6px',
-                        fontSize: '14px',
+                        fontSize: '11px',
+                        color: '#fbbf24',
+                        marginTop: '6px',
+                        lineHeight: 1.4,
                       }}
                     >
-                      <option value="minutes">Minutos</option>
-                      <option value="hours">Horas</option>
-                      <option value="days">Dias</option>
-                    </select>
-                  </div>
-                </div>
-              </>
+                      Atenção: hoje o sistema aplica no máximo <strong>30 segundos</strong> de espera
+                      por execução. Valores maiores serão reduzidos até o agendamento completo de
+                      delays longos.
+                    </p>
+                  )}
+              </div>
             )}
 
             {config.controlType === 'split' && (
@@ -841,15 +924,39 @@ export default function JourneyNodeConfigModal({
             )}
 
             {config.controlType === 'stop' && (
-              <div style={{ 
-                marginBottom: '20px', 
-                padding: '12px', 
-                backgroundColor: 'rgba(127, 29, 29, 0.25)', 
-                border: '1px solid rgba(248, 113, 113, 0.5)', 
-                borderRadius: '8px' 
-              }}>
-                <p style={{ margin: 0, fontSize: '13px', color: '#fecaca', fontWeight: '500' }}>
-                  ⚠️ Esta ação interromperá a jornada para este contato. O contato não continuará no fluxo após este ponto.
+              <div
+                style={{
+                  marginBottom: '20px',
+                  padding: '14px',
+                  backgroundColor: 'rgba(127, 29, 29, 0.3)',
+                  border: '1px solid rgba(248, 113, 113, 0.55)',
+                  borderRadius: '8px',
+                }}
+              >
+                <p
+                  style={{
+                    margin: '0 0 8px',
+                    fontSize: '14px',
+                    color: '#fecaca',
+                    fontWeight: '700',
+                  }}
+                >
+                  🛑 Para o fluxo
+                </p>
+                <p style={{ margin: 0, fontSize: '13px', color: '#fca5a5', lineHeight: 1.45 }}>
+                  Encerra a jornada <strong>para este contato</strong> neste ponto. Blocos conectados
+                  depois deste nó <strong>não serão executados</strong>. Use no final de um ramo ou
+                  quando quiser interromper o envio automático.
+                </p>
+                <p
+                  style={{
+                    margin: '10px 0 0',
+                    fontSize: '11px',
+                    color: '#f87171',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  Este bloco não possui saída no canvas — é um ponto de fim.
                 </p>
               </div>
             )}
@@ -868,7 +975,16 @@ export default function JourneyNodeConfigModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={!label.trim() || (nodeType === 'ACTION' && config.actionType === 'send_message' && (!config.message || !config.channelId))}
+            disabled={
+              !label.trim() ||
+              (nodeType === 'ACTION' &&
+                config.actionType === 'send_message' &&
+                (!config.message || !config.channelId)) ||
+              (nodeType === 'CONTROL' && !config.controlType) ||
+              (nodeType === 'CONTROL' &&
+                config.controlType === 'delay' &&
+                !isJourneyDelayConfigured(config))
+            }
             className="rounded-md border-none px-5 py-2.5 text-sm font-bold text-[#003919] transition-opacity disabled:cursor-not-allowed disabled:opacity-50 primary-gradient-channel enabled:cursor-pointer enabled:hover:opacity-95"
           >
             Salvar

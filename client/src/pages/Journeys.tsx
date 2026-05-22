@@ -18,6 +18,7 @@ import { Button } from '../components/ui/Button';
 import JourneyNodeConfigModal from '../components/JourneyNodeConfigModal';
 import { JourneyCustomNode } from '../components/JourneyCustomNode';
 import { useConfirm } from '../components/ui/ConfirmProvider';
+import { JOURNEY_CONTROL_META } from '../utils/journeyControlLabels';
 
 type JourneyStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
 type JourneyNodeType = 'TRIGGER' | 'ACTION' | 'CONDITION' | 'CONTROL';
@@ -306,21 +307,29 @@ export default function Journeys() {
     [setEdges],
   );
 
-  const addNode = (type: JourneyNodeType) => {
+  const addNode = (type: JourneyNodeType, presetConfig?: Record<string, unknown>) => {
     if (!selectedJourney) {
       alert('Selecione ou crie uma jornada primeiro.');
       return;
     }
 
     const id = `node_${Date.now()}`;
-    const label =
+    let label =
       type === 'TRIGGER'
         ? 'Trigger: Novo contato'
         : type === 'ACTION'
-        ? 'Ação: Enviar mensagem WhatsApp'
-        : type === 'CONDITION'
-        ? 'Condição'
-        : 'Controle';
+          ? 'Ação: Enviar mensagem WhatsApp'
+          : type === 'CONDITION'
+            ? 'Condição'
+            : 'Controle';
+
+    let config: Record<string, unknown> = presetConfig ? { ...presetConfig } : {};
+
+    if (type === 'CONTROL' && presetConfig?.controlType) {
+      const controlKey = presetConfig.controlType as keyof typeof JOURNEY_CONTROL_META;
+      const meta = JOURNEY_CONTROL_META[controlKey];
+      if (meta) label = meta.defaultLabel;
+    }
 
     const position = {
       x: 200 + nodes.length * 40,
@@ -329,14 +338,24 @@ export default function Journeys() {
 
     const newNode: Node = {
       id,
-      data: { label, type, config: {} },
+      data: { label, type, config },
       position,
-      type: 'journeyNode', // Usar nosso nó customizado
+      type: 'journeyNode',
     };
 
     setNodes((nds) => nds.concat(newNode));
-    // Abrir modal de configuração imediatamente após criar
     setEditingNode(newNode);
+  };
+
+  const addControlNode = (controlType: 'delay' | 'split' | 'wait_event' | 'loop' | 'stop') => {
+    const defaults: Record<string, Record<string, unknown>> = {
+      delay: { controlType: 'delay', delayHours: 0, delayMinutes: 5, delaySeconds: 0 },
+      split: { controlType: 'split', splitPercent: 50 },
+      wait_event: { controlType: 'wait_event', eventType: 'message_received' },
+      loop: { controlType: 'loop', loopCount: 2, loopDelay: 0, loopDelayUnit: 'minutes' },
+      stop: { controlType: 'stop' },
+    };
+    addNode('CONTROL', defaults[controlType]);
   };
 
   const handleNodeClick: NodeMouseHandler = (_event, node) => {
@@ -667,21 +686,29 @@ export default function Journeys() {
                   )}
                 </div>
                 {selectedJourney.status !== 'ACTIVE' && nodes.length > 0 && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await api.put(`/api/journeys/${selectedJourney.id}`, { status: 'ACTIVE' });
-                        await handleSelectJourney(selectedJourney.id);
-                        alert('Jornada ativada! Ela começará a funcionar automaticamente.');
-                      } catch (error: any) {
-                        alert(error.response?.data?.error || 'Erro ao ativar jornada');
-                      }
-                    }}
-                  >
-                    Ativar Jornada
-                  </Button>
+                  <div className="flex flex-col items-end gap-2">
+                    <p className="max-w-xs text-right text-[11px] text-amber-200/90">
+                      Em rascunho a jornada não dispara. Ative após configurar o trigger (ex.: lista) e
+                      salvar o fluxo.
+                    </p>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await api.put(`/api/journeys/${selectedJourney.id}`, { status: 'ACTIVE' });
+                          await handleSelectJourney(selectedJourney.id);
+                          alert(
+                            'Jornada ativada! Novos eventos do trigger passam a disparar automaticamente. Se o trigger for "lista", marque "Executar para contatos já existentes" ao ativar ou adicione o contato à lista de novo.',
+                          );
+                        } catch (error: any) {
+                          alert(error.response?.data?.error || 'Erro ao ativar jornada');
+                        }
+                      }}
+                    >
+                      Ativar Jornada
+                    </Button>
+                  </div>
                 )}
               </div>
             ) : (
@@ -868,7 +895,7 @@ export default function Journeys() {
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">CONTROLS</div>
             <div className="grid grid-cols-3 gap-2.5">
               <button
-                onClick={() => addNode('CONTROL')}
+                onClick={() => addControlNode('delay')}
                 className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Esperar (delay)"
               >
@@ -876,7 +903,7 @@ export default function Journeys() {
                 <span className="text-[10px] font-semibold text-center leading-tight">Esperar</span>
               </button>
               <button
-                onClick={() => addNode('CONTROL')}
+                onClick={() => addControlNode('split')}
                 className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Dividir tráfego (A/B)"
               >
@@ -884,7 +911,7 @@ export default function Journeys() {
                 <span className="text-[10px] font-semibold text-center leading-tight">A/B</span>
               </button>
               <button
-                onClick={() => addNode('CONTROL')}
+                onClick={() => addControlNode('wait_event')}
                 className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Aguardar evento"
               >
@@ -892,7 +919,7 @@ export default function Journeys() {
                 <span className="text-[10px] font-semibold text-center leading-tight">Evento</span>
               </button>
               <button
-                onClick={() => addNode('CONTROL')}
+                onClick={() => addControlNode('loop')}
                 className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
                 title="Loop / Repetir"
               >
@@ -900,12 +927,12 @@ export default function Journeys() {
                 <span className="text-[10px] font-semibold text-center leading-tight">Loop</span>
               </button>
               <button
-                onClick={() => addNode('CONTROL')}
-                className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-3.5 text-violet-100 transition-all hover:scale-[1.02] hover:border-violet-400/45 hover:bg-violet-500/18 hover:shadow-forest-glow"
-                title="Parar jornada"
+                onClick={() => addControlNode('stop')}
+                className="col-span-2 flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-lg border border-red-400/35 bg-red-500/12 px-2.5 py-3.5 text-red-100 transition-all hover:scale-[1.02] hover:border-red-400/55 hover:bg-red-500/20"
+                title="Para o fluxo — encerra a jornada para este contato"
               >
                 <span className="text-lg">🛑</span>
-                <span className="text-[10px] font-semibold text-center leading-tight">Parar</span>
+                <span className="text-[10px] font-bold text-center leading-tight">Para o fluxo</span>
               </button>
             </div>
           </div>

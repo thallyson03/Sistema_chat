@@ -1,6 +1,12 @@
 import React from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { useConfirm } from './ui/ConfirmProvider';
+import {
+  getControlSummary,
+  isControlConfigured,
+  JOURNEY_CONTROL_META,
+  type JourneyControlType,
+} from '../utils/journeyControlLabels';
 
 interface CustomNodeProps {
   data: {
@@ -38,12 +44,16 @@ export function JourneyCustomNode({ data, id }: CustomNodeProps) {
       return !!(config.conditionType && config.operator);
     }
     if (type === 'CONTROL') {
-      return !!(config.controlType && (config.delayValue || config.splitPercent));
+      return isControlConfigured(config);
     }
     return true;
   };
 
   const configured = isConfigured();
+  const controlType = config.controlType as JourneyControlType | undefined;
+  const controlMeta = controlType ? JOURNEY_CONTROL_META[controlType] : null;
+  const controlSummary = type === 'CONTROL' ? getControlSummary(config) : null;
+  const isStopControl = type === 'CONTROL' && controlType === 'stop';
 
   const getNodeColor = () => {
     if (!configured)
@@ -53,6 +63,15 @@ export function JourneyCustomNode({ data, id }: CustomNodeProps) {
         text: '#fecaca',
         softBg: 'rgba(127, 29, 29, 0.2)',
       };
+
+    if (isStopControl) {
+      return {
+        bg: 'rgba(127, 29, 29, 0.45)',
+        border: '#f87171',
+        text: '#fecaca',
+        softBg: 'rgba(127, 29, 29, 0.28)',
+      };
+    }
 
     switch (type) {
       case 'TRIGGER':
@@ -209,10 +228,10 @@ export function JourneyCustomNode({ data, id }: CustomNodeProps) {
             {type === 'TRIGGER'
               ? '🎯'
               : type === 'ACTION'
-              ? '⚡'
-              : type === 'CONDITION'
-              ? '❓'
-              : '🎛️'}
+                ? '⚡'
+                : type === 'CONDITION'
+                  ? '❓'
+                  : controlMeta?.icon || '🎛️'}
           </div>
 
           {/* Tipo + label */}
@@ -232,10 +251,10 @@ export function JourneyCustomNode({ data, id }: CustomNodeProps) {
               {type === 'TRIGGER'
                 ? 'Trigger'
                 : type === 'ACTION'
-                ? 'Ação'
-                : type === 'CONDITION'
-                ? 'Condição'
-                : 'Controle'}
+                  ? 'Ação'
+                  : type === 'CONDITION'
+                    ? 'Condição'
+                    : controlMeta?.shortTitle || 'Controle'}
             </div>
             {/* Label */}
             <div
@@ -286,19 +305,57 @@ export function JourneyCustomNode({ data, id }: CustomNodeProps) {
             )}
           </div>
         )}
+
+        {type === 'CONTROL' && (
+          <div style={{ marginTop: '8px', fontSize: '11px' }}>
+            {configured && controlSummary ? (
+              <div
+                style={{
+                  padding: '6px 8px',
+                  backgroundColor: isStopControl ? 'rgba(127, 29, 29, 0.35)' : '#0d0f0d',
+                  borderRadius: '6px',
+                  border: `1px solid ${isStopControl ? 'rgba(248, 113, 113, 0.45)' : 'rgba(63, 73, 69, 0.35)'}`,
+                  color: colors.text,
+                  fontWeight: isStopControl ? 600 : 500,
+                }}
+              >
+                {isStopControl ? '🛑 ' : ''}
+                {controlSummary}
+              </div>
+            ) : (
+              <div style={{ color: '#f87171', fontWeight: 500 }}>
+                ⚠️ Escolha o tipo de controle
+              </div>
+            )}
+            {isStopControl && configured && (
+              <div
+                style={{
+                  marginTop: '4px',
+                  fontSize: '10px',
+                  color: '#fca5a5',
+                  opacity: 0.9,
+                }}
+              >
+                Sem saída — fim do fluxo
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Handle de saída */}
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        style={{
-          background: colors.border,
-          width: '12px',
-          height: '12px',
-          border: '2px solid #121412',
-        }}
-      />
+      {/* Handle de saída (não usado em "Para o fluxo") */}
+      {!isStopControl && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          style={{
+            background: colors.border,
+            width: '12px',
+            height: '12px',
+            border: '2px solid #121412',
+          }}
+        />
+      )}
     </div>
   );
 }

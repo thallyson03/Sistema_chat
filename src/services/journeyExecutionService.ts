@@ -1,4 +1,5 @@
 import prisma from '../config/database';
+import { journeyDelayMsFromConfig } from '../utils/journeyDelay';
 import { MessageService } from './messageService';
 
 const messageService = new MessageService();
@@ -41,13 +42,13 @@ export class JourneyExecutionService {
         include: {
           nodes: {
             where: { type: 'TRIGGER' },
-            select: { id: true, config: true },
+            select: { id: true, type: true, config: true },
           },
         },
       });
 
       for (const journey of activeJourneys) {
-        const triggerNode = journey.nodes[0];
+        const triggerNode = journey.nodes.find((n) => n.type === 'TRIGGER');
         if (!triggerNode) continue;
 
         const config = this.parseNodeConfig(triggerNode.config);
@@ -253,7 +254,7 @@ export class JourneyExecutionService {
 
         case 'CONTROL':
           if (config.controlType === 'delay') {
-            const delayMs = this.calculateDelay(config.delayValue, config.delayUnit);
+            const delayMs = journeyDelayMsFromConfig(config as Record<string, unknown>);
             const effectiveDelay = Math.max(0, Math.min(delayMs, this.MAX_SYNC_DELAY_MS));
             if (effectiveDelay > 0) {
               await new Promise((resolve) => setTimeout(resolve, effectiveDelay));
@@ -694,13 +695,24 @@ export class JourneyExecutionService {
     messageContent = messageContent.replace(/\{\{telefone\}\}/g, contact.phone || '');
     messageContent = messageContent.replace(/\{\{email\}\}/g, contact.email || '');
 
-    // Buscar ou criar conversa
-    let conversation = contact.conversations?.[0];
+    const channelId = String(config.channelId || '').trim();
+    if (!channelId) {
+      console.error('[JourneyExecution] channelId não configurado na ação de mensagem');
+      return false;
+    }
+
+    // Buscar conversa no canal configurado na ação (não apenas a mais recente)
+    let conversation =
+      contact.conversations?.find((c: { channelId: string | null }) => c.channelId === channelId) ||
+      (await prisma.conversation.findFirst({
+        where: { contactId: contact.id, channelId },
+        orderBy: { lastMessageAt: 'desc' },
+      }));
+
     if (!conversation) {
-      // Criar conversa se não existir
       conversation = await prisma.conversation.create({
         data: {
-          channelId: config.channelId,
+          channelId,
           contactId: contact.id,
           status: 'OPEN',
         },
@@ -889,6 +901,8 @@ export class JourneyExecutionService {
    */
   private calculateDelay(value: number, unit: string): number {
     switch (unit) {
+      case 'seconds':
+        return value * 1000;
       case 'minutes':
         return value * 60 * 1000;
       case 'hours':
@@ -896,7 +910,7 @@ export class JourneyExecutionService {
       case 'days':
         return value * 24 * 60 * 60 * 1000;
       default:
-        return value * 60 * 60 * 1000; // Default: horas
+        return value * 60 * 60 * 1000;
     }
   }
 

@@ -1,7 +1,6 @@
 import prisma from '../config/database';
-import { JourneyExecutionService } from './journeyExecutionService';
-
-const journeyExecutionService = new JourneyExecutionService();
+import { dispatchJourneyEvent } from './journeyEventDispatcher';
+import { parseJourneyNodeConfig } from '../utils/journeyNodeConfig';
 
 export class ContactListService {
   /**
@@ -24,16 +23,20 @@ export class ContactListService {
       });
 
       for (const journey of journeys) {
-        const triggerNode = journey.nodes.find(
-          (n: any) => n.type === 'TRIGGER' && 
-          (n.config as any)?.triggerType === 'list_added' &&
-          (n.config as any)?.listId === listId
-        );
+        const triggerNode = journey.nodes.find((n) => n.type === 'TRIGGER');
+        if (!triggerNode) continue;
 
-        if (triggerNode) {
-          console.log(`[ContactListService] Disparando jornada ${journey.id} para contato ${contactId} adicionado à lista ${listId}`);
-          await journeyExecutionService.executeJourneyForContact(journey.id, contactId);
-        }
+        const triggerConfig = parseJourneyNodeConfig(triggerNode.config);
+        if (triggerConfig.triggerType !== 'list_added') continue;
+        if (triggerConfig.listId && triggerConfig.listId !== listId) continue;
+
+        console.log(
+          `[ContactListService] Disparando jornada ${journey.id} (list_added) para contato ${contactId} na lista ${listId}`,
+        );
+        await dispatchJourneyEvent('list_added', {
+          contactId,
+          listId,
+        });
       }
     } catch (error: any) {
       console.error(`[ContactListService] Erro ao disparar jornadas para lista ${listId}:`, error);
