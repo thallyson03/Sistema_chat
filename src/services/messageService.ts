@@ -460,6 +460,10 @@ export class MessageService {
         outboundSendError = {
           message: sendError.message,
           code: sendError.code ?? null,
+          details: sendError.details ?? null,
+          errorSubcode: sendError.errorSubcode ?? null,
+          type: sendError.type ?? null,
+          source: sendError.source ?? 'api',
           at: new Date().toISOString(),
         };
         console.warn(

@@ -3,6 +3,14 @@ import FormData from 'form-data';
 import fs from 'fs';
 import { providerResilienceService } from './providerResilienceService';
 
+function rethrowMetaSendError(error: unknown, fallback: string): never {
+  const err = error as { response?: { data?: { error?: unknown } }; message?: string };
+  if (err?.response?.data?.error) {
+    throw error;
+  }
+  throw new Error(err?.message || fallback);
+}
+
 interface WhatsAppConfig {
   token: string;
   phoneNumberId: string;
@@ -124,11 +132,7 @@ export class WhatsAppOfficialService {
         status: error.response?.status,
         data: error.response?.data,
       });
-      throw new Error(
-        error.response?.data?.error?.message ||
-        error.message ||
-        'Erro ao enviar mensagem via WhatsApp Official'
-      );
+      rethrowMetaSendError(error, 'Erro ao enviar mensagem via WhatsApp Official');
     }
   }
 
@@ -174,11 +178,7 @@ export class WhatsAppOfficialService {
         status: error.response?.status,
         data: error.response?.data,
       });
-      throw new Error(
-        error.response?.data?.error?.message ||
-          error.message ||
-          'Erro ao enviar botões interativos via WhatsApp Official',
-      );
+      rethrowMetaSendError(error, 'Erro ao enviar botões interativos via WhatsApp Official');
     }
   }
 
@@ -234,11 +234,7 @@ export class WhatsAppOfficialService {
         status: error.response?.status,
         data: error.response?.data,
       });
-      throw new Error(
-        error.response?.data?.error?.message ||
-          error.message ||
-          'Erro ao enviar lista interativa via WhatsApp Official',
-      );
+      rethrowMetaSendError(error, 'Erro ao enviar lista interativa via WhatsApp Official');
     }
   }
 
@@ -293,11 +289,7 @@ export class WhatsAppOfficialService {
         status: error.response?.status,
         data: error.response?.data,
       });
-      throw new Error(
-        error.response?.data?.error?.message ||
-        error.message ||
-        'Erro ao enviar template via WhatsApp Official'
-      );
+      rethrowMetaSendError(error, 'Erro ao enviar template via WhatsApp Official');
     }
   }
 
@@ -374,11 +366,7 @@ export class WhatsAppOfficialService {
         status: error.response?.status,
         data: error.response?.data,
       });
-      throw new Error(
-        error.response?.data?.error?.message ||
-        error.message ||
-        'Erro ao enviar mídia via WhatsApp Official'
-      );
+      rethrowMetaSendError(error, 'Erro ao enviar mídia via WhatsApp Official');
     }
   }
 
@@ -602,11 +590,7 @@ export class WhatsAppOfficialService {
         status: error.response?.status,
         data: error.response?.data,
       });
-      throw new Error(
-        error.response?.data?.error?.message ||
-        error.message ||
-        'Erro ao fazer upload de mídia'
-      );
+      rethrowMetaSendError(error, 'Erro ao fazer upload de mídia');
     }
   }
 
@@ -709,11 +693,7 @@ export class WhatsAppOfficialService {
         status: error.response?.status,
         data: error.response?.data,
       });
-      throw new Error(
-        error.response?.data?.error?.message ||
-          error.message ||
-          'Erro ao enviar pesquisa de satisfação via WhatsApp Official'
-      );
+      rethrowMetaSendError(error, 'Erro ao enviar pesquisa de satisfação via WhatsApp Official');
     }
   }
 

@@ -5,6 +5,11 @@ import { dispatchJourneyEvent } from './journeyEventDispatcher';
 import vm from 'vm';
 import axios from 'axios';
 import { resolvePublicAppBaseUrl } from '../utils/publicBaseUrl';
+import {
+  categorizeSendFailure,
+  resolveFailureBranchStepId,
+} from '../utils/sendFailureCategory';
+import type { WhatsAppSendErrorPayload } from '../utils/whatsappMessagingWindow';
 
 export interface CreateBotData {
   name: string;
@@ -597,6 +602,13 @@ export class BotService {
           }
         }
       }
+      if (s.type === 'MESSAGE' && s?.config?.failureBranches) {
+        for (const targetId of Object.values(s.config.failureBranches as Record<string, string>)) {
+          if (targetId && targetId !== 'END') {
+            referencedIds.add(String(targetId));
+          }
+        }
+      }
     }
 
     // Entrada = step que não é alvo de nenhuma conexão
@@ -766,7 +778,19 @@ export class BotService {
                   ...currentStep.response,
                   buttons: configButtons,
                 };
-          await this.sendBotResponse(session.conversationId, responseToSend as any, session.botId, sessionContext);
+
+          const routedFailure = await this.handleMessageStepSendOutcome({
+            flow,
+            session,
+            currentStep,
+            responseToSend,
+            sessionContext,
+            advanceToNextStep,
+            hasButtons,
+          });
+          if (routedFailure) {
+            break;
+          }
 
           if (hasButtons) {
             console.log('[BotService] MESSAGE com botões: aguardando escolha do usuário');
@@ -2386,7 +2410,189 @@ export class BotService {
     }
   }
 
-  private async sendBotResponse(conversationId: string, response: any, botId: string, context?: Record<string, any>) {
+  private async handleMessageStepSendOutcome(params: {
+    flow: any;
+    session: any;
+    currentStep: any;
+    responseToSend: any;
+    sessionContext: Record<string, any>;
+    advanceToNextStep: (nextStepId: string | null | undefined, reason: string) => Promise<void>;
+    hasButtons: boolean;
+  }): Promise<boolean> {
+    const { session, currentStep, responseToSend, sessionContext, advanceToNextStep } = params;
+
+    try {
+      const sentMessage = await this.sendBotResponse(
+        session.conversationId,
+        responseToSend as any,
+        session.botId,
+        sessionContext,
+        { flowStepId: currentStep.id, botSessionId: session.id },
+      );
+
+      if ((sentMessage.status || '').toUpperCase() !== 'FAILED') {
+        return false;
+      }
+
+      return this.routeMessageSendFailure({
+        session,
+        currentStep,
+        sendError: (sentMessage.metadata as any)?.sendError,
+        advanceToNextStep,
+      });
+    } catch (error: any) {
+      return this.routeMessageSendFailure({
+        session,
+        currentStep,
+        sendError: null,
+        error,
+        advanceToNextStep,
+      });
+    }
+  }
+
+  private async routeMessageSendFailure(params: {
+    session: any;
+    currentStep: any;
+    sendError?: WhatsAppSendErrorPayload | null;
+    error?: unknown;
+    advanceToNextStep: (nextStepId: string | null | undefined, reason: string) => Promise<void>;
+  }): Promise<boolean> {
+    const category = categorizeSendFailure(params.sendError, params.error);
+    const failureStepId = resolveFailureBranchStepId(
+      params.currentStep.config?.failureBranches,
+      category,
+    );
+
+    console.warn('[BotService] Falha ao enviar mensagem do bloco MESSAGE:', {
+      stepId: params.currentStep.id,
+      category,
+      failureStepId: failureStepId || null,
+      code: params.sendError?.code ?? null,
+      message: params.sendError?.message || (params.error as Error | undefined)?.message || null,
+    });
+
+    if (!failureStepId) {
+      return true;
+    }
+
+    await params.advanceToNextStep(failureStepId, `send_failed:${category}`);
+    return true;
+  }
+
+  async handleFlowMessageSendFailure(params: {
+    conversationId: string;
+    messageId: string;
+    flowStepId: string;
+    sendError?: WhatsAppSendErrorPayload | null;
+  }): Promise<void> {
+    const session = await prisma.botSession.findFirst({
+      where: {
+        conversationId: params.conversationId,
+        isActive: true,
+        handoffToUserId: null,
+      },
+    });
+
+    if (!session?.currentFlowId) {
+      return;
+    }
+
+    const sessionContext = (session.context as Record<string, any>) || {};
+    const alreadyRouted =
+      sessionContext?.lastSendFailureRouted?.messageId === params.messageId;
+    if (alreadyRouted) {
+      return;
+    }
+
+    const flow = await prisma.flow.findUnique({
+      where: { id: session.currentFlowId },
+      include: {
+        steps: {
+          include: { response: true, conditions: true },
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    if (!flow) return;
+
+    const failedStep = flow.steps.find((step) => step.id === params.flowStepId);
+    if (!failedStep || failedStep.type !== 'MESSAGE') {
+      return;
+    }
+
+    const category = categorizeSendFailure(params.sendError);
+    const failureStepId = resolveFailureBranchStepId(
+      (failedStep.config as any)?.failureBranches,
+      category,
+    );
+
+    if (!failureStepId) {
+      return;
+    }
+
+    const advanceToNextStep = async (nextStepId: string | null | undefined, reason: string) => {
+      if (!nextStepId) {
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: { currentFlowId: null, currentStepId: null },
+        });
+        return;
+      }
+
+      if (nextStepId === 'END') {
+        await prisma.botSession.update({
+          where: { id: session.id },
+          data: { currentFlowId: null, currentStepId: null },
+        });
+        return;
+      }
+
+      await prisma.botSession.update({
+        where: { id: session.id },
+        data: { currentStepId: nextStepId },
+      });
+
+      const updatedSession = { ...session, currentStepId: nextStepId };
+      await this.executeFlow(flow, updatedSession as any, '', { _fromFlow: true } as any);
+      console.log('[BotService] Fluxo retomado após falha assíncrona:', { reason, nextStepId });
+    };
+
+    const routed = await this.routeMessageSendFailure({
+      session,
+      currentStep: failedStep,
+      sendError: params.sendError,
+      advanceToNextStep,
+    });
+
+    if (!routed) {
+      return;
+    }
+
+    await prisma.botSession.update({
+      where: { id: session.id },
+      data: {
+        context: {
+          ...sessionContext,
+          lastSendFailureRouted: {
+            messageId: params.messageId,
+            category,
+            flowStepId: params.flowStepId,
+            at: new Date().toISOString(),
+          },
+        },
+      },
+    });
+  }
+
+  private async sendBotResponse(
+    conversationId: string,
+    response: any,
+    botId: string,
+    context?: Record<string, any>,
+    flowContext?: { flowStepId?: string; botSessionId?: string },
+  ) {
     try {
       // Buscar conversa para obter userId (pode ser null para mensagens do bot)
       const conversation = await prisma.conversation.findUnique({
@@ -2425,7 +2631,7 @@ export class BotService {
         finalMediaUrl = await this.ensureMediaUrlReachable(parsedMediaUrl, responseType);
       }
 
-      await this.messageService.sendMessage({
+      const message = await this.messageService.sendMessage({
         conversationId,
         userId: '', // Bot não tem userId (será normalizado para null no MessageService)
         content: content || '',
@@ -2434,7 +2640,11 @@ export class BotService {
         fileName: response.metadata?.fileName || undefined,
         caption: content || '',
         buttons: Array.isArray(response.buttons) ? response.buttons : undefined,
-        metadata: response.metadata || undefined,
+        metadata: {
+          ...(response.metadata || {}),
+          ...(flowContext?.flowStepId ? { flowStepId: flowContext.flowStepId } : {}),
+          ...(flowContext?.botSessionId ? { botSessionId: flowContext.botSessionId } : {}),
+        },
         fromBot: true,
       });
 
@@ -2442,9 +2652,11 @@ export class BotService {
         type: responseType,
         buttonsCount: Array.isArray(response.buttons) ? response.buttons.length : 0,
         interactiveType: response?.metadata?.interactiveType || null,
+        status: message.status,
       });
 
       console.log(`[BotService] Resposta do bot enviada para conversa ${conversationId}`);
+      return message;
     } catch (error: any) {
       console.error('[BotService] Erro ao enviar resposta do bot:', error.message);
       throw error;

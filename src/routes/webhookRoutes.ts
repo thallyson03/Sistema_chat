@@ -21,6 +21,7 @@ import {
   emitQrcodeUpdate,
 } from '../utils/realtimeEvents';
 import { hybridCacheService } from '../services/hybridCacheService';
+import { extractWhatsAppWebhookStatusError } from '../utils/whatsappMessagingWindow';
 import { extractEvolutionMediaFields } from '../utils/whatsappMedia';
 import {
   extractEvolutionEventType,
@@ -883,9 +884,9 @@ async function handleWhatsAppOfficialStatus(status: any) {
       messageId: status.id,
       status: status.status,
       timestamp: status.timestamp,
+      hasErrors: Array.isArray(status.errors) && status.errors.length > 0,
     });
 
-    // Atualizar status da mensagem no banco se houver externalId
     if (status.id) {
       const mappedStatus =
         status.status === 'delivered'
@@ -896,6 +897,9 @@ async function handleWhatsAppOfficialStatus(status: any) {
           ? 'FAILED'
           : 'SENT';
 
+      const webhookSendError =
+        mappedStatus === 'FAILED' ? extractWhatsAppWebhookStatusError(status) : null;
+
       const affectedMessages = await prisma.message.findMany({
         where: {
           externalId: status.id,
@@ -903,26 +907,65 @@ async function handleWhatsAppOfficialStatus(status: any) {
         select: {
           id: true,
           conversationId: true,
+          metadata: true,
         },
       });
 
-      await prisma.message.updateMany({
-        where: {
-          externalId: status.id,
-        },
-        data: {
+      for (const msg of affectedMessages) {
+        const updateData: {
+          status: typeof mappedStatus;
+          metadata?: Record<string, unknown>;
+        } = {
           status: mappedStatus as any,
-        },
-      });
+        };
 
-      // Emitir atualização em tempo real para refletir o check no chat sem refresh.
-      if (io && affectedMessages.length > 0) {
-        for (const msg of affectedMessages) {
+        if (webhookSendError) {
+          const existingMetadata =
+            msg.metadata && typeof msg.metadata === 'object'
+              ? (msg.metadata as Record<string, unknown>)
+              : {};
+          updateData.metadata = {
+            ...existingMetadata,
+            sendError: {
+              message: webhookSendError.message,
+              code: webhookSendError.code ?? null,
+              details: webhookSendError.details ?? null,
+              errorSubcode: webhookSendError.errorSubcode ?? null,
+              type: webhookSendError.type ?? null,
+              source: 'webhook',
+              at: new Date().toISOString(),
+            },
+          };
+        }
+
+        await prisma.message.update({
+          where: { id: msg.id },
+          data: {
+            status: mappedStatus as any,
+            ...(updateData.metadata ? { metadata: updateData.metadata as any } : {}),
+          },
+        });
+
+        if (io) {
           emitMessageStatus(io, {
             conversationId: msg.conversationId,
             messageId: msg.id,
             status: mappedStatus,
+            sendError: updateData.metadata?.sendError as Record<string, unknown> | undefined,
           });
+        }
+
+        if (mappedStatus === 'FAILED' && webhookSendError) {
+          const mergedMetadata = (updateData.metadata || msg.metadata) as Record<string, unknown> | null;
+          const flowStepId = mergedMetadata?.flowStepId;
+          if (mergedMetadata?.fromBot && flowStepId) {
+            void botService.handleFlowMessageSendFailure({
+              conversationId: msg.conversationId,
+              messageId: msg.id,
+              flowStepId: String(flowStepId),
+              sendError: webhookSendError,
+            });
+          }
         }
       }
     }

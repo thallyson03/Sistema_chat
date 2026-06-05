@@ -25,7 +25,15 @@ export function emitConversationDelta(io: any, event: 'new_message' | 'conversat
   }
 }
 
-export function emitMessageStatus(io: any, data: { conversationId: string; messageId: string; status: string }): void {
+export function emitMessageStatus(
+  io: any,
+  data: {
+    conversationId: string;
+    messageId: string;
+    status: string;
+    sendError?: Record<string, unknown>;
+  },
+): void {
   if (!io || !data?.conversationId || !data?.messageId) return;
 
   io.to(`conversation_${data.conversationId}`).emit('message_status', data);

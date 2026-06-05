@@ -23,6 +23,8 @@ import TaskNotificationCard, {
 import NoteNotificationCard, {
   NoteNotificationData,
 } from '../components/chat/NoteNotificationCard';
+import MessageSendErrorBadge from '../components/chat/MessageSendErrorBadge';
+import { formatMetaSendErrorDisplay } from '../utils/metaSendError';
 import { useEvolutionOutboundPresence } from '../hooks/useEvolutionOutboundPresence';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 
@@ -153,6 +155,10 @@ interface Message {
     sendError?: {
       message?: string;
       code?: string | number | null;
+      details?: string | null;
+      errorSubcode?: string | number | null;
+      type?: string | null;
+      source?: string;
       at?: string;
     };
     editedAt?: string;
@@ -531,13 +537,29 @@ export default function Conversations() {
 
     socket.on(
       'message_status',
-      (data: { conversationId: string; messageId: string; status: string }) => {
+      (data: {
+        conversationId: string;
+        messageId: string;
+        status: string;
+        sendError?: NonNullable<Message['metadata']>['sendError'];
+      }) => {
         const currentId = currentConversationIdRef.current;
         if (!currentId || data.conversationId !== currentId) return;
 
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.id === data.messageId ? { ...msg, status: data.status } : msg,
+            msg.id === data.messageId
+              ? {
+                  ...msg,
+                  status: data.status,
+                  metadata: data.sendError
+                    ? {
+                        ...(msg.metadata || {}),
+                        sendError: data.sendError,
+                      }
+                    : msg.metadata,
+                }
+              : msg,
           ),
         );
       },
@@ -1124,10 +1146,10 @@ export default function Conversations() {
       if (response.status === 201 && response.data?.id) {
         appendMessageToChat(response.data as Message);
         if ((response.data.status || '').toUpperCase() === 'FAILED') {
-          const failedMsg =
-            response.data.metadata?.sendError?.message ||
-            'Não foi possível entregar a mensagem pelo WhatsApp.';
-          setSendError(failedMsg);
+          setSendError(
+            formatOutboundSendError(response.data.metadata?.sendError) ||
+              'Não foi possível entregar a mensagem pelo WhatsApp.',
+          );
         }
       }
       queueConversationsRefresh(250);
@@ -1244,7 +1266,7 @@ export default function Conversations() {
         appendMessageToChat(sendResponse.data as Message);
         if ((sendResponse.data.status || '').toUpperCase() === 'FAILED') {
           setSendError(
-            sendResponse.data.metadata?.sendError?.message ||
+            formatOutboundSendError(sendResponse.data.metadata?.sendError) ||
               'Não foi possível enviar o arquivo pelo WhatsApp.',
           );
         }
@@ -1301,7 +1323,7 @@ export default function Conversations() {
           appendMessageToChat(audioResponse.data as Message);
           if ((audioResponse.data.status || '').toUpperCase() === 'FAILED') {
             setSendError(
-              audioResponse.data.metadata?.sendError?.message ||
+            formatOutboundSendError(audioResponse.data.metadata?.sendError) ||
                 'Não foi possível enviar o áudio pelo WhatsApp.',
             );
           }
@@ -1382,6 +1404,19 @@ export default function Conversations() {
       return 'text-sky-400';
     }
     return 'text-on-surface-variant/70';
+  };
+
+  const isMessageSendFailed = (message: Message) =>
+    (message.status || '').toUpperCase() === 'FAILED';
+
+  const formatOutboundSendError = (
+    sendError?: NonNullable<Message['metadata']>['sendError'],
+  ) => {
+    const display = formatMetaSendErrorDisplay(sendError ?? null);
+    if (display.codeLabel) {
+      return `${display.description} (${display.codeLabel})`;
+    }
+    return display.description;
   };
 
   const formatAudioTime = (seconds: number) => {
@@ -2147,6 +2182,7 @@ export default function Conversations() {
                     const isFromCustomer = !isBotMessage && message.userId === null;
                     const isOwnMessage =
                       message.userId !== null || (isBotMessage && !isTaskNotification && !isNoteNotification);
+                    const isFailedOutbound = isOwnMessage && isMessageSendFailed(message);
                     const contactName = selectedConversation?.contact.name || '';
                     const contactAvatar = selectedConversation
                       ? getContactAvatar(selectedConversation.contact)
@@ -2204,6 +2240,12 @@ export default function Conversations() {
                         {isFromCustomer && (
                           <div className="mb-1 text-xs font-semibold text-on-surface-variant">
                             {contactName}
+                          </div>
+                        )}
+
+                        {isFailedOutbound && message.type !== 'TEXT' && (
+                          <div className="mb-1 flex items-center justify-end gap-2">
+                            <MessageSendErrorBadge sendError={message.metadata?.sendError} />
                           </div>
                         )}
                         
@@ -2818,6 +2860,11 @@ export default function Conversations() {
                                 : 'rounded-2xl rounded-bl-none border border-primary/5 bg-surface-container-highest text-on-surface'
                             }`}
                           >
+                            {isFailedOutbound && (
+                              <div className="mb-2 flex justify-end border-b border-white/20 pb-1.5">
+                                <MessageSendErrorBadge sendError={message.metadata?.sendError} />
+                              </div>
+                            )}
                             {message.metadata?.satisfactionSurveyResponse &&
                             typeof message.metadata?.score === 'number' ? (
                               <div className="space-y-1">
@@ -2904,8 +2951,8 @@ export default function Conversations() {
                           {message.userId && (
                             <span
                               title={
-                                (message.status || '').toUpperCase() === 'FAILED'
-                                  ? message.metadata?.sendError?.message || 'Falha no envio'
+                                isMessageSendFailed(message)
+                                  ? formatOutboundSendError(message.metadata?.sendError)
                                   : (message.status || '').toUpperCase() === 'DELIVERED' ||
                                       (message.status || '').toUpperCase() === 'READ'
                                     ? 'Entregue'
@@ -2913,17 +2960,10 @@ export default function Conversations() {
                               }
                               className={`text-xs leading-none ${getDeliveryCheckClass(message.status)}`}
                             >
-                              {(message.status || '').toUpperCase() === 'FAILED' ? '✗' : '✓'}
+                              {isMessageSendFailed(message) ? '✗' : '✓'}
                             </span>
                           )}
                         </div>
-                        {isOwnMessage &&
-                          (message.status || '').toUpperCase() === 'FAILED' &&
-                          message.metadata?.sendError?.message && (
-                            <p className="mt-1 text-[10px] text-red-400/90">
-                              {message.metadata.sendError.message}
-                            </p>
-                          )}
                       </motion.div>
                       
                       {/* Avatar do agente (só aparece em mensagens do agente) */}

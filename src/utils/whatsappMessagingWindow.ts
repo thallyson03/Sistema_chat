@@ -108,17 +108,80 @@ export function formatMessagingWindowRemaining(remainingMs: number): string {
   return `${minutes} min`;
 }
 
-export function extractWhatsAppApiError(error: unknown): {
+export interface WhatsAppSendErrorPayload {
   message: string;
-  code?: string | number;
-} {
+  code?: string | number | null;
+  details?: string | null;
+  errorSubcode?: string | number | null;
+  type?: string | null;
+  source?: 'api' | 'webhook';
+}
+
+export function parseWhatsAppErrorCodeFromMessage(message?: string | null): number | null {
+  if (!message) return null;
+  const match = message.match(/\(#(\d+)\)/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function extractWhatsAppApiError(error: unknown): WhatsAppSendErrorPayload {
   const err = error as {
     message?: string;
-    response?: { data?: { error?: { message?: string; code?: string | number } } };
+    metaSendError?: WhatsAppSendErrorPayload;
+    response?: {
+      data?: {
+        error?: {
+          message?: string;
+          code?: string | number;
+          error_subcode?: string | number;
+          type?: string;
+          error_data?: { details?: string; messaging_product?: string };
+        };
+      };
+    };
   };
+
+  if (err?.metaSendError) {
+    return err.metaSendError;
+  }
+
   const meta = err?.response?.data?.error;
+  const message = meta?.message || err?.message || 'Erro ao enviar mensagem pelo WhatsApp';
+  const code = meta?.code ?? parseWhatsAppErrorCodeFromMessage(message);
+
   return {
-    message: meta?.message || err?.message || 'Erro ao enviar mensagem pelo WhatsApp',
-    code: meta?.code,
+    message,
+    code: code ?? null,
+    details: meta?.error_data?.details ?? null,
+    errorSubcode: meta?.error_subcode ?? null,
+    type: meta?.type ?? null,
+    source: 'api',
+  };
+}
+
+export function extractWhatsAppWebhookStatusError(status: {
+  errors?: Array<{
+    code?: string | number;
+    title?: string;
+    message?: string;
+    error_data?: { details?: string };
+  }>;
+}): WhatsAppSendErrorPayload | null {
+  const first = status?.errors?.[0];
+  if (!first) return null;
+
+  const message =
+    first.message ||
+    first.title ||
+    (first.code != null ? `(#${first.code}) Falha no envio` : 'Falha no envio pelo WhatsApp');
+
+  return {
+    message,
+    code: first.code ?? parseWhatsAppErrorCodeFromMessage(message),
+    details: first.error_data?.details ?? null,
+    errorSubcode: null,
+    type: null,
+    source: 'webhook',
   };
 }

@@ -18,6 +18,11 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import api from '../utils/api';
 import { useConfirm } from '../components/ui/ConfirmProvider';
+import {
+  SEND_FAILURE_BRANCH_OPTIONS,
+  getFailureBranchHandleId,
+  parseFailureBranchHandleId,
+} from '../utils/sendFailureCategory';
 
 interface Flow {
   id: string;
@@ -197,10 +202,14 @@ const getHandleStyle = (accent: string) => ({
 const MessageNode = ({ data, selected, id }: any) => {
   const accent = '#22c55e';
   const buttons = data.buttons || [];
+  const failureBranches = data.failureBranches || {};
+  const connectedFailureCount = SEND_FAILURE_BRANCH_OPTIONS.filter(
+    (option) => !!failureBranches[option.id],
+  ).length;
   
   return (
     <div
-      style={getNodeCardStyle(selected, accent, '250px', '300px')}
+      style={getNodeCardStyle(selected, accent, '280px', buttons.length > 0 ? '360px' : '340px')}
     >
       {selected && data.onDelete && (
         <button
@@ -248,6 +257,62 @@ const MessageNode = ({ data, selected, id }: any) => {
           ))}
         </div>
       )}
+
+      <div
+        style={{
+          marginTop: '12px',
+          paddingTop: '10px',
+          borderTop: '1px solid rgba(239, 68, 68, 0.25)',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '10px',
+            fontWeight: 700,
+            color: '#fca5a5',
+            marginBottom: '8px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+          }}
+        >
+          Falha ao enviar ({connectedFailureCount}/{SEND_FAILURE_BRANCH_OPTIONS.length})
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {SEND_FAILURE_BRANCH_OPTIONS.map((option) => {
+            const isConnected = !!failureBranches[option.id];
+            return (
+              <div
+                key={option.id}
+                style={{
+                  position: 'relative',
+                  padding: '6px 28px 6px 8px',
+                  backgroundColor: isConnected ? 'rgba(239, 68, 68, 0.12)' : '#0f1419',
+                  borderRadius: '6px',
+                  fontSize: '10px',
+                  border: isConnected ? '1px solid #ef4444' : '1px solid #2d3748',
+                  color: isConnected ? '#fecaca' : '#94a3b8',
+                }}
+                title={option.description}
+              >
+                {option.label}
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id={getFailureBranchHandleId(option.id)}
+                  style={{
+                    ...getHandleStyle('#ef4444'),
+                    top: '50%',
+                    right: -7,
+                    transform: 'translateY(-50%)',
+                    width: 10,
+                    height: 10,
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
       </div>
       {buttons.length > 0 ? (
         buttons.map((btn: any, idx: number) => (
@@ -2052,6 +2117,7 @@ export default function BotFlowBuilderVisual() {
             logicOperator: step.config?.logicOperator || 'AND',
             delay: step.config?.delay || '',
             buttons: step.config?.buttons || [],
+            failureBranches: step.config?.failureBranches || {},
             stepId: step.id,
             config: step.config || {},
             order: step.order,
@@ -2096,6 +2162,28 @@ export default function BotFlowBuilderVisual() {
               labelBgStyle: { fill: 'white', fillOpacity: 0.8 },
             } as any);
           });
+        }
+
+        if (step.type === 'MESSAGE' && step.config?.failureBranches) {
+          Object.entries(step.config.failureBranches as Record<string, string>).forEach(
+            ([category, branchTarget]) => {
+              const normalizedTarget = branchTarget != null ? String(branchTarget).trim() : '';
+              if (!normalizedTarget) return;
+
+              const target = normalizedTarget === 'END' ? 'end' : normalizedTarget;
+              const option = SEND_FAILURE_BRANCH_OPTIONS.find((item) => item.id === category);
+              newEdges.push({
+                id: `${step.id}-fail-${category}-${target}`,
+                source: step.id,
+                sourceHandle: getFailureBranchHandleId(category as any),
+                target,
+                label: option?.label || category,
+                style: { stroke: '#ef4444', strokeWidth: 2 },
+                labelStyle: { fill: '#ef4444', fontWeight: 600 },
+                labelBgStyle: { fill: 'white', fillOpacity: 0.8 },
+              } as any);
+            },
+          );
         }
         if (step.conditions && step.conditions.length > 0) {
           const condition = step.conditions[0];
@@ -2379,6 +2467,40 @@ export default function BotFlowBuilderVisual() {
             label = currentButtons[buttonIndex].text || `Botão ${buttonIndex + 1}`;
             edgeStyle = { stroke: '#22c55e', strokeWidth: 2 };
             labelColor = '#22c55e';
+          }
+        } else if (
+          sourceNode?.type === 'message' &&
+          typeof params.sourceHandle === 'string'
+        ) {
+          const failureCategory = parseFailureBranchHandleId(params.sourceHandle);
+          if (failureCategory) {
+            const nextStepIdValue = params.target === 'end' ? 'END' : targetStepId;
+            const failureBranches = {
+              ...(sourceNode?.data?.config?.failureBranches || {}),
+              ...(sourceNode?.data?.failureBranches || {}),
+              [failureCategory]: nextStepIdValue,
+            };
+
+            try {
+              await api.put(`/api/bots/steps/${sourceStepId}`, {
+                config: {
+                  ...(sourceNode?.data?.config || {}),
+                  failureBranches,
+                },
+              });
+            } catch (error: any) {
+              console.error('❌ Erro ao salvar ramo de falha:', error);
+              const msg =
+                error?.response?.data?.error || error?.message || 'Falha ao salvar ramo de falha';
+              alert(`Conexão não salva: ${msg}. Verifique permissões ou tente novamente.`);
+              return;
+            }
+
+            label =
+              SEND_FAILURE_BRANCH_OPTIONS.find((option) => option.id === failureCategory)?.label ||
+              failureCategory;
+            edgeStyle = { stroke: '#ef4444', strokeWidth: 2 };
+            labelColor = '#ef4444';
           }
         } else {
         // Para outros tipos, salvar nextStepId
@@ -4585,6 +4707,44 @@ export default function BotFlowBuilderVisual() {
                         : 'Adicione botões para criar caminhos diferentes no fluxo.'}
                     </div>
                   )}
+                </div>
+
+                <div
+                  style={{
+                    marginBottom: '18px',
+                    padding: '12px',
+                    backgroundColor: '#2a1418',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#fca5a5', marginBottom: '8px' }}>
+                    Ramificações de falha no envio
+                  </div>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#fecaca', lineHeight: 1.45 }}>
+                    No canvas, conecte cada tipo de erro pelo handle vermelho do bloco de mensagem.
+                    Quando o WhatsApp/Meta recusar o envio, o fluxo seguirá automaticamente o ramo
+                    correspondente — por exemplo, &quot;Número inválido&quot; pode levar a um bloco de
+                    mensagem interna para o time atualizar o telefone do cliente.
+                  </p>
+                  <div style={{ display: 'grid', gap: '6px' }}>
+                    {SEND_FAILURE_BRANCH_OPTIONS.map((option) => (
+                      <div
+                        key={option.id}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#1a1012',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          fontSize: '12px',
+                          color: '#fde8ea',
+                        }}
+                      >
+                        <strong style={{ color: '#fca5a5' }}>{option.label}</strong>
+                        <span style={{ color: '#fecaca' }}> — {option.description}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </>
             )}
