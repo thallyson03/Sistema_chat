@@ -22,6 +22,7 @@ import {
   assertMessagingWindowOpen,
   extractWhatsAppApiError,
   isWhatsAppOfficialChannel,
+  type WhatsAppSendErrorPayload,
 } from '../utils/whatsappMessagingWindow';
 import {
   buildEvolutionButtonsPayload,
@@ -106,8 +107,7 @@ export class MessageService {
     // Se for mensagem interna (notificação apenas no CRM), não enviar para canais externos
     let externalId: string | null = null;
     let status: MessageStatus = MessageStatus.SENT;
-    let outboundSendError: { message: string; code?: string | number | null; at: string } | null =
-      null;
+    let outboundSendError: (WhatsAppSendErrorPayload & { at: string }) | null = null;
 
     if (!conversation) {
       throw new Error('Conversa não encontrada');
