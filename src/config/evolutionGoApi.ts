@@ -237,6 +237,21 @@ class EvolutionGoApiClient {
     }
   }
 
+  async disconnectInstance(instanceUuid: string, apiKeyOrToken?: string) {
+    try {
+      const response = await this.client.post(
+        '/instance/disconnect',
+        {},
+        { headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken) },
+      );
+      return unwrapData(response.data);
+    } catch (error: any) {
+      if (error.response?.status === 404) return null;
+      logGoApiError('Erro em /instance/disconnect', error);
+      throw new Error(extractApiError(error, 'Erro ao desconectar instância na Evolution GO'));
+    }
+  }
+
   async getQRCode(instanceUuid: string, apiKeyOrToken?: string) {
     const response = await this.client.get('/instance/qr', {
       headers: this.getInstanceHeaders(instanceUuid, apiKeyOrToken),

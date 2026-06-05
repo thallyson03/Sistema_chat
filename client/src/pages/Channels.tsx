@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { io, Socket } from 'socket.io-client';
 import api from '../utils/api';
@@ -118,6 +118,38 @@ export default function Channels() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [qrChannelId, setQrChannelId] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  /** Controle da sessão de QR — persiste entre renders sem reabrir modal ao fechar. */
+  const qrFlowRef = useRef<{ active: boolean; channelId: string | null }>({
+    active: false,
+    channelId: null,
+  });
+  const connectionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopConnectionCheck = useCallback(() => {
+    if (connectionPollRef.current) {
+      clearInterval(connectionPollRef.current);
+      connectionPollRef.current = null;
+    }
+    setCheckingConnection(false);
+  }, []);
+
+  const closeQrModal = useCallback(() => {
+    const channelId = qrFlowRef.current.channelId;
+    stopConnectionCheck();
+    qrFlowRef.current = { active: false, channelId: null };
+    setShowQRModal(false);
+    setQrCode(null);
+    setQrChannelId(null);
+    if (channelId) {
+      socketRef.current?.emit('unsubscribe_channel', channelId);
+      void api.post(`/api/channels/${channelId}/cancel-pairing`).catch((error) => {
+        console.warn(
+          '[Channels] cancel-pairing falhou:',
+          error?.response?.data?.error || error?.message,
+        );
+      });
+    }
+  }, [stopConnectionCheck]);
 
   const resetForm = () => {
     setFormData({
@@ -155,27 +187,27 @@ export default function Channels() {
     socketRef.current = socket;
 
     socket.on('qrcode_update', (data: { channelId: string; qrcode: string | null }) => {
-      if (qrChannelId && data.channelId !== qrChannelId) return;
+      if (!qrFlowRef.current.active || data.channelId !== qrFlowRef.current.channelId) {
+        return;
+      }
       if (!data?.qrcode) {
-        if (qrChannelId && data.channelId === qrChannelId) {
-          void api.get(`/api/channels/${data.channelId}/status`).then((response) => {
-            const status = String(response.data?.status || '').toLowerCase();
-            const isConnected =
-              status === 'active' ||
-              status === 'open' ||
-              status === 'connected' ||
-              status === 'ready' ||
-              status === 'authenticated';
-            if (isConnected) {
-              setCheckingConnection(false);
-              setShowQRModal(false);
-              setQrCode(null);
-              setQrChannelId(null);
-              fetchChannels();
-              fetchHealthPanel();
-            }
-          });
-        }
+        void api.get(`/api/channels/${data.channelId}/status`).then((response) => {
+          if (!qrFlowRef.current.active || data.channelId !== qrFlowRef.current.channelId) {
+            return;
+          }
+          const status = String(response.data?.status || '').toLowerCase();
+          const isConnected =
+            status === 'active' ||
+            status === 'open' ||
+            status === 'connected' ||
+            status === 'ready' ||
+            status === 'authenticated';
+          if (isConnected) {
+            closeQrModal();
+            fetchChannels();
+            fetchHealthPanel();
+          }
+        });
         return;
       }
       setQrCode(data.qrcode);
@@ -183,7 +215,7 @@ export default function Channels() {
     });
 
     socket.on('channel_status_update', (data: { channelId: string; status: string }) => {
-      if (qrChannelId && data.channelId === qrChannelId) {
+      if (qrFlowRef.current.active && data.channelId === qrFlowRef.current.channelId) {
         const isConnected =
           data.status === 'ACTIVE' ||
           data.status === 'active' ||
@@ -192,10 +224,7 @@ export default function Channels() {
           data.status === 'ready' ||
           data.status === 'authenticated';
         if (isConnected) {
-          setCheckingConnection(false);
-          setShowQRModal(false);
-          setQrCode(null);
-          setQrChannelId(null);
+          closeQrModal();
           fetchChannels();
           fetchHealthPanel();
         }
@@ -206,10 +235,11 @@ export default function Channels() {
     });
 
     return () => {
+      stopConnectionCheck();
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [qrChannelId]);
+  }, [closeQrModal, stopConnectionCheck]);
 
   const fetchSectors = async () => {
     try {
@@ -329,13 +359,6 @@ export default function Channels() {
     setShowModal(true);
   };
 
-  const closeQrModal = () => {
-    setCheckingConnection(false);
-    setShowQRModal(false);
-    setQrCode(null);
-    setQrChannelId(null);
-  };
-
   const handleRefreshStatus = async (channelId: string) => {
     try {
       const response = await api.get(`/api/channels/${channelId}/status`);
@@ -368,6 +391,7 @@ export default function Channels() {
         return;
       }
       if (response.data.qrcode) {
+        qrFlowRef.current = { active: true, channelId };
         setQrChannelId(channelId);
         setQrCode(response.data.qrcode);
         setShowQRModal(true);
@@ -382,12 +406,17 @@ export default function Channels() {
   };
 
   const startConnectionCheck = (channelId: string) => {
+    stopConnectionCheck();
     setCheckingConnection(true);
     let checkCount = 0;
     const maxChecks = 150;
-    let intervalId: ReturnType<typeof setInterval> | undefined;
 
     const pollStatus = async () => {
+      if (!qrFlowRef.current.active || qrFlowRef.current.channelId !== channelId) {
+        stopConnectionCheck();
+        return;
+      }
+
       checkCount++;
       try {
         console.log(`[Channels] Verificando status (tentativa ${checkCount}/${maxChecks})...`);
@@ -406,7 +435,6 @@ export default function Channels() {
 
         if (isConnected) {
           console.log('[Channels] ✅ Conexão detectada! Fechando modal...');
-          if (intervalId) clearInterval(intervalId);
           closeQrModal();
           await fetchChannels();
           fetchHealthPanel();
@@ -421,14 +449,13 @@ export default function Channels() {
 
       if (checkCount >= maxChecks) {
         console.log('[Channels] ⚠️ Timeout: Parando verificação após 5 minutos');
-        if (intervalId) clearInterval(intervalId);
-        setCheckingConnection(false);
+        stopConnectionCheck();
         alert('⏱️ Tempo de espera esgotado. Verifique manualmente o status do canal.');
       }
     };
 
     void pollStatus();
-    intervalId = setInterval(() => void pollStatus(), 2000);
+    connectionPollRef.current = setInterval(() => void pollStatus(), 2000);
   };
 
   const handleDeleteChannel = async (channelId: string, channelName: string) => {
@@ -1036,13 +1063,7 @@ export default function Channels() {
       {showQRModal && qrCode && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => {
-            if (!checkingConnection) {
-              setShowQRModal(false);
-              setQrCode(null);
-              setQrChannelId(null);
-            }
-          }}
+          onClick={() => closeQrModal()}
         >
           <div
             className="w-full max-w-md rounded-xl border border-[rgba(63,73,69,0.2)] bg-surface-container-highest/95 p-6 text-center shadow-forest-glow backdrop-blur-xl"
@@ -1068,12 +1089,7 @@ export default function Channels() {
             <div className="mt-5">
               <button
                 type="button"
-                onClick={() => {
-                  setShowQRModal(false);
-                  setQrCode(null);
-                  setQrChannelId(null);
-                  setCheckingConnection(false);
-                }}
+                onClick={() => closeQrModal()}
                 className="rounded-lg border border-[rgba(63,73,69,0.25)] bg-surface-container-highest px-5 py-1.5 text-xs font-semibold text-on-surface transition hover:bg-surface-variant"
               >
                 Fechar

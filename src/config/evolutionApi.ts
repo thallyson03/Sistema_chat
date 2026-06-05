@@ -71,6 +71,22 @@ class EvolutionApiClient {
     }
   }
 
+  async disconnectInstance(instanceName: string, apiKey?: string) {
+    try {
+      const response = await this.client.delete(`/instance/logout/${instanceName}`, {
+        headers: this.getHeaders(apiKey),
+      });
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) return null;
+      throw new Error(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          'Erro ao cancelar pareamento na Evolution API',
+      );
+    }
+  }
+
   async getInstanceStatus(instanceName: string, apiKey?: string, _instanceToken?: string) {
     try {
       console.log('[EvolutionAPI] Verificando status da instância:', {

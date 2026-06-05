@@ -757,6 +757,53 @@ export class ChannelService {
     }
   }
 
+  async cancelPairing(
+    channelId: string,
+  ): Promise<{ success: boolean; skipped?: boolean; reason?: string }> {
+    const channel = await this.getChannelByIdRaw(channelId);
+
+    if (!channel) {
+      throw new Error('Canal não encontrado');
+    }
+
+    if (channel.type !== ChannelType.WHATSAPP) {
+      return { success: true, skipped: true, reason: 'not_whatsapp' };
+    }
+
+    const liveStatus = await this.getChannelStatus(channelId);
+    if (liveStatus.status === 'ACTIVE') {
+      return { success: true, skipped: true, reason: 'already_connected' };
+    }
+
+    const baileysApi = getBaileysApi(channel);
+    const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
+    const globalApiKey = resolveBaileysGlobalApiKey(channel);
+    const instanceAuthKey = resolveBaileysApiKey(channel);
+
+    if (!channel.evolutionInstanceId || !globalApiKey) {
+      return { success: true, skipped: true, reason: 'not_configured' };
+    }
+
+    const authKey =
+      provider === 'evolution_go'
+        ? instanceAuthKey || channel.evolutionInstanceToken || undefined
+        : globalApiKey;
+
+    try {
+      console.log('[ChannelService] Cancelando pareamento:', {
+        channelId,
+        provider,
+        instanceId: channel.evolutionInstanceId,
+      });
+      await baileysApi.disconnectInstance(channel.evolutionInstanceId, authKey);
+      console.log('[ChannelService] Pareamento cancelado com sucesso');
+    } catch (error: any) {
+      console.warn('[ChannelService] cancelPairing (best-effort):', error.message);
+    }
+
+    return { success: true };
+  }
+
   async getChannelStatus(channelId: string): Promise<{ status: string }> {
     const channel = await this.getChannelByIdRaw(channelId);
     

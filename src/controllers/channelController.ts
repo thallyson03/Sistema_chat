@@ -239,6 +239,16 @@ export class ChannelController {
     }
   }
 
+  async cancelPairing(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const result = await channelService.cancelPairing(id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
   async getStatus(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;

@@ -27,6 +27,11 @@ router.post(
   authorizeRoles('ADMIN', 'SUPERVISOR'),
   channelController.configureWebhook.bind(channelController)
 );
+router.post(
+  '/:id/cancel-pairing',
+  authorizeRoles('ADMIN', 'SUPERVISOR'),
+  channelController.cancelPairing.bind(channelController)
+);
 router.put(
   '/:id',
   authorizeRoles('ADMIN', 'SUPERVISOR'),
