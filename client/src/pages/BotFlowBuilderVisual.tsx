@@ -234,101 +234,96 @@ const MessageNode = ({ data, selected, id }: any) => {
       {renderNodeHeader('Mensagem', 'chat', '#22c55e')}
 
       <div style={{ padding: '10px 12px 12px' }}>
-        {/* Balão — fluxo normal (envio + resposta do cliente) */}
+        {/* Fluxo normal (envio + resposta do cliente) */}
         <div
           style={{
-            background: 'linear-gradient(180deg, #1d4ed8 0%, #1e3a8a 100%)',
-            borderRadius: '12px',
-            padding: '10px',
-            border: '1px solid #3b82f6',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)',
+            fontSize: '12px',
+            lineHeight: 1.35,
+            color: '#e5e7eb',
+            marginBottom: buttons.length > 0 ? '8px' : '0',
+            backgroundColor: '#0f1419',
+            border: '1px solid #293241',
+            borderRadius: '6px',
+            padding: '8px 9px',
+            whiteSpace: 'pre-wrap',
           }}
         >
-          <div
-            style={{
-              fontSize: '12px',
-              lineHeight: 1.45,
-              color: '#eff6ff',
-              marginBottom: buttons.length > 0 ? '8px' : '4px',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {data.content
-              ? data.content.length > 120
-                ? `${data.content.substring(0, 120)}...`
-                : data.content
-              : 'Nova mensagem'}
-          </div>
+          {data.content
+            ? data.content.length > 120
+              ? `${data.content.substring(0, 120)}...`
+              : data.content
+            : 'Nova mensagem'}
+        </div>
 
-          {buttons.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {buttons.map((btn: any, idx: number) => (
-                <div
-                  key={`btn-row-${idx}`}
+        {buttons.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            {buttons.map((btn: any, idx: number) => (
+              <div
+                key={`btn-row-${idx}`}
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  minHeight: '34px',
+                  padding: '7px 22px 7px 10px',
+                  backgroundColor: idx === 0 ? 'rgba(34, 197, 94, 0.15)' : '#0f1419',
+                  borderRadius: '6px',
+                  border: idx === 0 ? '1px solid #22c55e' : '1px solid #2d3748',
+                }}
+              >
+                <span
                   style={{
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center',
-                    minHeight: '34px',
-                    padding: '7px 22px 7px 10px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(255,255,255,0.12)',
-                    border: '1px solid rgba(255,255,255,0.22)',
+                    flex: 1,
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: idx === 0 ? '#86efac' : '#cbd5e1',
+                    lineHeight: 1.2,
                   }}
                 >
-                  <span
-                    style={{
-                      flex: 1,
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: '#ffffff',
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {btn.text || `Botão ${idx + 1}`}
-                  </span>
-                  <Handle
-                    type="source"
-                    position={Position.Right}
-                    id={`btn-${idx}`}
-                    style={{
-                      ...getHandleStyle(accent),
-                      right: -7,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div
+                  {btn.text || `Botão ${idx + 1}`}
+                </span>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id={`btn-${idx}`}
+                  style={{
+                    ...getHandleStyle(accent),
+                    right: -7,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              minHeight: '28px',
+              marginTop: '8px',
+              paddingRight: '18px',
+              fontSize: '10px',
+              color: '#94a3b8',
+              fontWeight: 600,
+            }}
+          >
+            Próximo passo após envio
+            <Handle
+              type="source"
+              position={Position.Right}
               style={{
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                minHeight: '28px',
-                paddingRight: '18px',
-                fontSize: '10px',
-                color: '#bfdbfe',
-                fontWeight: 600,
+                ...getHandleStyle(accent),
+                right: -7,
+                top: '50%',
+                transform: 'translateY(-50%)',
               }}
-            >
-              Próximo passo após envio
-              <Handle
-                type="source"
-                position={Position.Right}
-                style={{
-                  ...getHandleStyle(accent),
-                  right: -7,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                }}
-              />
-            </div>
-          )}
-        </div>
+            />
+          </div>
+        )}
 
         {/* Rodapé — só dispara se o envio falhar (independente do balão acima) */}
         <div
@@ -4786,7 +4781,7 @@ export default function BotFlowBuilderVisual() {
                     Ramificações de falha no envio
                   </div>
                   <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#fecaca', lineHeight: 1.45 }}>
-                    O balão azul (botões ou próximo passo) é o fluxo normal — só dispara quando o envio
+                    A área superior (mensagem e botões) é o fluxo normal — só dispara quando o envio
                     for bem-sucedido. A seção vermelha abaixo é independente: só entra em ação se a
                     Meta/WhatsApp recusar o envio. Conecte cada tipo de erro pelo handle vermelho
                     correspondente.
