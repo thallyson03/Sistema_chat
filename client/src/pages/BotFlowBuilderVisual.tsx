@@ -206,19 +206,18 @@ const MessageNode = ({ data, selected, id }: any) => {
   const connectedFailureCount = SEND_FAILURE_BRANCH_OPTIONS.filter(
     (option) => !!failureBranches[option.id],
   ).length;
-  
+
   return (
     <div
-      style={getNodeCardStyle(selected, accent, '280px', buttons.length > 0 ? '360px' : '340px')}
+      style={{
+        ...getNodeCardStyle(selected, accent, '300px', '320px'),
+        overflow: 'visible',
+      }}
     >
       {selected && data.onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (data.onRequestDelete) {
-              data.onRequestDelete(id);
-              return;
-            }
             if (data.onRequestDelete) {
               data.onRequestDelete(id);
               return;
@@ -233,103 +232,168 @@ const MessageNode = ({ data, selected, id }: any) => {
       )}
       <Handle type="target" position={Position.Left} style={getHandleStyle(accent)} />
       {renderNodeHeader('Mensagem', 'chat', '#22c55e')}
-      <div style={{ padding: '12px' }}>
-      <div style={{ fontSize: '12px', lineHeight: 1.35, color: '#e5e7eb', marginBottom: buttons.length > 0 ? '10px' : '0', backgroundColor: '#0f1419', border: '1px solid #293241', borderRadius: '6px', padding: '8px 9px' }}>
-        {data.content ? (data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content) : 'Nova mensagem'}
-      </div>
-      {buttons.length > 0 && (
-        <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          {buttons.map((btn: any, idx: number) => (
-            <div
-              key={idx}
-              style={{
-                padding: '8px 10px',
-                backgroundColor: idx === 0 ? 'rgba(34, 197, 94, 0.15)' : '#0f1419',
-                borderRadius: '6px',
-                fontSize: '11px',
-                textAlign: 'left',
-                border: idx === 0 ? '1px solid #22c55e' : '1px solid #2d3748',
-                color: idx === 0 ? '#86efac' : '#cbd5e1',
-              }}
-            >
-              {btn.text || `Botão ${idx + 1}`}
-            </div>
-          ))}
-        </div>
-      )}
 
-      <div
-        style={{
-          marginTop: '12px',
-          paddingTop: '10px',
-          borderTop: '1px solid rgba(239, 68, 68, 0.25)',
-        }}
-      >
+      <div style={{ padding: '10px 12px 12px' }}>
+        {/* Balão — fluxo normal (envio + resposta do cliente) */}
         <div
           style={{
-            fontSize: '10px',
-            fontWeight: 700,
-            color: '#fca5a5',
-            marginBottom: '8px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
+            background: 'linear-gradient(180deg, #1d4ed8 0%, #1e3a8a 100%)',
+            borderRadius: '12px',
+            padding: '10px',
+            border: '1px solid #3b82f6',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)',
           }}
         >
-          Falha ao enviar ({connectedFailureCount}/{SEND_FAILURE_BRANCH_OPTIONS.length})
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {SEND_FAILURE_BRANCH_OPTIONS.map((option) => {
-            const isConnected = !!failureBranches[option.id];
-            return (
-              <div
-                key={option.id}
-                style={{
-                  position: 'relative',
-                  padding: '6px 28px 6px 8px',
-                  backgroundColor: isConnected ? 'rgba(239, 68, 68, 0.12)' : '#0f1419',
-                  borderRadius: '6px',
-                  fontSize: '10px',
-                  border: isConnected ? '1px solid #ef4444' : '1px solid #2d3748',
-                  color: isConnected ? '#fecaca' : '#94a3b8',
-                }}
-                title={option.description}
-              >
-                {option.label}
-                <Handle
-                  type="source"
-                  position={Position.Right}
-                  id={getFailureBranchHandleId(option.id)}
-                  style={{
-                    ...getHandleStyle('#ef4444'),
-                    top: '50%',
-                    right: -7,
-                    transform: 'translateY(-50%)',
-                    width: 10,
-                    height: 10,
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      </div>
-      {buttons.length > 0 ? (
-        buttons.map((btn: any, idx: number) => (
-          <Handle
-            key={`btn-handle-${idx}`}
-            type="source"
-            position={Position.Right}
-            id={`btn-${idx}`}
+          <div
             style={{
-              ...getHandleStyle(accent),
-              top: `${58 + idx * 16}%`,
+              fontSize: '12px',
+              lineHeight: 1.45,
+              color: '#eff6ff',
+              marginBottom: buttons.length > 0 ? '8px' : '4px',
+              whiteSpace: 'pre-wrap',
             }}
-          />
-        ))
-      ) : (
-        <Handle type="source" position={Position.Right} style={getHandleStyle(accent)} />
-      )}
+          >
+            {data.content
+              ? data.content.length > 120
+                ? `${data.content.substring(0, 120)}...`
+                : data.content
+              : 'Nova mensagem'}
+          </div>
+
+          {buttons.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {buttons.map((btn: any, idx: number) => (
+                <div
+                  key={`btn-row-${idx}`}
+                  style={{
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    minHeight: '34px',
+                    padding: '7px 22px 7px 10px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.22)',
+                  }}
+                >
+                  <span
+                    style={{
+                      flex: 1,
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: '#ffffff',
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {btn.text || `Botão ${idx + 1}`}
+                  </span>
+                  <Handle
+                    type="source"
+                    position={Position.Right}
+                    id={`btn-${idx}`}
+                    style={{
+                      ...getHandleStyle(accent),
+                      right: -7,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              style={{
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                minHeight: '28px',
+                paddingRight: '18px',
+                fontSize: '10px',
+                color: '#bfdbfe',
+                fontWeight: 600,
+              }}
+            >
+              Próximo passo após envio
+              <Handle
+                type="source"
+                position={Position.Right}
+                style={{
+                  ...getHandleStyle(accent),
+                  right: -7,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Rodapé — só dispara se o envio falhar (independente do balão acima) */}
+        <div
+          style={{
+            marginTop: '10px',
+            paddingTop: '10px',
+            borderTop: '1px dashed rgba(248, 113, 113, 0.35)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#f87171',
+              marginBottom: '4px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+            }}
+          >
+            Falha ao enviar a mensagem
+          </div>
+          <div style={{ fontSize: '9px', color: '#94a3b8', marginBottom: '8px', lineHeight: 1.35 }}>
+            Ramo separado do fluxo da mensagem. Só é usado quando a API recusa o envio (
+            {connectedFailureCount} conectado{connectedFailureCount === 1 ? '' : 's'}).
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {SEND_FAILURE_BRANCH_OPTIONS.map((option) => {
+              const isConnected = !!failureBranches[option.id];
+              return (
+                <div
+                  key={option.id}
+                  style={{
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    minHeight: '26px',
+                    padding: '5px 22px 5px 8px',
+                    backgroundColor: isConnected ? 'rgba(239, 68, 68, 0.12)' : '#0f1419',
+                    borderRadius: '6px',
+                    fontSize: '10px',
+                    border: isConnected ? '1px solid #ef4444' : '1px solid #2d3748',
+                    color: isConnected ? '#fecaca' : '#94a3b8',
+                  }}
+                  title={option.description}
+                >
+                  <span style={{ flex: 1, lineHeight: 1.2 }}>{option.label}</span>
+                  <Handle
+                    type="source"
+                    position={Position.Right}
+                    id={getFailureBranchHandleId(option.id)}
+                    style={{
+                      ...getHandleStyle('#ef4444'),
+                      right: -7,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: 10,
+                      height: 10,
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -4722,10 +4786,10 @@ export default function BotFlowBuilderVisual() {
                     Ramificações de falha no envio
                   </div>
                   <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#fecaca', lineHeight: 1.45 }}>
-                    No canvas, conecte cada tipo de erro pelo handle vermelho do bloco de mensagem.
-                    Quando o WhatsApp/Meta recusar o envio, o fluxo seguirá automaticamente o ramo
-                    correspondente — por exemplo, &quot;Número inválido&quot; pode levar a um bloco de
-                    mensagem interna para o time atualizar o telefone do cliente.
+                    O balão azul (botões ou próximo passo) é o fluxo normal — só dispara quando o envio
+                    for bem-sucedido. A seção vermelha abaixo é independente: só entra em ação se a
+                    Meta/WhatsApp recusar o envio. Conecte cada tipo de erro pelo handle vermelho
+                    correspondente.
                   </p>
                   <div style={{ display: 'grid', gap: '6px' }}>
                     {SEND_FAILURE_BRANCH_OPTIONS.map((option) => (
