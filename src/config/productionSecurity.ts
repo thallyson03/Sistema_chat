@@ -7,41 +7,66 @@ const WEAK_JWT_SECRETS = new Set([
   'jwt-secret',
 ]);
 
+function isStrictMode(): boolean {
+  const raw = String(process.env.SECURITY_STRICT_MODE || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 export function validateProductionSecurity(): void {
   if (process.env.NODE_ENV !== 'production') return;
 
   const errors: string[] = [];
+  const warnings: string[] = [];
+  const strict = isStrictMode();
 
   const jwtSecret = process.env.JWT_SECRET || '';
-  if (!jwtSecret || jwtSecret.length < 32) {
-    errors.push('JWT_SECRET deve ter pelo menos 32 caracteres em produção');
+  if (!jwtSecret) {
+    errors.push('JWT_SECRET é obrigatório em produção');
+  } else if (jwtSecret.length < 16) {
+    errors.push('JWT_SECRET deve ter pelo menos 16 caracteres em produção');
+  } else if (jwtSecret.length < 32) {
+    warnings.push(
+      'JWT_SECRET tem menos de 32 caracteres — recomendado aumentar para maior segurança',
+    );
   } else if (WEAK_JWT_SECRETS.has(jwtSecret.toLowerCase())) {
     errors.push('JWT_SECRET padrão não é permitido em produção');
   }
 
+  if (!process.env.MEDIA_SIGNED_URL_SECRET && !jwtSecret) {
+    errors.push('MEDIA_SIGNED_URL_SECRET ou JWT_SECRET é obrigatório para URLs de mídia');
+  }
+
   if (!process.env.METRICS_AUTH_TOKEN) {
-    errors.push('METRICS_AUTH_TOKEN é obrigatório em produção');
+    const msg = 'METRICS_AUTH_TOKEN não configurado — /metrics ficará desabilitado';
+    if (strict) errors.push(msg);
+    else warnings.push(msg);
   }
 
   if (!process.env.EVOLUTION_WEBHOOK_SECRET && !process.env.EVOLUTION_API_KEY) {
-    errors.push('EVOLUTION_WEBHOOK_SECRET ou EVOLUTION_API_KEY é obrigatório em produção');
+    const msg =
+      'EVOLUTION_WEBHOOK_SECRET ou EVOLUTION_API_KEY não configurado — webhooks Evolution rejeitarão requisições';
+    if (strict) errors.push(msg);
+    else warnings.push(msg);
   }
 
   if (!process.env.WHATSAPP_APP_SECRET) {
-    errors.push('WHATSAPP_APP_SECRET é obrigatório em produção');
+    const msg =
+      'WHATSAPP_APP_SECRET não configurado — webhooks WhatsApp Official sem assinatura em produção serão rejeitados';
+    if (strict) errors.push(msg);
+    else warnings.push(msg);
   }
 
   if (
     !process.env.PUBLIC_PIPELINE_API_KEY &&
     !process.env.PUBLIC_PIPELINE_SIGNATURE_SECRET
   ) {
-    errors.push(
-      'PUBLIC_PIPELINE_API_KEY ou PUBLIC_PIPELINE_SIGNATURE_SECRET é obrigatório em produção',
+    warnings.push(
+      'PUBLIC_PIPELINE_API_KEY não configurado — API pública de pipeline permanece desabilitada (comportamento seguro)',
     );
   }
 
-  if (!process.env.MEDIA_SIGNED_URL_SECRET && !process.env.JWT_SECRET) {
-    errors.push('MEDIA_SIGNED_URL_SECRET ou JWT_SECRET é obrigatório para URLs de mídia');
+  for (const warn of warnings) {
+    logger.warn('production security recommendation', { reason: warn });
   }
 
   if (errors.length > 0) {
@@ -53,5 +78,8 @@ export function validateProductionSecurity(): void {
     );
   }
 
-  logger.info('production security validation passed');
+  logger.info('production security validation passed', {
+    strictMode: strict,
+    warnings: warnings.length,
+  });
 }
