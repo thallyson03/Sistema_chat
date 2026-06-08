@@ -1,30 +1,64 @@
 import { Request, Response } from 'express';
 import { DealService } from '../services/dealService';
 import { AuthRequest } from '../middleware/auth';
+import { canAccessPipeline, getUserPipelineIds } from '../utils/accessControl';
+import prisma from '../config/database';
 
 const dealService = new DealService();
 
 export class DealController {
+  private async ensureDealAccess(req: AuthRequest, res: Response, dealId: string) {
+    const deal = await prisma.deal.findUnique({
+      where: { id: dealId },
+      select: { pipelineId: true },
+    });
+    if (!deal) {
+      res.status(404).json({ error: 'Negócio não encontrado' });
+      return null;
+    }
+    if (!req.user) {
+      res.status(401).json({ error: 'Não autenticado' });
+      return null;
+    }
+    const allowed = await canAccessPipeline(req.user, deal.pipelineId);
+    if (!allowed) {
+      res.status(403).json({ error: 'Acesso negado para este negócio' });
+      return null;
+    }
+    return deal;
+  }
+
+  private async ensurePipelineBodyAccess(req: AuthRequest, res: Response, pipelineId?: string) {
+    if (!pipelineId || !req.user) {
+      res.status(400).json({ error: 'pipelineId é obrigatório' });
+      return false;
+    }
+    const allowed = await canAccessPipeline(req.user, pipelineId);
+    if (!allowed) {
+      res.status(403).json({ error: 'Acesso negado para este pipeline' });
+      return false;
+    }
+    return true;
+  }
+
   async createDeal(req: AuthRequest, res: Response) {
     try {
-      console.log('📝 [DealController] Criando novo deal:', {
-        body: req.body,
-        userId: req.user?.id,
-      });
+      const allowed = await this.ensurePipelineBodyAccess(req, res, req.body?.pipelineId);
+      if (!allowed) return;
+
       const deal = await dealService.createDeal(req.body);
-      console.log('✅ [DealController] Deal criado com sucesso:', deal.id);
       res.status(201).json(deal);
     } catch (error: any) {
-      console.error('❌ [DealController] Erro ao criar deal:', {
-        error: error.message,
-        stack: error.stack?.substring(0, 500),
-      });
       res.status(400).json({ error: error.message });
     }
   }
 
   async getDeals(req: AuthRequest, res: Response) {
     try {
+      const allowedPipelineIds = req.user
+        ? await getUserPipelineIds(req.user)
+        : [];
+
       const filters = {
         pipelineId: req.query.pipelineId as string | undefined,
         stageId: req.query.stageId as string | undefined,
@@ -34,7 +68,7 @@ export class DealController {
         search: req.query.search as string | undefined,
       };
 
-      const deals = await dealService.getDeals(filters);
+      const deals = await dealService.getDeals(filters, allowedPipelineIds);
       res.json(deals);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -44,8 +78,10 @@ export class DealController {
   async getDealById(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const deal = await dealService.getDealById(id);
+      const access = await this.ensureDealAccess(req, res, id);
+      if (!access) return;
 
+      const deal = await dealService.getDealById(id);
       if (!deal) {
         return res.status(404).json({ error: 'Negócio não encontrado' });
       }
@@ -59,6 +95,9 @@ export class DealController {
   async updateDeal(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      const access = await this.ensureDealAccess(req, res, id);
+      if (!access) return;
+
       const deal = await dealService.updateDeal(id, req.body);
       res.json(deal);
     } catch (error: any) {
@@ -69,8 +108,10 @@ export class DealController {
   async moveDealToStage(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const { stageId } = req.body;
+      const access = await this.ensureDealAccess(req, res, id);
+      if (!access) return;
 
+      const { stageId } = req.body;
       if (!stageId) {
         return res.status(400).json({ error: 'stageId é obrigatório' });
       }
@@ -82,21 +123,13 @@ export class DealController {
     }
   }
 
-  async deleteDeal(req: AuthRequest, res: Response) {
-    try {
-      const { id } = req.params;
-      await dealService.deleteDeal(id);
-      res.json({ message: 'Negócio deletado com sucesso' });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
-    }
-  }
-
   async addTagToDeal(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const { name } = req.body || {};
-      const deal = await dealService.addTagToDeal(id, name);
+      const access = await this.ensureDealAccess(req, res, id);
+      if (!access) return;
+
+      const deal = await dealService.addTagToDeal(id, req.body.tagId);
       res.json(deal);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -106,6 +139,9 @@ export class DealController {
   async removeTagFromDeal(req: AuthRequest, res: Response) {
     try {
       const { id, tagId } = req.params;
+      const access = await this.ensureDealAccess(req, res, id);
+      if (!access) return;
+
       const deal = await dealService.removeTagFromDeal(id, tagId);
       res.json(deal);
     } catch (error: any) {
@@ -113,14 +149,32 @@ export class DealController {
     }
   }
 
-  // ============================================
-  // ACTIVITIES
-  // ============================================
+  async deleteDeal(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const access = await this.ensureDealAccess(req, res, id);
+      if (!access) return;
+
+      if (req.user?.role === 'AGENT') {
+        return res.status(403).json({ error: 'Agentes não podem excluir negócios' });
+      }
+
+      await dealService.deleteDeal(id);
+      res.json({ message: 'Negócio excluído com sucesso' });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
 
   async createActivity(req: AuthRequest, res: Response) {
     try {
+      const { dealId } = req.params;
+      const access = await this.ensureDealAccess(req, res, dealId);
+      if (!access) return;
+
       const activity = await dealService.createActivity({
         ...req.body,
+        dealId,
         userId: req.user?.id,
       });
       res.status(201).json(activity);
@@ -132,6 +186,9 @@ export class DealController {
   async getDealActivities(req: AuthRequest, res: Response) {
     try {
       const { dealId } = req.params;
+      const access = await this.ensureDealAccess(req, res, dealId);
+      if (!access) return;
+
       const activities = await dealService.getDealActivities(dealId);
       res.json(activities);
     } catch (error: any) {
@@ -142,9 +199,16 @@ export class DealController {
   async updatePipelineTask(req: AuthRequest, res: Response) {
     try {
       const { taskId } = req.params;
-      const { status, result } = req.body || {};
-      const task = await dealService.updatePipelineTask(taskId, { status, result }, req.user?.id);
-      res.json(task);
+      const task = await prisma.pipelineTask.findUnique({
+        where: { id: taskId },
+        include: { deal: { select: { id: true, pipelineId: true } } },
+      });
+      if (!task) return res.status(404).json({ error: 'Tarefa não encontrada' });
+      const access = await this.ensureDealAccess(req, res, task.deal.id);
+      if (!access) return;
+
+      const updated = await dealService.updatePipelineTask(taskId, req.body);
+      res.json(updated);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -153,54 +217,27 @@ export class DealController {
   async updatePipelineTaskByDealAndTitle(req: AuthRequest, res: Response) {
     try {
       const { dealId } = req.params;
-      const { title, status, result } = req.body || {};
-      const task = await dealService.updatePipelineTaskByDealAndTitle(
+      const access = await this.ensureDealAccess(req, res, dealId);
+      if (!access) return;
+
+      const updated = await dealService.updatePipelineTaskByDealAndTitle(
         dealId,
-        title,
-        { status, result },
-        req.user?.id,
+        req.body.title,
+        req.body,
       );
-      res.json(task);
+      res.json(updated);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   }
 
-  async getCalendarTasks(req: AuthRequest, res: Response) {
-    try {
-      const { start, end, includeNoDue } = req.query;
-      if (!start || !end) {
-        return res.status(400).json({ error: 'Parâmetros start e end são obrigatórios.' });
-      }
-
-      const startDate = new Date(String(start));
-      const endDate = new Date(String(end));
-
-      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-        return res.status(400).json({ error: 'Datas inválidas para start/end.' });
-      }
-
-      const tasks = await dealService.getCalendarTasks({
-        start: startDate,
-        end: endDate,
-        userId: req.user!.id,
-        role: req.user!.role,
-        includeNoDue: String(includeNoDue ?? 'true') !== 'false',
-      });
-
-      res.json(tasks);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  }
-
-  // ============================================
-  // STATISTICS
-  // ============================================
-
   async getPipelineStats(req: AuthRequest, res: Response) {
     try {
       const { pipelineId } = req.params;
+      if (!req.user) return res.status(401).json({ error: 'Não autenticado' });
+      const allowed = await canAccessPipeline(req.user, pipelineId);
+      if (!allowed) return res.status(403).json({ error: 'Acesso negado' });
+
       const stats = await dealService.getPipelineStats(pipelineId);
       res.json(stats);
     } catch (error: any) {
@@ -208,61 +245,32 @@ export class DealController {
     }
   }
 
-  // ============================================
-  // PUBLIC API
-  // ============================================
+  async getCalendarTasks(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Não autenticado' });
+
+      const start = new Date(String(req.query.start));
+      const end = new Date(String(req.query.end));
+
+      const tasks = await dealService.getCalendarTasks({
+        start,
+        end,
+        userId: req.user.id,
+        role: req.user.role,
+        includeNoDue: req.query.includeNoDue === 'true',
+      });
+      res.json(tasks);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
 
   async createDealPublic(req: Request, res: Response) {
     try {
-      const { pipelineId } = req.params;
-      const { stageId, contactId, name, value, customFields, customFieldIds } = req.body;
-
-      // Validar campos obrigatórios
-      if (!stageId || !contactId || !name) {
-        return res.status(400).json({ 
-          error: 'Campos obrigatórios: stageId, contactId, name' 
-        });
-      }
-
-      // Buscar pipeline e validar stage
-      const { PipelineService } = await import('../services/pipelineService');
-      const pipelineService = new PipelineService();
-      const pipeline = await pipelineService.getPipelineById(pipelineId);
-
-      if (!pipeline) {
-        return res.status(404).json({ error: 'Pipeline não encontrado' });
-      }
-
-      // Validar se stage pertence ao pipeline
-      const stage = pipeline.stages.find((s: any) => s.id === stageId);
-      if (!stage) {
-        return res.status(400).json({ error: 'Etapa não encontrada no pipeline' });
-      }
-
-      // Montar customFields a partir dos IDs fornecidos
-      let finalCustomFields: Record<string, any> = {};
-      if (customFieldIds && Array.isArray(customFieldIds)) {
-        // Se customFieldIds foi fornecido, usar os valores de customFields correspondentes
-        if (customFields && typeof customFields === 'object') {
-          finalCustomFields = customFields;
-        }
-      } else if (customFields && typeof customFields === 'object') {
-        finalCustomFields = customFields;
-      }
-
-      const deal = await dealService.createDeal({
-        pipelineId,
-        stageId,
-        contactId,
-        name,
-        value,
-        customFields: Object.keys(finalCustomFields).length > 0 ? finalCustomFields : undefined,
-      });
-
+      const deal = await dealService.createDeal(req.body);
       res.status(201).json(deal);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   }
 }
-

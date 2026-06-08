@@ -87,7 +87,10 @@ export class WebhookService {
       },
     });
 
-    return webhooks;
+    return webhooks.map((webhook) => ({
+      ...webhook,
+      secret: '***',
+    }));
   }
 
   /**
@@ -340,7 +343,9 @@ export class WebhookService {
       return false;
     }
 
-    return webhook.secret === secret;
+    const { timingSafeEqualText } = await import('../utils/securityHelpers');
+    if (!webhook.secret) return false;
+    return timingSafeEqualText(webhook.secret, secret);
   }
 
   /**

@@ -537,9 +537,13 @@ export class MessageService {
             (channel.config as any)?.mediaBaseUrl ||
             null;
           const baseUrl = resolvePublicAppBaseUrl(evoOverride) || 'http://localhost:3007';
-          const fullMediaUrl = data.mediaUrl.startsWith('http') 
-            ? data.mediaUrl 
-            : `${baseUrl}${data.mediaUrl}`;
+          const { appendSignatureToMediaUrl } = await import('../utils/signedMediaUrl');
+          const signedRelativeUrl = data.mediaUrl.startsWith('http')
+            ? data.mediaUrl
+            : appendSignatureToMediaUrl(data.mediaUrl);
+          const fullMediaUrl = signedRelativeUrl.startsWith('http')
+            ? signedRelativeUrl
+            : `${baseUrl}${signedRelativeUrl}`;
 
           const isPublicUrl = fullMediaUrl.startsWith('https://') || fullMediaUrl.startsWith('http://');
           const isNgrok = fullMediaUrl.includes('ngrok');

@@ -1,7 +1,12 @@
 const axios = require('axios');
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'https://evo-lkg80sckkoc4osscgw040cow.vps.chatia.qzz.io';
-const API_KEY = process.env.EVOLUTION_API_KEY || 'CVbR1bU6UXdz12iMFkNdug5Pw7UAUJKx';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const API_KEY = process.env.EVOLUTION_API_KEY;
+
+if (!EVOLUTION_API_URL || !API_KEY) {
+  console.error('Defina EVOLUTION_API_URL e EVOLUTION_API_KEY no ambiente.');
+  process.exit(1);
+}
 
 async function listInstances() {
   try {

@@ -27,6 +27,7 @@ export default function Layout() {
   useEffect(() => {
     const socket: Socket = io(getPublicApiOrigin(), {
       transports: ['websocket', 'polling'],
+      withCredentials: true,
       auth: {
         token: localStorage.getItem('token') || '',
       },

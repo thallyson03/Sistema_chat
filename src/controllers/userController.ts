@@ -59,9 +59,20 @@ export class UserController {
       if (email) updateData.email = email;
       if (name) updateData.name = name;
       if (password) updateData.password = password;
-      if (req.user.role === 'ADMIN' || req.user.role === 'SUPERVISOR') {
+      if (req.user.role === 'ADMIN') {
         if (role) updateData.role = role;
-        if (isActive !== undefined) updateData.isActive = isActive;
+      } else if (req.user.role === 'SUPERVISOR') {
+        if (role) {
+          const { canSupervisorAssignRole } = await import('../utils/accessControl');
+          if (!canSupervisorAssignRole(role)) {
+            return res.status(403).json({ error: 'Supervisor não pode atribuir role ADMIN' });
+          }
+          updateData.role = role;
+        }
+      }
+
+      if (req.user.role === 'ADMIN' || req.user.role === 'SUPERVISOR') {
+        if (req.user.role === 'ADMIN' && isActive !== undefined) updateData.isActive = isActive;
         if (sectorIds !== undefined) updateData.sectorIds = sectorIds;
         if (pipelineIds !== undefined) updateData.pipelineIds = pipelineIds;
         if (channelIds !== undefined) updateData.channelIds = channelIds;

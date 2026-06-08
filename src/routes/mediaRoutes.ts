@@ -7,8 +7,15 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import rateLimit from 'express-rate-limit';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, optionalAuthenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
+import {
+  hasValidSignedFileAccess,
+  requireMessageMediaAccess,
+} from '../middleware/mediaAccess';
+import { buildSignedMediaFilePath } from '../utils/signedMediaUrl';
+import { isUrlAllowedForFetch } from '../utils/securityHelpers';
+import { validateFileMagicBytes } from '../utils/fileMagicBytes';
 import { convertWebmToOgg, convertOggToMp3 } from '../utils/audioConverter';
 import { objectStorageService } from '../services/objectStorageService';
 import {
@@ -238,7 +245,19 @@ router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('fil
     }
 
     const finalFilePath = path.join(uploadDir, finalFilename);
-    let fileUrl = `/api/media/file/${finalFilename}`;
+
+    if (fs.existsSync(finalFilePath)) {
+      const header = Buffer.alloc(Math.min(16, fs.statSync(finalFilePath).size));
+      const fd = fs.openSync(finalFilePath, 'r');
+      fs.readSync(fd, header, 0, header.length, 0);
+      fs.closeSync(fd);
+      if (!validateFileMagicBytes(header, finalMimetype)) {
+        fs.unlinkSync(finalFilePath);
+        return res.status(400).json({ error: 'Conteúdo do arquivo não corresponde ao tipo declarado' });
+      }
+    }
+
+    let fileUrl = buildSignedMediaFilePath(finalFilename);
 
     if (objectStorageService.isEnabled() && fs.existsSync(finalFilePath)) {
       try {
@@ -287,9 +306,15 @@ router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('fil
   }
 });
 
-// Rota para servir arquivos enviados (público para Evolution API poder baixar)
-router.get('/file/:filename', async (req: Request, res: Response) => {
+// Rota para servir arquivos enviados (URL assinada ou usuário autenticado)
+router.get('/file/:filename', optionalAuthenticateToken, async (req: AuthRequest, res: Response) => {
   const filename = req.params.filename;
+
+  if (!hasValidSignedFileAccess(req, filename) && !req.user) {
+    return res.status(401).json({
+      error: 'Acesso negado. URL assinada inválida ou autenticação necessária.',
+    });
+  }
 
   if (!isSafeFilename(filename)) {
     console.error('[Media] ❌ Nome de arquivo inválido (possível path traversal):', filename);
@@ -358,10 +383,13 @@ router.get('/file/:filename', async (req: Request, res: Response) => {
 
 // Rota para servir mídia descriptografada
 // Rota específica para download de áudio em MP3 (quando possível)
-router.get('/download/:messageId', async (req: Request, res: Response) => {
+router.get('/download/:messageId', authenticateToken, async (req: AuthRequest, res: Response) => {
   const { messageId } = req.params;
 
   try {
+    const allowed = await requireMessageMediaAccess(req, res, messageId);
+    if (!allowed) return;
+
     const message = await prisma.message.findUnique({
       where: { id: messageId },
     });
@@ -412,6 +440,9 @@ router.get('/download/:messageId', async (req: Request, res: Response) => {
               : null;
         if (!fallbackUrl) {
           return res.status(404).json({ error: 'Arquivo de áudio não encontrado' });
+        }
+        if (!isUrlAllowedForFetch(fallbackUrl)) {
+          return res.status(403).json({ error: 'URL de mídia não permitida' });
         }
         const response = await axios.get(fallbackUrl, {
           responseType: 'arraybuffer',
@@ -495,10 +526,13 @@ router.get('/download/:messageId', async (req: Request, res: Response) => {
 });
 
 // Rota para servir mídia descriptografada
-router.get('/:messageId', async (req: Request, res: Response) => {
+router.get('/:messageId', authenticateToken, async (req: AuthRequest, res: Response) => {
   const { messageId } = req.params;
 
   try {
+    const allowed = await requireMessageMediaAccess(req, res, messageId);
+    if (!allowed) return;
+
     // Buscar mensagem no banco
     const message = await prisma.message.findUnique({
       where: { id: messageId },
@@ -904,7 +938,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
           const filename = `${messageId}-${Date.now()}${safeExt}`;
           const filePath = path.join(uploadDir, filename);
 
-          let persistedMediaUrl = `/api/media/file/${filename}`;
+          let persistedMediaUrl = buildSignedMediaFilePath(filename);
           let storageKey: string | null = null;
           const canUseObjectStorage = objectStorageService.isEnabled();
           if (canUseObjectStorage) {
@@ -1360,7 +1394,7 @@ router.get('/:messageId', async (req: Request, res: Response) => {
         const filename = `${messageId}-${Date.now()}${safeExt}`;
         const filePath = path.join(uploadDir, filename);
 
-        let persistedMediaUrl = `/api/media/file/${filename}`;
+        let persistedMediaUrl = buildSignedMediaFilePath(filename);
         let storageKey: string | null = null;
         const canUseObjectStorage = objectStorageService.isEnabled();
         if (canUseObjectStorage) {

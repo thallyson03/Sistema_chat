@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { ContactImportController } from '../controllers/contactImportController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authorizeRoles } from '../middleware/auth';
 
 const router = Router();
 const contactImportController = new ContactImportController();
@@ -9,7 +9,11 @@ const contactImportController = new ContactImportController();
 router.use(authenticateToken);
 
 // POST - Importar contatos via CSV
-router.post('/import', contactImportController.importContacts.bind(contactImportController));
+router.post(
+  '/import',
+  authorizeRoles('ADMIN', 'SUPERVISOR'),
+  contactImportController.importContacts.bind(contactImportController),
+);
 
 export default router;
 

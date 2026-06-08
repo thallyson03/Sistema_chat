@@ -165,17 +165,30 @@ export class DealService {
     return deal;
   }
 
-  async getDeals(filters: {
-    pipelineId?: string;
-    stageId?: string;
-    contactId?: string;
-    assignedToId?: string;
-    status?: DealStatus;
-    search?: string;
-  }) {
+  async getDeals(
+    filters: {
+      pipelineId?: string;
+      stageId?: string;
+      contactId?: string;
+      assignedToId?: string;
+      status?: DealStatus;
+      search?: string;
+    },
+    allowedPipelineIds?: string[] | null,
+  ) {
     const where: any = {};
 
+    if (allowedPipelineIds) {
+      if (allowedPipelineIds.length === 0) {
+        return [];
+      }
+      where.pipelineId = { in: allowedPipelineIds };
+    }
+
     if (filters.pipelineId) {
+      if (allowedPipelineIds && !allowedPipelineIds.includes(filters.pipelineId)) {
+        return [];
+      }
       where.pipelineId = filters.pipelineId;
     }
 

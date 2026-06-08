@@ -4,7 +4,11 @@ const axios = require('axios');
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'https://evo-lkg80sckkoc4osscgw040cow.vps.chatia.qzz.io';
 const INSTANCE_NAME = process.env.INSTANCE_NAME || 'channel_1768486944796'; // Nome da instância
 const INSTANCE_TOKEN = process.env.INSTANCE_TOKEN || 'AF1E8A6F-5DA0-4AAC-B900-7646E9A01264'; // Token da instância
-const API_KEY = process.env.EVOLUTION_API_KEY || 'CVbR1bU6UXdz12iMFkNdug5Pw7UAUJKx'; // API Key master
+const API_KEY = process.env.EVOLUTION_API_KEY;
+if (!API_KEY) {
+  console.error('Defina EVOLUTION_API_KEY no ambiente.');
+  process.exit(1);
+}
 const WEBHOOK_URL = 'https://bronchially-unlimed-kemberly.ngrok-free.dev/webhooks/evolution';
 
 console.log('🧪 ============================================');

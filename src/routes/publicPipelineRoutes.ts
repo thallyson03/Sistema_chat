@@ -43,8 +43,10 @@ function optionalPublicAuth(
   const apiKey = process.env.PUBLIC_PIPELINE_API_KEY;
   const signatureSecret = process.env.PUBLIC_PIPELINE_SIGNATURE_SECRET;
 
-  // Compatibilidade: se não há credenciais configuradas no ambiente, mantém rota aberta.
   if (!apiKey && !signatureSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).json({ error: 'API pública de pipeline não configurada' });
+    }
     return next();
   }
 
@@ -79,7 +81,12 @@ function optionalPublicAuth(
 // Rotas públicas para API externa
 // ============================================
 // GET Pipeline por ID (público)
-router.get('/:pipelineId', publicPipelineReadLimiter, pipelineController.getPipelineById.bind(pipelineController));
+router.get(
+  '/:pipelineId',
+  publicPipelineReadLimiter,
+  optionalPublicAuth,
+  pipelineController.getPipelineById.bind(pipelineController),
+);
 
 // POST Criar Deal via API (público)
 router.post(

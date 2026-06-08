@@ -137,7 +137,7 @@ export class ConversationService {
   }
 
   async canViewerAccessConversation(conversationId: string, viewer?: ConversationViewer): Promise<boolean> {
-    if (!viewer) return true;
+    if (!viewer) return false;
     if (viewer.role === 'ADMIN') return true;
     const visibilityWhere = await this.buildVisibilityWhere(viewer);
     const count = await prisma.conversation.count({

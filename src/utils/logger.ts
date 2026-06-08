@@ -33,13 +33,16 @@ function serializeError(error: unknown) {
   return error;
 }
 
+import { redactSensitiveFields } from './securityHelpers';
+
 function emit(level: LogLevel, message: string, meta?: Record<string, unknown>) {
   if (!shouldLog(level)) return;
+  const safeMeta = meta ? redactSensitiveFields(meta) : undefined;
   const payload = {
     ts: new Date().toISOString(),
     level,
     message,
-    ...(meta || {}),
+    ...(safeMeta || {}),
   };
   const line = JSON.stringify(payload);
   if (level === 'error') {

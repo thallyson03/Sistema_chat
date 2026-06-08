@@ -21,14 +21,30 @@ import Templates from './pages/Templates';
 import Calendario from './pages/Calendario';
 import Layout from './components/Layout';
 import TicketsRedirect from './pages/TicketsRedirect';
+import api from './utils/api';
 
-// Componente para proteger rotas
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    setIsAuthenticated(!!token);
+    let cancelled = false;
+
+    const verify = async () => {
+      try {
+        await api.get('/api/auth/me');
+        if (!cancelled) setIsAuthenticated(true);
+      } catch {
+        if (!cancelled) {
+          localStorage.removeItem('token');
+          setIsAuthenticated(false);
+        }
+      }
+    };
+
+    verify();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (isAuthenticated === null) {

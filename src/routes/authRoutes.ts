@@ -40,6 +40,7 @@ router.post(
 
 // Login público, mas com rate limiting
 router.post('/login', authLimiter, authController.login.bind(authController));
+router.post('/refresh', authController.refresh.bind(authController));
 router.post('/logout', authenticateToken, authController.logout.bind(authController));
 router.post('/heartbeat', authenticateToken, authController.heartbeat.bind(authController));
 router.get('/me', authenticateToken, authController.getCurrentUser.bind(authController));

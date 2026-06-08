@@ -39,6 +39,9 @@ coverage/
 *.db
 *.db-journal
 
+# Uploads (mídia de clientes — nunca versionar)
+uploads/
+
 
 
 

@@ -1,8 +1,17 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { AuthService } from '../services/authService';
+import { AuthService, setAuthCookies, clearAuthCookies } from '../services/authService';
+import { getCookie } from '../utils/securityHelpers';
+import { auditLogService } from '../services/auditLogService';
 
 const authService = new AuthService();
+
+function getRequestMeta(req: AuthRequest) {
+  return {
+    ip: req.ip || req.socket.remoteAddress || undefined,
+    userAgent: req.headers['user-agent'] || undefined,
+  };
+}
 
 export class AuthController {
   async register(req: AuthRequest, res: Response) {
@@ -13,7 +22,12 @@ export class AuthController {
         return res.status(400).json({ error: 'Email, senha e nome são obrigatórios' });
       }
 
-      // Sanitizar role recebido para evitar valores inválidos
+      const { validatePassword } = await import('../utils/passwordPolicy');
+      const passwordError = validatePassword(password);
+      if (passwordError) {
+        return res.status(400).json({ error: passwordError });
+      }
+
       const allowedRoles = ['ADMIN', 'SUPERVISOR', 'AGENT'] as const;
       const safeRole = allowedRoles.includes(role) ? role : undefined;
 
@@ -36,11 +50,35 @@ export class AuthController {
         return res.status(400).json({ error: 'Email e senha são obrigatórios' });
       }
 
-      const result = await authService.login({ email, password });
+      const result = await authService.login({ email, password }, getRequestMeta(req));
+      setAuthCookies(res, result.token, result.refreshToken);
 
-      res.json(result);
+      res.json({
+        user: result.user,
+        token: result.token,
+      });
     } catch (error: any) {
       res.status(401).json({ error: error.message });
+    }
+  }
+
+  async refresh(req: AuthRequest, res: Response) {
+    try {
+      const refreshToken = getCookie(req, 'refreshToken');
+      if (!refreshToken) {
+        return res.status(401).json({ error: 'Refresh token ausente' });
+      }
+
+      const result = await authService.refreshSession(refreshToken);
+      if (!result) {
+        clearAuthCookies(res);
+        return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
+      }
+
+      setAuthCookies(res, result.token, result.refreshToken);
+      res.json({ ok: true, token: result.token });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   }
 
@@ -62,7 +100,6 @@ export class AuthController {
     }
   }
 
-  /** Mantém lastActiveAt enquanto a aba está aberta (telas com poucos requests). */
   async heartbeat(req: AuthRequest, res: Response) {
     try {
       if (!req.user?.id) {
@@ -81,7 +118,16 @@ export class AuthController {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
 
+      const refreshToken = getCookie(req, 'refreshToken');
+      await authService.revokeRefreshToken(refreshToken);
       await authService.clearPresenceOnLogout(req.user.id);
+      clearAuthCookies(res);
+
+      await auditLogService.log({
+        userId: req.user.id,
+        action: 'LOGOUT',
+        ...getRequestMeta(req),
+      });
 
       res.json({ message: 'Logout realizado com sucesso' });
     } catch (error: any) {
@@ -89,10 +135,3 @@ export class AuthController {
     }
   }
 }
-
-
-
-
-
-
-

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/database';
+import { getCookie } from '../utils/securityHelpers';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -10,98 +11,106 @@ export interface AuthRequest extends Request {
   };
 }
 
-export const authenticateToken = (
+function extractBearerToken(req: Request): string | null {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice('Bearer '.length).trim();
+  }
+  const cookieToken = getCookie(req, 'accessToken');
+  return cookieToken || null;
+}
+
+async function resolveAuthenticatedUser(token: string) {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET_NOT_CONFIGURED');
+  }
+
+  const decoded = jwt.verify(token, jwtSecret) as {
+    id: string;
+    email: string;
+    role: string;
+  };
+
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.id },
+    select: { id: true, email: true, role: true, isActive: true },
+  });
+
+  if (!user || !user.isActive) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  };
+}
+
+export const authenticateToken = async (
   req: AuthRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
-  const isDev = process.env.NODE_ENV !== 'production';
-  if (isDev) {
-    console.log('[Auth] authenticateToken chamado');
-    console.log('[Auth] URL:', req.url);
-    console.log('[Auth] Method:', req.method);
-  }
-  
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = extractBearerToken(req);
 
   if (!token) {
-    if (isDev) {
-      console.log('[Auth] Token não fornecido');
-    }
     return res.status(401).json({ error: 'Token de acesso não fornecido' });
   }
 
-  if (isDev) {
-    console.log('[Auth] Token presente: [mascarado]');
-  }
-
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    console.error('[Auth] JWT_SECRET não configurado');
-    return res.status(500).json({ error: 'Configuração JWT não encontrada' });
-  }
-
   try {
-    const decoded = jwt.verify(token, jwtSecret) as {
-      id: string;
-      email: string;
-      role: string;
-    };
-    if (isDev) {
-      console.log('[Auth] Token válido para usuário:', decoded.email, 'Role:', decoded.role);
+    const user = await resolveAuthenticatedUser(token);
+    if (!user) {
+      return res.status(401).json({ error: 'Usuário inativo ou não encontrado' });
     }
-    req.user = decoded;
-    
-    // Atualizar lastActiveAt do usuário (em background, não bloquear requisição)
-    if (req.user?.id) {
-      prisma.user
-        .update({
-          where: { id: req.user.id },
-          data: {
-            lastActiveAt: new Date(),
-          },
-        })
-        .catch((error) => {
-          console.error('[Auth] Erro ao atualizar lastActiveAt:', error);
-        });
-    }
-    
+
+    req.user = user;
+
+    prisma.user
+      .update({
+        where: { id: user.id },
+        data: { lastActiveAt: new Date() },
+      })
+      .catch(() => {});
+
     next();
   } catch (error: any) {
-    // Token inválido ou expirado
-    console.error('[Auth] Erro ao verificar token:', error.message);
+    if (error?.message === 'JWT_SECRET_NOT_CONFIGURED') {
+      return res.status(500).json({ error: 'Configuração JWT não encontrada' });
+    }
     return res.status(401).json({ error: 'Token inválido ou expirado. Faça login novamente.' });
   }
 };
 
+/** Autenticação opcional — popula req.user se token válido, mas não bloqueia. */
+export const optionalAuthenticateToken = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  const token = extractBearerToken(req);
+  if (!token) return next();
+
+  try {
+    const user = await resolveAuthenticatedUser(token);
+    if (user) req.user = user;
+  } catch (_) {
+    // ignora token inválido em rotas opcionais
+  }
+  next();
+};
+
 export const authorizeRoles = (...roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    const isDev = process.env.NODE_ENV !== 'production';
-    if (isDev) {
-      console.log('[Auth] authorizeRoles chamado');
-      console.log('[Auth] Roles permitidos:', roles);
-      console.log('[Auth] User role:', req.user?.role);
-    }
-    
     if (!req.user) {
-      if (isDev) {
-        console.log('[Auth] Usuário não autenticado');
-      }
       return res.status(401).json({ error: 'Usuário não autenticado' });
     }
 
     if (!roles.includes(req.user.role)) {
-      if (isDev) {
-        console.log('[Auth] Acesso negado - role:', req.user.role, 'não está em:', roles);
-      }
       return res.status(403).json({ error: 'Acesso negado. Permissões insuficientes.' });
     }
 
-    if (isDev) {
-      console.log('[Auth] Autorização concedida');
-    }
     next();
   };
 };
-

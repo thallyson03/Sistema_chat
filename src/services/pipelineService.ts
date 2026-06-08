@@ -71,9 +71,18 @@ export class PipelineService {
     return pipeline;
   }
 
-  async getPipelines(includeInactive: boolean = false) {
+  async getPipelines(
+    includeInactive: boolean = false,
+    allowedPipelineIds?: string[] | null,
+  ) {
+    const where: any = includeInactive ? {} : { isActive: true };
+    if (allowedPipelineIds) {
+      if (allowedPipelineIds.length === 0) return [];
+      where.id = { in: allowedPipelineIds };
+    }
+
     const pipelines = await prisma.pipeline.findMany({
-      where: includeInactive ? {} : { isActive: true },
+      where,
       include: {
         stages: {
           where: includeInactive ? {} : { isActive: true },

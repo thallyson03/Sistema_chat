@@ -1,8 +1,13 @@
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import { Response } from 'express';
 import prisma from '../config/database';
 import { User } from '@prisma/client';
 import { syncUserToExternalTicketSystem } from './externalTicketSystemService';
+import { validatePassword } from '../utils/passwordPolicy';
+import { auditLogService } from './auditLogService';
+import { logger } from '../utils/logger';
 
 export interface LoginCredentials {
   email: string;
@@ -17,8 +22,86 @@ export interface RegisterData {
   sectorIds?: string[];
 }
 
+const ACCESS_TOKEN_COOKIE = 'accessToken';
+const REFRESH_TOKEN_COOKIE = 'refreshToken';
+
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('Configuração JWT não encontrada');
+  return secret;
+}
+
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function getAccessExpiresIn(): string {
+  return process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+}
+
+function getRefreshExpiresInMs(): number {
+  const raw = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+  const match = raw.match(/^(\d+)([dhms])$/);
+  if (!match) return 7 * 24 * 60 * 60 * 1000;
+  const value = Number(match[1]);
+  const unit = match[2];
+  const multipliers: Record<string, number> = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  };
+  return value * (multipliers[unit] || multipliers.d);
+}
+
+function buildCookieOptions(maxAgeMs: number) {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'strict' as const,
+    maxAge: maxAgeMs,
+    path: '/',
+  };
+}
+
+function signAccessToken(user: { id: string; email: string; role: string }) {
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role },
+    getJwtSecret(),
+    { expiresIn: getAccessExpiresIn() } as jwt.SignOptions,
+  );
+}
+
+async function createRefreshToken(userId: string): Promise<string> {
+  const rawToken = crypto.randomBytes(48).toString('hex');
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + getRefreshExpiresInMs());
+
+  await prisma.refreshToken.create({
+    data: { userId, tokenHash, expiresAt },
+  });
+
+  return rawToken;
+}
+
+export function setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
+  const accessMs = 15 * 60 * 1000;
+  const refreshMs = getRefreshExpiresInMs();
+  res.cookie(ACCESS_TOKEN_COOKIE, accessToken, buildCookieOptions(accessMs));
+  res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, buildCookieOptions(refreshMs));
+}
+
+export function clearAuthCookies(res: Response) {
+  res.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
+  res.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
+}
+
 export class AuthService {
   async register(data: RegisterData): Promise<User> {
+    const passwordError = validatePassword(data.password);
+    if (passwordError) throw new Error(passwordError);
+
     const existingUser = await prisma.user.findUnique({
       where: { email: data.email },
     });
@@ -77,84 +160,107 @@ export class AuthService {
     return userWithoutSensitive as User;
   }
 
-  async login(credentials: LoginCredentials): Promise<{ user: User; token: string }> {
-    console.log('[AuthService] Tentativa de login:', { email: credentials.email });
-    
+  async login(
+    credentials: LoginCredentials,
+    meta?: { ip?: string; userAgent?: string },
+  ): Promise<{ user: User; token: string; refreshToken: string }> {
     const user = await prisma.user.findUnique({
       where: { email: credentials.email },
     });
 
     if (!user) {
-      console.log('[AuthService] ❌ Usuário não encontrado:', credentials.email);
+      await auditLogService.log({
+        action: 'LOGIN_FAILED',
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+        metadata: { email: credentials.email },
+      });
       throw new Error('Credenciais inválidas');
     }
 
-    console.log('[AuthService] ✅ Usuário encontrado:', { 
-      id: user.id, 
-      email: user.email, 
-      name: user.name,
-      isActive: user.isActive 
-    });
-
     if (!user.isActive) {
-      console.log('[AuthService] ❌ Usuário inativo');
       throw new Error('Usuário inativo');
     }
 
-    console.log('[AuthService] Comparando senha...');
     const passwordMatch = await bcrypt.compare(credentials.password, user.password);
-    console.log('[AuthService] Resultado da comparação:', passwordMatch ? '✅ CORRETO' : '❌ INCORRETO');
 
     if (!passwordMatch) {
-      console.log('[AuthService] ❌ Senha incorreta');
+      await auditLogService.log({
+        userId: user.id,
+        action: 'LOGIN_FAILED',
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+      });
       throw new Error('Credenciais inválidas');
     }
 
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      throw new Error('Configuração JWT não encontrada');
-    }
+    const token = signAccessToken(user);
+    const refreshToken = await createRefreshToken(user.id);
 
-    const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
-    
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      },
-      jwtSecret,
-      {
-        expiresIn: expiresIn as string,
-      } as jwt.SignOptions
-    );
-
-    // Atualizar lastActiveAt ao fazer login
     await prisma.user.update({
       where: { id: user.id },
-      data: {
-        lastActiveAt: new Date(),
-      },
+      data: { lastActiveAt: new Date() },
     });
 
-    // Tentar redistribuir conversas não atribuídas quando um usuário faz login
-    // Isso garante que conversas que ficaram sem usuário (todos offline) sejam distribuídas
     try {
       const { ConversationDistributionService } = await import('./conversationDistributionService');
       const distributionService = new ConversationDistributionService();
       await distributionService.redistributeUnassignedConversations();
     } catch (error) {
-      console.error('[AuthService] Erro ao redistribuir conversas no login:', error);
-      // Não bloquear o login se a redistribuição falhar
+      logger.warn('failed to redistribute conversations on login', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
-    // Remove password do retorno
+    await auditLogService.log({
+      userId: user.id,
+      action: 'LOGIN',
+      ip: meta?.ip,
+      userAgent: meta?.userAgent,
+    });
+
     const { password, ...userWithoutPassword } = user;
 
     return {
       user: userWithoutPassword as User,
       token,
+      refreshToken,
     };
+  }
+
+  async refreshSession(refreshTokenRaw: string): Promise<{ token: string; refreshToken: string } | null> {
+    const tokenHash = hashToken(refreshTokenRaw);
+    const stored = await prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+      return null;
+    }
+
+    if (!stored.user.isActive) {
+      return null;
+    }
+
+    await prisma.refreshToken.update({
+      where: { id: stored.id },
+      data: { revokedAt: new Date() },
+    });
+
+    const token = signAccessToken(stored.user);
+    const refreshToken = await createRefreshToken(stored.user.id);
+
+    return { token, refreshToken };
+  }
+
+  async revokeRefreshToken(refreshTokenRaw: string | undefined): Promise<void> {
+    if (!refreshTokenRaw) return;
+    const tokenHash = hashToken(refreshTokenRaw);
+    await prisma.refreshToken.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
   }
 
   async touchHeartbeat(userId: string): Promise<void> {
@@ -164,7 +270,6 @@ export class AuthService {
     });
   }
 
-  /** Ao sair, limpa última atividade para refletir offline no monitoramento. */
   async clearPresenceOnLogout(userId: string): Promise<void> {
     await prisma.user.update({
       where: { id: userId },
@@ -184,10 +289,9 @@ export class AuthService {
       },
     });
 
-    if (!user) return null;
+    if (!user || !user.isActive) return null;
 
     const { password: _, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
 }
-

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PipelineService } from '../services/pipelineService';
 import { AuthRequest } from '../middleware/auth';
+import { canAccessPipeline, getUserPipelineIds } from '../utils/accessControl';
 
 const pipelineService = new PipelineService();
 
@@ -21,7 +22,13 @@ export class PipelineController {
   async getPipelines(req: AuthRequest, res: Response) {
     try {
       const includeInactive = req.query.includeInactive === 'true';
-      const pipelines = await pipelineService.getPipelines(includeInactive);
+      const allowedPipelineIds = req.user
+        ? await getUserPipelineIds(req.user)
+        : [];
+      const pipelines = await pipelineService.getPipelines(
+        includeInactive,
+        allowedPipelineIds,
+      );
       res.json(pipelines);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -31,6 +38,12 @@ export class PipelineController {
   async getPipelineById(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (req.user) {
+        const allowed = await canAccessPipeline(req.user, id);
+        if (!allowed) {
+          return res.status(403).json({ error: 'Acesso negado para este pipeline' });
+        }
+      }
       const pipeline = await pipelineService.getPipelineById(id);
 
       if (!pipeline) {

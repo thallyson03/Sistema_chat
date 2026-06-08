@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/database';
+import { validateEvolutionWebhook } from '../middleware/evolutionWebhookAuth';
 import { WebhookService } from '../services/webhookService';
 import { BotService } from '../services/botService';
 import { ConversationDistributionService } from '../services/conversationDistributionService';
@@ -378,6 +379,11 @@ router.post('/whatsapp', webhookReceiveLimiter, async (req: Request, res: Respon
         return res.status(403).json({ error: 'Assinatura inválida' });
       }
     } else {
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({
+          error: 'WHATSAPP_APP_SECRET obrigatório em produção',
+        });
+      }
       console.warn('[WebhookWhatsApp] ⚠️ WHATSAPP_APP_SECRET não configurado. Assinatura não será validada.');
     }
 
@@ -979,7 +985,7 @@ async function handleWhatsAppOfficialStatus(status: any) {
 // ============================================
 
 // Webhook da Evolution API - Rota principal
-router.post('/evolution', webhookReceiveLimiter, async (req: Request, res: Response) => {
+router.post('/evolution', webhookReceiveLimiter, validateEvolutionWebhook, async (req: Request, res: Response) => {
   try {
     const event = req.body;
     console.log('📨 ============================================');
@@ -1024,7 +1030,7 @@ router.post('/evolution', webhookReceiveLimiter, async (req: Request, res: Respo
 });
 
 // Webhook Evolution GO — rota dedicada (não misturar com Evolution API Node)
-router.post('/evolution-go', webhookReceiveLimiter, async (req: Request, res: Response) => {
+router.post('/evolution-go', webhookReceiveLimiter, validateEvolutionWebhook, async (req: Request, res: Response) => {
   try {
     const event = req.body;
     const prefix = evolutionWebhookLogPrefix('evolution_go');
@@ -2218,7 +2224,7 @@ async function handleQRCodeUpdate(data: any) {
 
 // Rota alternativa para compatibilidade com URLs antigas (/api/whatsapp/webhook)
 // Reutiliza o mesmo handler do webhook /evolution
-router.post('/webhook', webhookReceiveLimiter, async (req: Request, res: Response) => {
+router.post('/webhook', webhookReceiveLimiter, validateEvolutionWebhook, async (req: Request, res: Response) => {
   try {
     const event = req.body;
     console.log('📨 Webhook recebido (rota alternativa /webhook)');

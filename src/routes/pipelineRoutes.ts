@@ -3,7 +3,7 @@ import { PipelineController } from '../controllers/pipelineController';
 import { DealController } from '../controllers/dealController';
 import { PipelineCustomFieldController } from '../controllers/pipelineCustomFieldController';
 import { PipelineAutomationController } from '../controllers/pipelineAutomationController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authorizeRoles } from '../middleware/auth';
 
 const router = Router();
 const pipelineController = new PipelineController();
@@ -11,11 +11,12 @@ const dealController = new DealController();
 const customFieldController = new PipelineCustomFieldController();
 const automationController = new PipelineAutomationController();
 
-// Todas as rotas precisam de autenticação
+const adminOrSupervisor = authorizeRoles('ADMIN', 'SUPERVISOR');
+
 router.use(authenticateToken);
 
 // ============================================
-// DEALS (deve vir ANTES de /:id para evitar conflito)
+// DEALS
 // ============================================
 router.post('/deals', dealController.createDeal.bind(dealController));
 router.get('/deals', dealController.getDeals.bind(dealController));
@@ -25,24 +26,24 @@ router.put('/deals/:id', dealController.updateDeal.bind(dealController));
 router.put('/deals/:id/move', dealController.moveDealToStage.bind(dealController));
 router.post('/deals/:id/tags', dealController.addTagToDeal.bind(dealController));
 router.delete('/deals/:id/tags/:tagId', dealController.removeTagFromDeal.bind(dealController));
-router.delete('/deals/:id', dealController.deleteDeal.bind(dealController));
+router.delete('/deals/:id', adminOrSupervisor, dealController.deleteDeal.bind(dealController));
 
 // ============================================
 // PIPELINES
 // ============================================
-router.post('/', pipelineController.createPipeline.bind(pipelineController));
+router.post('/', adminOrSupervisor, pipelineController.createPipeline.bind(pipelineController));
 router.get('/', pipelineController.getPipelines.bind(pipelineController));
 router.get('/:id', pipelineController.getPipelineById.bind(pipelineController));
-router.put('/:id', pipelineController.updatePipeline.bind(pipelineController));
-router.delete('/:id', pipelineController.deletePipeline.bind(pipelineController));
+router.put('/:id', adminOrSupervisor, pipelineController.updatePipeline.bind(pipelineController));
+router.delete('/:id', authorizeRoles('ADMIN'), pipelineController.deletePipeline.bind(pipelineController));
 
 // ============================================
 // STAGES
 // ============================================
-router.post('/:pipelineId/stages', pipelineController.createStage.bind(pipelineController));
-router.put('/stages/:id', pipelineController.updateStage.bind(pipelineController));
-router.delete('/stages/:id', pipelineController.deleteStage.bind(pipelineController));
-router.put('/:pipelineId/stages/reorder', pipelineController.reorderStages.bind(pipelineController));
+router.post('/:pipelineId/stages', adminOrSupervisor, pipelineController.createStage.bind(pipelineController));
+router.put('/stages/:id', adminOrSupervisor, pipelineController.updateStage.bind(pipelineController));
+router.delete('/stages/:id', adminOrSupervisor, pipelineController.deleteStage.bind(pipelineController));
+router.put('/:pipelineId/stages/reorder', adminOrSupervisor, pipelineController.reorderStages.bind(pipelineController));
 
 // ============================================
 // DEAL ACTIVITIES
@@ -58,11 +59,11 @@ router.put(
 // ============================================
 // CUSTOM FIELDS
 // ============================================
-router.post('/:pipelineId/custom-fields', customFieldController.createCustomField.bind(customFieldController));
+router.post('/:pipelineId/custom-fields', adminOrSupervisor, customFieldController.createCustomField.bind(customFieldController));
 router.get('/:pipelineId/custom-fields', customFieldController.getCustomFields.bind(customFieldController));
-router.put('/custom-fields/:id', customFieldController.updateCustomField.bind(customFieldController));
-router.delete('/custom-fields/:id', customFieldController.deleteCustomField.bind(customFieldController));
-router.put('/:pipelineId/custom-fields/reorder', customFieldController.reorderCustomFields.bind(customFieldController));
+router.put('/custom-fields/:id', adminOrSupervisor, customFieldController.updateCustomField.bind(customFieldController));
+router.delete('/custom-fields/:id', adminOrSupervisor, customFieldController.deleteCustomField.bind(customFieldController));
+router.put('/:pipelineId/custom-fields/reorder', adminOrSupervisor, customFieldController.reorderCustomFields.bind(customFieldController));
 
 // ============================================
 // STATISTICS
@@ -73,7 +74,6 @@ router.get('/:pipelineId/stats', dealController.getPipelineStats.bind(dealContro
 // AUTOMATIONS
 // ============================================
 router.get('/:id/automations', automationController.getAutomations.bind(automationController));
-router.put('/:id/automations', automationController.saveAutomations.bind(automationController));
+router.put('/:id/automations', adminOrSupervisor, automationController.saveAutomations.bind(automationController));
 
 export default router;
-

@@ -21,7 +21,9 @@ export default function Login() {
         password,
       });
 
-      localStorage.setItem('token', response.data.token);
+      if (response.data.token) {
+        localStorage.setItem('token', response.data.token);
+      }
 
       if (rememberMe) {
         localStorage.setItem('lastLoginEmail', email);

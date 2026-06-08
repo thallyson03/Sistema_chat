@@ -1,5 +1,6 @@
 import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
+import { validatePassword } from '../utils/passwordPolicy';
 import { userPresenceFromLastActiveAt } from '../utils/userPresence';
 import { isExternalTicketEnabled, syncUserToExternalTicketSystem } from './externalTicketSystemService';
 
@@ -34,6 +35,9 @@ export class UserService {
     if (existingUser) {
       throw new Error('Usuário já existe com este email');
     }
+
+    const passwordError = validatePassword(data.password);
+    if (passwordError) throw new Error(passwordError);
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
@@ -115,6 +119,8 @@ export class UserService {
     if (data.role) updateData.role = data.role;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
     if (data.password) {
+      const passwordError = validatePassword(data.password);
+      if (passwordError) throw new Error(passwordError);
       updateData.password = await bcrypt.hash(data.password, 10);
     }
 

@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authorizeRoles } from '../middleware/auth';
+import { buildContactVisibilityWhere } from '../utils/accessControl';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import * as XLSX from 'xlsx';
@@ -10,7 +11,7 @@ const conversationService = new ConversationService();
 
 router.use(authenticateToken);
 
-router.post('/', async (req: AuthRequest, res) => {
+router.post('/', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res) => {
   try {
     const { name, phone, email, channelId, metadata } = req.body;
 
@@ -58,7 +59,7 @@ router.post('/', async (req: AuthRequest, res) => {
   }
 });
 
-router.get('/template', async (req: AuthRequest, res) => {
+router.get('/template', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res) => {
   try {
     const rows = [
       { name: 'João Silva', phone: '559988776655', email: 'joao@example.com' },
@@ -81,9 +82,12 @@ router.get('/template', async (req: AuthRequest, res) => {
 
 router.get('/', async (req: AuthRequest, res) => {
   try {
+    if (!req.user) return res.status(401).json({ error: 'Não autenticado' });
+
     const { channelId, search, limit, offset } = req.query;
 
-    const where: any = {};
+    const visibilityWhere = await buildContactVisibilityWhere(req.user);
+    const where: any = { ...visibilityWhere };
 
     if (channelId) {
       where.channelIdentities = {
@@ -148,9 +152,12 @@ router.get('/:id/conversations', async (req: AuthRequest, res) => {
 
 router.get('/:id', async (req: AuthRequest, res) => {
   try {
+    if (!req.user) return res.status(401).json({ error: 'Não autenticado' });
+
     const { id } = req.params;
-    const contact = await prisma.contact.findUnique({
-      where: { id },
+    const visibilityWhere = await buildContactVisibilityWhere(req.user);
+    const contact = await prisma.contact.findFirst({
+      where: { id, ...visibilityWhere },
       include: {
         channelIdentities: {
           include: {

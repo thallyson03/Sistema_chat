@@ -1,10 +1,16 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { validateProductionSecurity } from './config/productionSecurity';
+import { getCookie } from './utils/securityHelpers';
+import { ConversationService } from './services/conversationService';
+import prisma from './config/database';
 
 // Importar rotas
 import authRoutes from './routes/authRoutes';
@@ -38,6 +44,9 @@ import { prometheusService } from './services/prometheusService';
 
 // Carregar variáveis de ambiente
 dotenv.config();
+validateProductionSecurity();
+
+const conversationService = new ConversationService();
 
 // Inicializar WhatsApp Official (se configurado)
 import whatsappOfficial from './config/whatsappOfficial';
@@ -75,7 +84,7 @@ const io = new Server(httpServer, {
   },
 });
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   try {
     const tokenFromAuth =
       typeof socket.handshake.auth?.token === 'string' ? socket.handshake.auth.token : null;
@@ -84,7 +93,8 @@ io.use((socket, next) => {
       typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
         ? authHeader.slice('Bearer '.length)
         : null;
-    const token = tokenFromAuth || tokenFromHeader;
+    const tokenFromCookie = getCookie(socket.request as any, 'accessToken');
+    const token = tokenFromAuth || tokenFromHeader || tokenFromCookie;
 
     if (!token) {
       return next(new Error('Socket não autenticado: token ausente'));
@@ -96,7 +106,17 @@ io.use((socket, next) => {
     }
 
     const decoded = jwt.verify(token, jwtSecret) as any;
-    (socket as any).data.userId = decoded?.id || null;
+    const user = await prisma.user.findUnique({
+      where: { id: decoded?.id },
+      select: { id: true, role: true, isActive: true },
+    });
+
+    if (!user || !user.isActive) {
+      return next(new Error('Socket não autenticado: usuário inválido'));
+    }
+
+    (socket as any).data.userId = user.id;
+    (socket as any).data.userRole = user.role;
     return next();
   } catch (error) {
     return next(new Error('Socket não autenticado: token inválido'));
@@ -137,6 +157,11 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
   next();
 });
 
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+app.use(cookieParser());
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true,
@@ -188,17 +213,8 @@ app.use(
   }),
 );
 
-// Servir arquivos de upload (público para Evolution API poder baixar)
 import path from 'path';
 import fs from 'fs';
-app.use('/api/media/file', express.static(path.join(__dirname, '../uploads'), {
-  setHeaders: (res, filePath) => {
-    // Permitir CORS para Evolution API baixar arquivos
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache de 1 ano
-  }
-}));
 
 // Rota de health check
 app.get('/health', (req, res) => {
@@ -210,6 +226,9 @@ app.get('/health', (req, res) => {
 
 app.get('/metrics', async (req, res) => {
   const metricsToken = process.env.METRICS_AUTH_TOKEN;
+  if (process.env.NODE_ENV === 'production' && !metricsToken) {
+    return res.status(503).json({ error: 'metrics disabled' });
+  }
   if (metricsToken) {
     const auth = String(req.headers.authorization || '');
     const expected = `Bearer ${metricsToken}`;
@@ -237,8 +256,20 @@ io.on('connection', (socket) => {
     socket.join(`user_${userId}`);
   }
 
-  socket.on('subscribe_conversation', (conversationId: string) => {
+  socket.on('subscribe_conversation', async (conversationId: string) => {
     if (!conversationId) return;
+    const userId = (socket as any).data?.userId;
+    const userRole = (socket as any).data?.userRole;
+    if (!userId) return;
+
+    const canAccess = await conversationService.canViewerAccessConversation(conversationId, {
+      id: userId,
+      role: userRole,
+    });
+    if (!canAccess) {
+      socket.emit('error', { message: 'Acesso negado para esta conversa' });
+      return;
+    }
     socket.join(`conversation_${conversationId}`);
   });
 
@@ -247,8 +278,34 @@ io.on('connection', (socket) => {
     socket.leave(`conversation_${conversationId}`);
   });
 
-  socket.on('subscribe_channel', (channelId: string) => {
+  socket.on('subscribe_channel', async (channelId: string) => {
     if (!channelId) return;
+    const userId = (socket as any).data?.userId;
+    const userRole = (socket as any).data?.userRole;
+    if (!userId) return;
+
+    if (userRole !== 'ADMIN' && userRole !== 'SUPERVISOR') {
+      const access = await prisma.userChannelAccess.findFirst({
+        where: { userId, channelId },
+      });
+      const channel = await prisma.channel.findUnique({
+        where: { id: channelId },
+        select: { sectorId: true },
+      });
+      const userSectors = await prisma.userSector.findMany({
+        where: { userId },
+        select: { sectorId: true },
+      });
+      const sectorIds = userSectors.map((s) => s.sectorId);
+      const inSector =
+        channel?.sectorId && sectorIds.includes(channel.sectorId);
+
+      if (!access && !inSector) {
+        socket.emit('error', { message: 'Acesso negado para este canal' });
+        return;
+      }
+    }
+
     socket.join(`channel_${channelId}`);
   });
 
