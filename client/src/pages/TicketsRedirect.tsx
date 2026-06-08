@@ -67,7 +67,7 @@ export default function TicketsRedirect() {
           <a
             href={iframeUrl}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-600"
           >
             Abrir em nova aba
@@ -104,6 +104,7 @@ export default function TicketsRedirect() {
           src={iframeUrl}
           title="Sistema de Tickets"
           className="h-full min-h-0 w-full flex-1 border-0 bg-white"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
           referrerPolicy="strict-origin-when-cross-origin"
           allow="clipboard-read; clipboard-write"
         />

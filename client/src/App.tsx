@@ -35,7 +35,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
         if (!cancelled) setIsAuthenticated(true);
       } catch {
         if (!cancelled) {
-          localStorage.removeItem('token');
           setIsAuthenticated(false);
         }
       }
@@ -55,6 +54,37 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
 
+  return <>{children}</>;
+}
+
+function RoleRoute({
+  children,
+  roles,
+}: {
+  children: React.ReactNode;
+  roles: Array<'ADMIN' | 'SUPERVISOR' | 'AGENT'>;
+}) {
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/api/auth/me')
+      .then((res) => {
+        if (!cancelled) {
+          setAllowed(roles.includes(res.data?.role));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAllowed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roles]);
+
+  if (allowed === null) return <div>Carregando...</div>;
+  if (!allowed) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -79,13 +109,48 @@ function App() {
           <Route path="channels" element={<Channels />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="quick-replies" element={<QuickReplies />} />
-          <Route path="sectors" element={<Sectors />} />
-          <Route path="users" element={<Users />} />
+          <Route
+            path="sectors"
+            element={
+              <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
+                <Sectors />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="users"
+            element={
+              <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
+                <Users />
+              </RoleRoute>
+            }
+          />
           <Route path="pipelines" element={<Pipelines />} />
           <Route path="pipelines/deals/:id" element={<DealDetail />} />
-          <Route path="contacts/import" element={<ContactImport />} />
-          <Route path="contacts/auto-created" element={<ContactImport />} />
-          <Route path="journeys" element={<Journeys />} />
+          <Route
+            path="contacts/import"
+            element={
+              <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
+                <ContactImport />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="contacts/auto-created"
+            element={
+              <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
+                <ContactImport />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="journeys"
+            element={
+              <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
+                <Journeys />
+              </RoleRoute>
+            }
+          />
           <Route path="contact-lists" element={<ContactLists />} />
           <Route path="templates" element={<Templates />} />
           <Route path="calendario" element={<Calendario />} />

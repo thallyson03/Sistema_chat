@@ -35,6 +35,7 @@ import journeyRoutes from './routes/journeyRoutes';
 import whatsappTemplateRoutes from './routes/whatsappTemplateRoutes';
 import contactListRoutes from './routes/contactListRoutes';
 import opsRoutes from './routes/opsRoutes';
+import auditRoutes from './routes/auditRoutes';
 import { setSocketIO as setMessageSocketIO } from './controllers/messageController';
 import { setMessageServiceSocketIO } from './services/messageService';
 import { logger } from './utils/logger';
@@ -358,6 +359,7 @@ app.use('/api/campaigns', internalApiLimiter, internalHeavyReadLimiter, campaign
 app.use('/api/journeys', internalApiLimiter, internalHeavyReadLimiter, journeyRoutes); // Rotas de jornadas / automações
 app.use('/api/whatsapp/templates', internalApiLimiter, internalHeavyReadLimiter, whatsappTemplateRoutes); // Gestão de templates WhatsApp Official
 app.use('/api/ops', internalApiLimiter, internalHeavyReadLimiter, opsRoutes);
+app.use('/api/audit-logs', internalApiLimiter, auditRoutes);
 app.use('/api/webhooks', webhookRoutes);
 // Rota alternativa para compatibilidade com webhooks antigos
 app.use('/webhooks', webhookRoutes);

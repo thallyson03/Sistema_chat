@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
+import { createAuthenticatedSocket } from '../utils/socket';
 import api from '../utils/api';
 import { getPublicApiOrigin, getMessageMediaUrl, resolveMediaMetadataUrl, isDirectlyRenderableMediaUrl } from '../config/publicUrl';
 
@@ -294,12 +295,7 @@ export default function ConversationDetail() {
     }
 
     // Conectar ao Socket.IO para atualizações em tempo real
-    const socket: Socket = io(getPublicApiOrigin(), {
-      transports: ['websocket', 'polling'],
-      auth: {
-        token: localStorage.getItem('token') || '',
-      },
-    });
+    const socket: Socket = createAuthenticatedSocket();
 
     socket.on('connect', () => {
       console.log('✅ [ConversationDetail] Conectado ao Socket.IO');

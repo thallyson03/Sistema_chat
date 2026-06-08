@@ -16,6 +16,7 @@ import {
 import { buildSignedMediaFilePath } from '../utils/signedMediaUrl';
 import { isUrlAllowedForFetch } from '../utils/securityHelpers';
 import { validateFileMagicBytes } from '../utils/fileMagicBytes';
+import { safeHttpGet } from '../utils/ssrfGuard';
 import { convertWebmToOgg, convertOggToMp3 } from '../utils/audioConverter';
 import { objectStorageService } from '../services/objectStorageService';
 import {
@@ -444,7 +445,7 @@ router.get('/download/:messageId', authenticateToken, async (req: AuthRequest, r
         if (!isUrlAllowedForFetch(fallbackUrl)) {
           return res.status(403).json({ error: 'URL de mídia não permitida' });
         }
-        const response = await axios.get(fallbackUrl, {
+        const response = await safeHttpGet<ArrayBuffer>(fallbackUrl, {
           responseType: 'arraybuffer',
           timeout: 30000,
         });
@@ -466,7 +467,7 @@ router.get('/download/:messageId', authenticateToken, async (req: AuthRequest, r
       const tempBase = path.join(os.tmpdir(), `audio-${messageId}-${Date.now()}`);
       const tempOggPath = `${tempBase}.ogg`;
       const tempMp3Path = `${tempBase}.mp3`;
-      const response = await axios.get(mediaUrl, {
+      const response = await safeHttpGet<ArrayBuffer>(mediaUrl, {
         responseType: 'arraybuffer',
         timeout: 30000,
       });
@@ -788,7 +789,7 @@ router.get('/:messageId', authenticateToken, async (req: AuthRequest, res: Respo
           );
 
           try {
-            const metaResp = await axios.get(
+            const metaResp = await safeHttpGet<{ url?: string }>(
               `https://graph.facebook.com/${apiVersion}/${mediaId}`,
               {
                 headers: {
@@ -839,7 +840,7 @@ router.get('/:messageId', authenticateToken, async (req: AuthRequest, res: Respo
           );
 
           try {
-            const metaResp = await axios.get(
+            const metaResp = await safeHttpGet<{ url?: string }>(
               `https://graph.facebook.com/${apiVersion}/${mediaId}`,
               {
                 headers: {
@@ -890,7 +891,7 @@ router.get('/:messageId', authenticateToken, async (req: AuthRequest, res: Respo
         console.log('[Media] 📥 Fazendo download da mídia a partir de:', downloadUrl.substring(0, 160));
 
         // Para Cloud API, a URL de mídia normalmente requer o mesmo access token usado na API.
-        const response = await axios.get(downloadUrl, {
+        const response = await safeHttpGet<ArrayBuffer>(downloadUrl, {
           headers: {
             Authorization: `Bearer ${appToken}`,
           },
@@ -899,16 +900,17 @@ router.get('/:messageId', authenticateToken, async (req: AuthRequest, res: Respo
         });
 
         const buffer = Buffer.from(response.data);
-        const contentType =
+        const contentType = String(
           response.headers['content-type'] ||
-          response.headers['Content-Type'] ||
-          (message.type === 'IMAGE'
-            ? 'image/jpeg'
-            : message.type === 'VIDEO'
-            ? 'video/mp4'
-            : message.type === 'AUDIO'
-            ? 'audio/ogg'
-            : 'application/octet-stream');
+            response.headers['Content-Type'] ||
+            (message.type === 'IMAGE'
+              ? 'image/jpeg'
+              : message.type === 'VIDEO'
+              ? 'video/mp4'
+              : message.type === 'AUDIO'
+              ? 'audio/ogg'
+              : 'application/octet-stream'),
+        );
 
         console.log('[Media] ✅ Mídia baixada do WhatsApp Official:', {
           mediaType: message.type,
@@ -1159,7 +1161,7 @@ router.get('/:messageId', authenticateToken, async (req: AuthRequest, res: Respo
       console.log('[Media] 📥 Baixando mídia do WhatsApp (fallback URL)...');
       console.log('[Media] URL:', evolutionDownloadUrl.substring(0, 100));
 
-      const response = await axios.get(evolutionDownloadUrl, {
+      const response = await safeHttpGet<ArrayBuffer>(evolutionDownloadUrl, {
         headers: {
           Authorization: `Bearer ${evolutionAuthKey}`,
           'User-Agent':

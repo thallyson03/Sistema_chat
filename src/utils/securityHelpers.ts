@@ -41,15 +41,26 @@ export function isUrlAllowedForFetch(urlString: string): boolean {
     if (!['http:', 'https:'].includes(parsed.protocol)) return false;
     if (isPrivateOrLocalHost(parsed.hostname)) return false;
 
+    const defaultHosts = [
+      'graph.facebook.com',
+      'lookaside.fbsbx.com',
+      'scontent.whatsapp.net',
+      'mmg.whatsapp.net',
+      'pps.whatsapp.net',
+    ];
+
     const allowlistRaw = process.env.MEDIA_FETCH_URL_ALLOWLIST || '';
-    if (!allowlistRaw.trim()) {
+    const allowedHosts = [
+      ...defaultHosts,
+      ...allowlistRaw
+        .split(',')
+        .map((h) => h.trim().toLowerCase())
+        .filter(Boolean),
+    ];
+
+    if (allowedHosts.length === 0) {
       return process.env.NODE_ENV !== 'production';
     }
-
-    const allowedHosts = allowlistRaw
-      .split(',')
-      .map((h) => h.trim().toLowerCase())
-      .filter(Boolean);
 
     const host = parsed.hostname.toLowerCase();
     return allowedHosts.some(

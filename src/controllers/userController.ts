@@ -107,6 +107,14 @@ export class UserController {
 
       await userService.deleteUser(id);
 
+      const { auditLogService } = await import('../services/auditLogService');
+      await auditLogService.log({
+        userId: req.user.id,
+        action: 'DELETE_USER',
+        resource: 'user',
+        resourceId: id,
+      });
+
       res.json({ message: 'Usuário deletado com sucesso' });
     } catch (error: any) {
       console.error('[UserController] Erro ao deletar usuário:', error);

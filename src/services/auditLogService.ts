@@ -5,7 +5,9 @@ export type AuditAction =
   | 'LOGIN'
   | 'LOGOUT'
   | 'LOGIN_FAILED'
+  | 'ACCOUNT_LOCKED'
   | 'VIEW_CONVERSATION'
+  | 'DELETE_CONVERSATION'
   | 'EXPORT_CONTACTS'
   | 'DELETE_USER'
   | 'UPDATE_USER'
@@ -14,7 +16,11 @@ export type AuditAction =
   | 'EXECUTE_CAMPAIGN'
   | 'EXECUTE_JOURNEY'
   | 'MEDIA_ACCESS'
-  | 'WEBHOOK_RECEIVED';
+  | 'WEBHOOK_RECEIVED'
+  | 'ANONYMIZE_CONTACT'
+  | 'DELETE_CONTACT'
+  | 'CREATE_CHANNEL'
+  | 'UPDATE_CHANNEL';
 
 export interface AuditLogInput {
   userId?: string | null;

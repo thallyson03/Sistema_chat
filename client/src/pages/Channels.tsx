@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
+import { createAuthenticatedSocket } from '../utils/socket';
 import api from '../utils/api';
 import { getPublicApiOrigin } from '../config/publicUrl';
 
@@ -180,10 +181,7 @@ export default function Channels() {
   }, [successMessage]);
 
   useEffect(() => {
-    const socket: Socket = io(getPublicApiOrigin(), {
-      transports: ['websocket', 'polling'],
-      auth: { token: localStorage.getItem('token') || '' },
-    });
+    const socket: Socket = createAuthenticatedSocket();
     socketRef.current = socket;
 
     socket.on('qrcode_update', (data: { channelId: string; qrcode: string | null }) => {
@@ -290,6 +288,21 @@ export default function Channels() {
         };
 
         if (formData.provider === 'whatsapp_official') {
+          if (!formData.whatsappToken?.trim()) {
+            alert('Access Token é obrigatório para WhatsApp Official');
+            setSubmitting(false);
+            return;
+          }
+          if (!formData.whatsappAppSecret?.trim()) {
+            alert('App Secret do app Meta é obrigatório para validar webhooks com segurança');
+            setSubmitting(false);
+            return;
+          }
+          if (!formData.whatsappPhoneNumberId?.trim()) {
+            alert('Phone Number ID é obrigatório para WhatsApp Official');
+            setSubmitting(false);
+            return;
+          }
           channelData.config.token = formData.whatsappToken || undefined;
           channelData.config.appSecret = formData.whatsappAppSecret || undefined;
           channelData.config.phoneNumberId = formData.whatsappPhoneNumberId || undefined;
@@ -972,9 +985,10 @@ export default function Channels() {
                     </label>
                     <input
                       type="password"
+                      required
                       value={formData.whatsappAppSecret}
                       onChange={(e) => setFormData({ ...formData, whatsappAppSecret: e.target.value })}
-                      placeholder="Segredo do app Meta"
+                      placeholder="Segredo do app Meta (obrigatório)"
                       className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                     />
                   </div>

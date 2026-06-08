@@ -6,31 +6,14 @@ const api = axios.create({
   withCredentials: true,
 });
 
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
+let refreshPromise: Promise<boolean> | null = null;
 
-let refreshPromise: Promise<string | null> | null = null;
-
-async function refreshAccessToken(): Promise<string | null> {
+async function refreshSession(): Promise<boolean> {
   if (!refreshPromise) {
     refreshPromise = api
       .post('/api/auth/refresh')
-      .then((res) => {
-        const token = res.data?.token as string | undefined;
-        if (token) {
-          localStorage.setItem('token', token);
-        }
-        return token || null;
-      })
-      .catch(() => null)
+      .then(() => true)
+      .catch(() => false)
       .finally(() => {
         refreshPromise = null;
       });
@@ -50,12 +33,10 @@ api.interceptors.response.use(
       !String(originalRequest.url || '').includes('/api/auth/refresh')
     ) {
       originalRequest._retry = true;
-      const token = await refreshAccessToken();
-      if (token) {
-        originalRequest.headers.Authorization = `Bearer ${token}`;
+      const refreshed = await refreshSession();
+      if (refreshed) {
         return api(originalRequest);
       }
-      localStorage.removeItem('token');
       window.location.href = '/login';
     }
     return Promise.reject(error);

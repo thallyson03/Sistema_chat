@@ -49,13 +49,6 @@ export function validateProductionSecurity(): void {
     else warnings.push(msg);
   }
 
-  if (!process.env.WHATSAPP_APP_SECRET) {
-    const msg =
-      'WHATSAPP_APP_SECRET não configurado — webhooks WhatsApp Official sem assinatura em produção serão rejeitados';
-    if (strict) errors.push(msg);
-    else warnings.push(msg);
-  }
-
   if (
     !process.env.PUBLIC_PIPELINE_API_KEY &&
     !process.env.PUBLIC_PIPELINE_SIGNATURE_SECRET

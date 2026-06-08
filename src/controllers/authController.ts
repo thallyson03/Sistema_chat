@@ -55,7 +55,6 @@ export class AuthController {
 
       res.json({
         user: result.user,
-        token: result.token,
       });
     } catch (error: any) {
       res.status(401).json({ error: error.message });
@@ -76,7 +75,7 @@ export class AuthController {
       }
 
       setAuthCookies(res, result.token, result.refreshToken);
-      res.json({ ok: true, token: result.token });
+      res.json({ ok: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -120,6 +119,7 @@ export class AuthController {
 
       const refreshToken = getCookie(req, 'refreshToken');
       await authService.revokeRefreshToken(refreshToken);
+      await authService.revokeAllUserRefreshTokens(req.user.id);
       await authService.clearPresenceOnLogout(req.user.id);
       clearAuthCookies(res);
 

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
+import { createAuthenticatedSocket } from '../utils/socket';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
 import { getPublicApiOrigin, resolveMessageMediaPreviewUrl, isDirectlyRenderableMediaUrl, resolveMediaMetadataUrl } from '../config/publicUrl';
@@ -447,12 +448,7 @@ export default function Conversations() {
     window.addEventListener('selectConversation', handleSelectConversation);
 
     // Conectar ao Socket.IO para atualizações em tempo real
-    const socket: Socket = io(getPublicApiOrigin(), {
-      transports: ['websocket', 'polling'],
-      auth: {
-        token: localStorage.getItem('token') || '',
-      },
-    });
+    const socket: Socket = createAuthenticatedSocket();
 
     socketRef.current = socket;
 

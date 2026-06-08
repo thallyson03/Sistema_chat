@@ -1,6 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
+import { createAuthenticatedSocket } from '../utils/socket';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
 
@@ -25,13 +26,7 @@ export default function Layout() {
 
   // Conexão global com Socket.IO para notificações de tarefa (vale para todo o sistema)
   useEffect(() => {
-    const socket: Socket = io(getPublicApiOrigin(), {
-      transports: ['websocket', 'polling'],
-      withCredentials: true,
-      auth: {
-        token: localStorage.getItem('token') || '',
-      },
-    });
+    const socket: Socket = createAuthenticatedSocket();
 
     socket.on('connect', () => {
       console.log('[Layout] ✅ Conectado ao Socket.IO para notificações globais');
@@ -88,13 +83,13 @@ export default function Layout() {
 
   /** Mantém presença “online” mesmo em telas com poucos requests HTTP. */
   useEffect(() => {
-    if (!localStorage.getItem('token')) return;
+    if (!user) return;
     const ping = () => {
       void api.post('/api/auth/heartbeat').catch(() => {});
     };
     const id = setInterval(ping, HEARTBEAT_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [user]);
 
   const fetchUser = async () => {
     try {
@@ -169,8 +164,6 @@ export default function Layout() {
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
     } finally {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
       navigate('/login');
     }
   };

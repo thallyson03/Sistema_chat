@@ -1,5 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
+import { validateWhatsAppOfficialConfig } from '../utils/channelAccess';
+import { auditLogService } from '../services/auditLogService';
 import { ChannelService } from '../services/channelService';
 import prisma from '../config/database';
 
@@ -140,6 +142,10 @@ export class ChannelController {
       const channelConfig = config || {};
       if (isWhatsAppOfficial) {
         channelConfig.provider = 'whatsapp_official';
+        const configError = validateWhatsAppOfficialConfig(channelConfig);
+        if (configError) {
+          return res.status(400).json({ error: configError });
+        }
       } else if (provider === 'evolution_go') {
         channelConfig.provider = 'evolution_go';
         // Preferir dados enviados pela interface; se não vierem, usar fallback do .env
@@ -180,6 +186,13 @@ export class ChannelController {
         evolutionInstanceToken,
       });
 
+      await auditLogService.log({
+        userId: req.user?.id,
+        action: 'CREATE_CHANNEL',
+        resource: 'channel',
+        resourceId: channel.id,
+      });
+
       res.status(201).json(channel);
     } catch (error: any) {
       console.error('[ChannelController] Erro ao criar canal:', error);
@@ -202,6 +215,19 @@ export class ChannelController {
         sectorId,
       } = req.body;
 
+      const existing = await channelService.getChannelById(id);
+      const mergedConfig = {
+        ...((existing?.config as Record<string, unknown>) || {}),
+        ...(config || {}),
+      };
+      const provider = String(mergedConfig.provider || '').toLowerCase();
+      if (provider === 'whatsapp_official') {
+        const configError = validateWhatsAppOfficialConfig(mergedConfig);
+        if (configError) {
+          return res.status(400).json({ error: configError });
+        }
+      }
+
       const channel = await channelService.updateChannel(id, {
         name,
         config,
@@ -211,6 +237,13 @@ export class ChannelController {
         primarySectorId,
         secondarySectorIds,
         sectorId,
+      });
+
+      await auditLogService.log({
+        userId: req.user?.id,
+        action: 'UPDATE_CHANNEL',
+        resource: 'channel',
+        resourceId: id,
       });
 
       res.json(channel);

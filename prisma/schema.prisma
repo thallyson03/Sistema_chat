@@ -135,6 +135,8 @@ model User {
   pausedUntil DateTime?
   pauseReason String?
   lastActiveAt DateTime?
+  failedLoginAttempts Int @default(0)
+  lockedUntil DateTime?
   /// ID do usuário correspondente no sistema externo de tickets (API de provisionamento).
   ticketSystemUserId   String?
   ticketSystemSyncedAt DateTime?

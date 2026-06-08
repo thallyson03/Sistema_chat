@@ -380,11 +380,12 @@ router.post('/whatsapp', webhookReceiveLimiter, async (req: Request, res: Respon
       }
     } else {
       if (process.env.NODE_ENV === 'production') {
-        return res.status(503).json({
-          error: 'WHATSAPP_APP_SECRET obrigatório em produção',
+        return res.status(403).json({
+          error:
+            'App Secret não configurado no canal WhatsApp Official. Configure o App Secret na interface de Canais.',
         });
       }
-      console.warn('[WebhookWhatsApp] ⚠️ WHATSAPP_APP_SECRET não configurado. Assinatura não será validada.');
+      console.warn('[WebhookWhatsApp] ⚠️ App Secret do canal não configurado. Assinatura não será validada.');
     }
 
     const dedupeKey = crypto

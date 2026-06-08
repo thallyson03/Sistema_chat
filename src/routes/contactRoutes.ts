@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import { buildContactVisibilityWhere } from '../utils/accessControl';
+import { contactPrivacyService } from '../services/contactPrivacyService';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import * as XLSX from 'xlsx';
@@ -147,6 +148,26 @@ router.get('/:id/conversations', async (req: AuthRequest, res) => {
     res.json({ contactId: id, conversations });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:id/anonymize', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const result = await contactPrivacyService.anonymizeContact(id, req.user?.id);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.delete('/:id', authorizeRoles('ADMIN'), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const result = await contactPrivacyService.deleteContact(id, req.user?.id);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
   }
 });
 

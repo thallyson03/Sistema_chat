@@ -175,6 +175,10 @@ export class ConversationService {
       })),
     );
 
+    if (viewer && viewer.role !== 'ADMIN' && viewer.role !== 'SUPERVISOR') {
+      return withMeta.filter((conv) => conv.accessible);
+    }
+
     return withMeta;
   }
 

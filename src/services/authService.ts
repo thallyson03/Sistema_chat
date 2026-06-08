@@ -160,6 +160,13 @@ export class AuthService {
     return userWithoutSensitive as User;
   }
 
+  private getLockoutConfig() {
+    return {
+      maxAttempts: Number(process.env.AUTH_MAX_FAILED_ATTEMPTS || 5),
+      lockoutMinutes: Number(process.env.AUTH_LOCKOUT_MINUTES || 15),
+    };
+  }
+
   async login(
     credentials: LoginCredentials,
     meta?: { ip?: string; userAgent?: string },
@@ -182,15 +189,39 @@ export class AuthService {
       throw new Error('Usuário inativo');
     }
 
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      throw new Error('Conta temporariamente bloqueada por tentativas inválidas. Tente novamente mais tarde.');
+    }
+
     const passwordMatch = await bcrypt.compare(credentials.password, user.password);
 
     if (!passwordMatch) {
+      const { maxAttempts, lockoutMinutes } = this.getLockoutConfig();
+      const attempts = (user.failedLoginAttempts || 0) + 1;
+      const shouldLock = attempts >= maxAttempts;
+      const lockedUntil = shouldLock
+        ? new Date(Date.now() + lockoutMinutes * 60 * 1000)
+        : null;
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: shouldLock ? 0 : attempts,
+          lockedUntil,
+        },
+      });
+
       await auditLogService.log({
         userId: user.id,
-        action: 'LOGIN_FAILED',
+        action: shouldLock ? 'ACCOUNT_LOCKED' : 'LOGIN_FAILED',
         ip: meta?.ip,
         userAgent: meta?.userAgent,
+        metadata: { attempts },
       });
+
+      if (shouldLock) {
+        throw new Error('Conta bloqueada temporariamente por excesso de tentativas inválidas.');
+      }
       throw new Error('Credenciais inválidas');
     }
 
@@ -199,7 +230,11 @@ export class AuthService {
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { lastActiveAt: new Date() },
+      data: {
+        lastActiveAt: new Date(),
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      },
     });
 
     try {
@@ -259,6 +294,13 @@ export class AuthService {
     const tokenHash = hashToken(refreshTokenRaw);
     await prisma.refreshToken.updateMany({
       where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  async revokeAllUserRefreshTokens(userId: string): Promise<void> {
+    await prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
   }

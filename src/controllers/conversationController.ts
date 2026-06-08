@@ -480,10 +480,29 @@ export class ConversationController {
 
   async createConversation(req: AuthRequest, res: Response) {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+      }
+
       const { channelId, contactId, assignedToId } = req.body;
 
       if (!channelId || !contactId) {
         return res.status(400).json({ error: 'channelId e contactId são obrigatórios' });
+      }
+
+      const { canUserAccessChannel } = await import('../utils/channelAccess');
+      const { buildContactVisibilityWhere } = await import('../utils/accessControl');
+      const canUseChannel = await canUserAccessChannel(req.user, channelId);
+      if (!canUseChannel) {
+        return res.status(403).json({ error: 'Sem permissão para usar este canal' });
+      }
+
+      const visibilityWhere = await buildContactVisibilityWhere(req.user);
+      const contact = await prisma.contact.findFirst({
+        where: { id: contactId, ...visibilityWhere },
+      });
+      if (!contact) {
+        return res.status(403).json({ error: 'Sem permissão para acessar este contato' });
       }
 
       const conversation = await conversationService.createConversation({
@@ -515,6 +534,14 @@ export class ConversationController {
       const { id } = req.params;
 
       await conversationService.deleteConversation(id);
+
+      const { auditLogService } = await import('../services/auditLogService');
+      await auditLogService.log({
+        userId: req.user.id,
+        action: 'DELETE_CONVERSATION',
+        resource: 'conversation',
+        resourceId: id,
+      });
 
       res.json({ message: 'Conversa excluída com sucesso' });
     } catch (error: any) {
