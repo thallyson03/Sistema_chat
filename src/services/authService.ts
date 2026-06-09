@@ -8,6 +8,7 @@ import { syncUserToExternalTicketSystem } from './externalTicketSystemService';
 import { validatePassword } from '../utils/passwordPolicy';
 import { auditLogService } from './auditLogService';
 import { logger } from '../utils/logger';
+import { setCsrfCookie, clearCsrfCookie } from '../middleware/csrf';
 
 export interface LoginCredentials {
   email: string;
@@ -90,11 +91,13 @@ export function setAuthCookies(res: Response, accessToken: string, refreshToken:
   const refreshMs = getRefreshExpiresInMs();
   res.cookie(ACCESS_TOKEN_COOKIE, accessToken, buildCookieOptions(accessMs));
   res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, buildCookieOptions(refreshMs));
+  setCsrfCookie(res);
 }
 
 export function clearAuthCookies(res: Response) {
   res.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
   res.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
+  clearCsrfCookie(res);
 }
 
 export class AuthService {

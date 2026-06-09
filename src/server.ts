@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { validateProductionSecurity } from './config/productionSecurity';
 import { getCookie } from './utils/securityHelpers';
+import { csrfProtection } from './middleware/csrf';
 import { ConversationService } from './services/conversationService';
 import prisma from './config/database';
 
@@ -159,10 +160,23 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
 });
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      connectSrc: ["'self'", 'wss:', 'ws:'],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'self'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 app.use(cookieParser());
+app.use(csrfProtection);
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true,
@@ -417,8 +431,11 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     ...(process.env.NODE_ENV !== 'production' ? { requestBody: req.body } : {}),
   });
 
-  res.status(err.status || 500).json({
-    error: err.message || 'Erro interno do servidor',
+  const status = err.status || 500;
+  res.status(status).json({
+    error: status >= 500 && process.env.NODE_ENV === 'production'
+      ? 'Erro interno do servidor'
+      : err.message || 'Erro interno do servidor',
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 });

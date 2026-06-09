@@ -44,10 +44,13 @@ function optionalPublicAuth(
   const signatureSecret = process.env.PUBLIC_PIPELINE_SIGNATURE_SECRET;
 
   if (!apiKey && !signatureSecret) {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(503).json({ error: 'API pública de pipeline não configurada' });
+    const allowInsecure = ['1', 'true', 'yes'].includes(
+      String(process.env.ALLOW_INSECURE_PUBLIC_API || '').toLowerCase(),
+    );
+    if (allowInsecure) {
+      return next();
     }
-    return next();
+    return res.status(503).json({ error: 'API pública de pipeline não configurada' });
   }
 
   const headerApiKey = String(req.headers['x-api-key'] || '').trim();

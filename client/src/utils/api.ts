@@ -6,6 +6,24 @@ const api = axios.create({
   withCredentials: true,
 });
 
+function getCsrfToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie.match(/(?:^|;\s*)csrfToken=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+api.interceptors.request.use((config) => {
+  const method = (config.method || 'get').toLowerCase();
+  if (['post', 'put', 'patch', 'delete'].includes(method)) {
+    const csrf = getCsrfToken();
+    if (csrf) {
+      config.headers = config.headers || {};
+      config.headers['X-CSRF-Token'] = csrf;
+    }
+  }
+  return config;
+});
+
 let refreshPromise: Promise<boolean> | null = null;
 
 async function refreshSession(): Promise<boolean> {

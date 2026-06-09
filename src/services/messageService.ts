@@ -10,6 +10,7 @@ import {
 import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
 import { WhatsAppOfficialService } from './whatsappOfficialService';
 import axios from 'axios';
+import { safeHttpGet } from '../utils/ssrfGuard';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -283,7 +284,7 @@ export class MessageService {
                   `wa-audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                 );
                 const tempInputPath = `${tempBase}${extFromRemote}`;
-                const downloadResponse = await axios.get(fullMediaUrl, {
+                const downloadResponse = await safeHttpGet(fullMediaUrl, {
                   responseType: 'arraybuffer',
                   timeout: 20000,
                 });
@@ -669,7 +670,7 @@ export class MessageService {
                         uploadDir,
                         dirExists: fs.existsSync(uploadDir),
                       });
-                      const response = await axios.get(fullMediaUrl, {
+                      const response = await safeHttpGet(fullMediaUrl, {
                         responseType: 'arraybuffer',
                         timeout: 25000,
                       });
@@ -680,7 +681,7 @@ export class MessageService {
                     console.warn('⚠️ [MessageService] Não foi possível extrair o nome do arquivo de áudio para base64 a partir da URL:', {
                       fullMediaUrl,
                     });
-                    const response = await axios.get(fullMediaUrl, {
+                    const response = await safeHttpGet(fullMediaUrl, {
                       responseType: 'arraybuffer',
                       timeout: 25000,
                     });
@@ -689,7 +690,7 @@ export class MessageService {
                   }
                 } else {
                   console.log('ℹ️ [MessageService] Áudio remoto detectado, convertendo via download HTTP para base64.');
-                  const response = await axios.get(fullMediaUrl, {
+                  const response = await safeHttpGet(fullMediaUrl, {
                     responseType: 'arraybuffer',
                     timeout: 25000,
                   });

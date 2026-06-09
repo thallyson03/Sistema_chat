@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { BotController } from '../controllers/botController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authorizeRoles } from '../middleware/auth';
 
 const router = Router();
 const botController = new BotController();
@@ -52,8 +52,12 @@ router.get('/:botId/variables', botController.listVariables.bind(botController))
 router.put('/variables/:id', botController.updateVariable.bind(botController));
 router.delete('/variables/:id', botController.deleteVariable.bind(botController));
 
-// Teste de HTTP Request (Webhook) via backend
-router.post('/http-test', botController.testHttpRequest.bind(botController));
+// Teste de HTTP Request (Webhook) via backend — restrito a admin/supervisor
+router.post(
+  '/http-test',
+  authorizeRoles('ADMIN', 'SUPERVISOR'),
+  botController.testHttpRequest.bind(botController),
+);
 
 export default router;
 

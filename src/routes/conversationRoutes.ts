@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { ConversationController } from '../controllers/conversationController';
 import { authenticateToken } from '../middleware/auth';
+import { auditAction } from '../middleware/auditMiddleware';
 
 const router = Router();
 const conversationController = new ConversationController();
@@ -24,7 +25,11 @@ router.get(
   conversationController.getDashboardPerformance.bind(conversationController),
 );
 router.get('/unread-count', conversationController.getUnreadCount.bind(conversationController));
-router.get('/:id', conversationController.getConversationById.bind(conversationController));
+router.get(
+  '/:id',
+  auditAction('VIEW_CONVERSATION', 'conversation', (req) => req.params.id),
+  conversationController.getConversationById.bind(conversationController),
+);
 router.post(
   '/:id/presence-subscribe',
   conversationController.subscribeContactPresence.bind(conversationController),

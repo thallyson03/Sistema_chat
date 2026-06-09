@@ -35,6 +35,17 @@ export function isPrivateOrLocalHost(hostname: string): boolean {
   return PRIVATE_IP_RANGES.some((re) => re.test(host));
 }
 
+/** Bloqueia hosts locais/privados; permite qualquer host público (uso em webhooks de bots). */
+export function isUrlSafeForOutboundRequest(urlString: string): boolean {
+  try {
+    const parsed = new URL(urlString);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    return !isPrivateOrLocalHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function isUrlAllowedForFetch(urlString: string): boolean {
   try {
     const parsed = new URL(urlString);

@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { timingSafeEqualText } from '../utils/securityHelpers';
 
+function allowInsecureWebhooks(): boolean {
+  const flag = String(process.env.ALLOW_INSECURE_WEBHOOKS || '').toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes';
+}
+
 export function validateEvolutionWebhook(
   req: Request,
   res: Response,
@@ -12,12 +17,12 @@ export function validateEvolutionWebhook(
     process.env.EVOLUTION_GO_API_KEY;
 
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(503).json({
-        error: 'Webhook Evolution não configurado (EVOLUTION_WEBHOOK_SECRET)',
-      });
+    if (allowInsecureWebhooks()) {
+      return next();
     }
-    return next();
+    return res.status(503).json({
+      error: 'Webhook Evolution não configurado (EVOLUTION_WEBHOOK_SECRET)',
+    });
   }
 
   const provided =

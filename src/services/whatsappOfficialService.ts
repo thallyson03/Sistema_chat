@@ -528,7 +528,8 @@ export class WhatsAppOfficialService {
       // Adicionar arquivo com nome correto
       if (isHttpUrl) {
         // Baixar via HTTP (caso imagem/vídeo/documento use URL pública)
-        const fileResponse = await axios.get(fileUrl, {
+        const { safeHttpGet } = await import('../utils/ssrfGuard');
+        const fileResponse = await safeHttpGet(fileUrl, {
           responseType: 'stream',
         });
 

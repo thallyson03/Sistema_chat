@@ -5,13 +5,22 @@ async function seed() {
   try {
     console.log('🌱 Iniciando seed do banco de dados...');
 
+    const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+    const testPassword = process.env.SEED_TEST_PASSWORD;
+
+    if (!adminPassword || adminPassword.length < 12) {
+      throw new Error(
+        'Defina SEED_ADMIN_PASSWORD com no mínimo 12 caracteres para executar o seed.',
+      );
+    }
+
     // Criar usuário admin padrão
     let admin = await prisma.user.findUnique({
       where: { email: 'admin@sistema.com' },
     });
 
     if (!admin) {
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+      const hashedPassword = await bcrypt.hash(adminPassword, 10);
       admin = await prisma.user.create({
         data: {
           email: 'admin@sistema.com',
@@ -26,37 +35,38 @@ async function seed() {
       console.log('ℹ️  Usuário admin já existe');
     }
 
-    // Criar usuário de teste (AGENT)
-    let testUser = await prisma.user.findUnique({
-      where: { email: 'teste@sistema.com' },
-    });
-
-    if (!testUser) {
-      const hashedPassword = await bcrypt.hash('teste123', 10);
-      testUser = await prisma.user.create({
-        data: {
-          email: 'teste@sistema.com',
-          password: hashedPassword,
-          name: 'Usuário de Teste',
-          role: 'AGENT',
-          isActive: true,
-        },
+    // Criar usuário de teste (AGENT) — opcional
+    if (testPassword && testPassword.length >= 12) {
+      let testUser = await prisma.user.findUnique({
+        where: { email: 'teste@sistema.com' },
       });
-      console.log('✅ Usuário de teste criado com sucesso!');
+
+      if (!testUser) {
+        const hashedPassword = await bcrypt.hash(testPassword, 10);
+        testUser = await prisma.user.create({
+          data: {
+            email: 'teste@sistema.com',
+            password: hashedPassword,
+            name: 'Usuário de Teste',
+            role: 'AGENT',
+            isActive: true,
+          },
+        });
+        console.log('✅ Usuário de teste criado com sucesso!');
+      } else {
+        console.log('ℹ️  Usuário de teste já existe');
+      }
     } else {
-      console.log('ℹ️  Usuário de teste já existe');
+      console.log('ℹ️  Usuário de teste ignorado (defina SEED_TEST_PASSWORD para criar)');
     }
 
     console.log('');
-    console.log('📋 Credenciais criadas:');
+    console.log('📋 Credenciais:');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('👤 ADMIN:');
-    console.log('   📧 Email: admin@sistema.com');
-    console.log('   🔑 Senha: admin123');
-    console.log('');
-    console.log('👤 TESTE:');
-    console.log('   📧 Email: teste@sistema.com');
-    console.log('   🔑 Senha: teste123');
+    console.log('👤 ADMIN: admin@sistema.com (senha = SEED_ADMIN_PASSWORD)');
+    if (testPassword) {
+      console.log('👤 TESTE: teste@sistema.com (senha = SEED_TEST_PASSWORD)');
+    }
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('');
     console.log('⚠️  IMPORTANTE: Altere as senhas após o primeiro login!');
@@ -70,9 +80,10 @@ async function seed() {
     ];
 
     for (const tag of tags) {
-      await prisma.tag.create({
-        data: tag,
-      });
+      const existing = await prisma.tag.findFirst({ where: { name: tag.name } });
+      if (!existing) {
+        await prisma.tag.create({ data: tag });
+      }
     }
 
     console.log('✅ Tags de exemplo criadas');
@@ -86,10 +97,3 @@ async function seed() {
 }
 
 seed();
-
-
-
-
-
-
-

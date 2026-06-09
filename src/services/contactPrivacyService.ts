@@ -23,12 +23,27 @@ export class ContactPrivacyService {
         },
       });
 
+      await tx.contactChannelIdentity.updateMany({
+        where: { contactId },
+        data: { externalId: `anon-${contactId.slice(0, 12)}` },
+      });
+
+      await tx.deal.updateMany({
+        where: { contactId },
+        data: { customFields: { anonymized: true } },
+      });
+
       await tx.message.updateMany({
         where: { conversation: { contactId } },
         data: {
           content: '[conteúdo removido]',
           metadata: { anonymized: true },
         },
+      });
+
+      await tx.contactConsent.updateMany({
+        where: { contactId, granted: true },
+        data: { granted: false, revokedAt: new Date() },
       });
     });
 
@@ -67,6 +82,77 @@ export class ContactPrivacyService {
     });
 
     return { ok: true, contactId };
+  }
+
+  async exportContactData(contactId: string, actorUserId?: string) {
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+      include: {
+        channelIdentities: true,
+        consents: { orderBy: { createdAt: 'desc' } },
+        conversations: {
+          include: {
+            messages: {
+              orderBy: { createdAt: 'asc' },
+              select: {
+                id: true,
+                content: true,
+                type: true,
+                createdAt: true,
+                metadata: true,
+              },
+            },
+            channel: { select: { id: true, name: true, type: true } },
+          },
+        },
+        deals: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            value: true,
+            customFields: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!contact) {
+      throw new Error('Contato não encontrado');
+    }
+
+    const exportPayload = {
+      exportedAt: new Date().toISOString(),
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        phone: contact.phone,
+        email: contact.email,
+        metadata: contact.metadata,
+        createdAt: contact.createdAt,
+        updatedAt: contact.updatedAt,
+      },
+      channelIdentities: contact.channelIdentities,
+      consents: contact.consents,
+      conversations: contact.conversations.map((conv) => ({
+        id: conv.id,
+        status: conv.status,
+        channel: conv.channel,
+        messages: conv.messages,
+      })),
+      deals: contact.deals,
+    };
+
+    await auditLogService.log({
+      userId: actorUserId,
+      action: 'EXPORT_CONTACT_DATA',
+      resource: 'contact',
+      resourceId: contactId,
+    });
+
+    return exportPayload;
   }
 }
 

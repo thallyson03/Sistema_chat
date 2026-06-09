@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import { buildContactVisibilityWhere } from '../utils/accessControl';
 import { contactPrivacyService } from '../services/contactPrivacyService';
+import { contactConsentService } from '../services/contactConsentService';
+import { auditAction } from '../middleware/auditMiddleware';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import * as XLSX from 'xlsx';
@@ -148,6 +150,62 @@ router.get('/:id/conversations', async (req: AuthRequest, res) => {
     res.json({ contactId: id, conversations });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.get(
+  '/:id/export',
+  authorizeRoles('ADMIN', 'SUPERVISOR'),
+  auditAction('EXPORT_CONTACT_DATA', 'contact', (req) => req.params.id),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const visibilityWhere = await buildContactVisibilityWhere(req.user!);
+      const contact = await prisma.contact.findFirst({
+        where: { id, ...visibilityWhere },
+        select: { id: true },
+      });
+      if (!contact) {
+        return res.status(404).json({ error: 'Contato não encontrado' });
+      }
+
+      const data = await contactPrivacyService.exportContactData(id, req.user?.id);
+      res.json(data);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+);
+
+router.post('/:id/consent', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { purpose, legalBasis, granted, source } = req.body || {};
+    if (!purpose || !legalBasis) {
+      return res.status(400).json({ error: 'purpose e legalBasis são obrigatórios' });
+    }
+
+    const consent = await contactConsentService.recordConsent({
+      contactId: id,
+      purpose,
+      legalBasis,
+      granted,
+      source,
+      recordedById: req.user?.id,
+    });
+    res.status(201).json(consent);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/:id/consents', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const consents = await contactConsentService.listConsents(id);
+    res.json({ contactId: id, consents });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
   }
 });
 

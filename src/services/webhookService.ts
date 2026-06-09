@@ -1,6 +1,8 @@
 import prisma from '../config/database';
 import axios from 'axios';
 import crypto from 'crypto';
+import { encryptField, decryptField } from '../utils/fieldEncryption';
+import { redactSensitiveFields } from '../utils/securityHelpers';
 import { MessageService } from './messageService';
 import { MessageType } from '@prisma/client';
 
@@ -33,7 +35,7 @@ export class WebhookService {
         name: data.name,
         url: data.url,
         events: data.events,
-        secret: secret,
+        secret: encryptField(secret),
         channelId: data.channelId,
         isActive: true,
         autoCloseEnabled: data.autoCloseEnabled ?? false,
@@ -49,7 +51,7 @@ export class WebhookService {
       events: webhook.events,
     });
 
-    return webhook;
+    return { ...webhook, secret };
   }
 
   /**
@@ -286,7 +288,7 @@ export class WebhookService {
         const response = await axios.post(webhook.url, payload, {
           headers: {
             'Content-Type': 'application/json',
-            'X-Webhook-Secret': webhook.secret || '',
+            'X-Webhook-Secret': decryptField(webhook.secret) || '',
           },
           timeout: 5000, // 5 segundos
         });
@@ -297,8 +299,12 @@ export class WebhookService {
             webhookId: webhook.id,
             event,
             status: 'SUCCESS',
-            requestBody: payload,
-            responseBody: response.data,
+            requestBody: redactSensitiveFields(payload as Record<string, unknown>) as object,
+            responseBody: redactSensitiveFields(
+              (response.data && typeof response.data === 'object'
+                ? response.data
+                : { value: response.data }) as Record<string, unknown>,
+            ) as object,
           },
         });
 
@@ -311,7 +317,7 @@ export class WebhookService {
             webhookId: webhook.id,
             event,
             status: 'FAILED',
-            requestBody: { event, data },
+            requestBody: redactSensitiveFields({ event, data }) as object,
             error: error.message || 'Erro desconhecido',
           },
         });
@@ -344,8 +350,9 @@ export class WebhookService {
     }
 
     const { timingSafeEqualText } = await import('../utils/securityHelpers');
-    if (!webhook.secret) return false;
-    return timingSafeEqualText(webhook.secret, secret);
+    const storedSecret = decryptField(webhook.secret);
+    if (!storedSecret) return false;
+    return timingSafeEqualText(storedSecret, secret);
   }
 
   /**

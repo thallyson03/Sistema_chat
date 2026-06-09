@@ -2184,7 +2184,12 @@ export class BotService {
       fetchOptions.body = body;
     }
     
-    const response = await fetch(url, fetchOptions);
+    const { isUrlSafeForOutboundRequest } = await import('../utils/securityHelpers');
+    if (!isUrlSafeForOutboundRequest(url)) {
+      throw new Error('URL não permitida para requisição HTTP (host local/privado ou protocolo inválido)');
+    }
+
+    const response = await fetch(url, { ...fetchOptions, redirect: 'manual' });
     
     // Tentar parsear como JSON, senão retornar texto
     const contentType = response.headers.get('content-type');

@@ -64,6 +64,14 @@ export class MessageController {
         return res.status(400).json({ error: 'Conteúdo, mídia ou botões são obrigatórios' });
       }
 
+      if (mediaUrl) {
+        const { validateInboundMediaUrl } = await import('../utils/validateMediaUrl');
+        const mediaCheck = validateInboundMediaUrl(mediaUrl);
+        if (!mediaCheck.ok) {
+          return res.status(400).json({ error: mediaCheck.error });
+        }
+      }
+
       console.log('[MessageController] Enviando mensagem:', {
         conversationId,
         userId: req.user.id,

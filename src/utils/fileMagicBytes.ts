@@ -10,6 +10,10 @@ const MAGIC_SIGNATURES: Record<string, number[][]> = {
   'audio/webm': [[0x1a, 0x45, 0xdf, 0xa3]],
   'audio/wav': [[0x52, 0x49, 0x46, 0x46]],
   'application/pdf': [[0x25, 0x50, 0x44, 0x46]],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [[0x50, 0x4b, 0x03, 0x04]],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [[0x50, 0x4b, 0x03, 0x04]],
+  'application/vnd.ms-excel': [[0x50, 0x4b, 0x03, 0x04], [0xd0, 0xcf, 0x11, 0xe0]],
+  'application/msword': [[0x50, 0x4b, 0x03, 0x04], [0xd0, 0xcf, 0x11, 0xe0]],
 };
 
 function matchesSignature(buffer: Buffer, signature: number[]): boolean {
@@ -26,7 +30,7 @@ export function validateFileMagicBytes(buffer: Buffer, mimetype: string): boolea
   const signatures = MAGIC_SIGNATURES[normalized];
 
   if (!signatures) {
-    return true;
+    return false;
   }
 
   if (normalized === 'video/mp4') {

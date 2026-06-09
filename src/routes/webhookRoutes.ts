@@ -303,7 +303,7 @@ router.get('/whatsapp', async (req: Request, res: Response) => {
     console.log('[WebhookWhatsApp] 🔐 Query params:', JSON.stringify(req.query, null, 2));
   }
   console.log('[WebhookWhatsApp] 🔐 Mode:', mode);
-  console.log('[WebhookWhatsApp] 🔐 Token recebido:', token);
+  console.log('[WebhookWhatsApp] 🔐 Token recebido:', tokenMatch ? '[valid]' : '[invalid]');
   console.log('[WebhookWhatsApp] 🔐 Total de tokens válidos carregados:', verifyTokens.length);
   console.log('[WebhookWhatsApp] 🔐 Challenge:', challenge);
   console.log('[WebhookWhatsApp] 🔐 ============================================');

@@ -1,5 +1,6 @@
 import { evolutionApi } from '../config/evolutionApi';
 import { evolutionGoApi } from '../config/evolutionGoApi';
+import { decryptField } from './fieldEncryption';
 
 export type WhatsAppChannelProvider = 'evolution' | 'evolution_go' | 'whatsapp_official';
 
@@ -40,12 +41,12 @@ export function resolveBaileysApiKey(
 ): string | undefined {
   if (!channel) return undefined;
   const masked = '***';
-  const stored = channel.evolutionApiKey;
+  const stored = decryptField(channel.evolutionApiKey);
   const provider = getWhatsAppChannelProvider(channel.config as Record<string, unknown>);
 
   if (provider === 'evolution_go') {
     // Envio de mensagens: token da instância (header apikey) tem prioridade
-    const instanceToken = channel.evolutionInstanceToken;
+    const instanceToken = decryptField(channel.evolutionInstanceToken);
     if (instanceToken && instanceToken !== masked) return instanceToken;
     if (stored && stored !== masked) return stored;
     return process.env.EVOLUTION_GO_API_KEY || undefined;
@@ -72,7 +73,7 @@ export function resolveBaileysGlobalApiKey(
 ): string | undefined {
   const masked = '***';
   const provider = getWhatsAppChannelProvider(channel?.config as Record<string, unknown>);
-  const stored = channel?.evolutionApiKey;
+  const stored = decryptField(channel?.evolutionApiKey);
   if (stored && stored !== masked) return stored;
   return resolveDefaultBaileysApiKey(provider);
 }

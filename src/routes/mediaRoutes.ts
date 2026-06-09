@@ -10,7 +10,7 @@ import rateLimit from 'express-rate-limit';
 import { authenticateToken, optionalAuthenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
 import {
-  hasValidSignedFileAccess,
+  requireFileAccessByOwnership,
   requireMessageMediaAccess,
 } from '../middleware/mediaAccess';
 import { buildSignedMediaFilePath, getMediaSignedUrlTtlSeconds } from '../utils/signedMediaUrl';
@@ -312,15 +312,12 @@ router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('fil
   }
 });
 
-// Rota para servir arquivos enviados (URL assinada ou usuário autenticado)
+// Rota para servir arquivos enviados (URL assinada, token interno ou ownership na conversa)
 router.get('/file/:filename', optionalAuthenticateToken, async (req: AuthRequest, res: Response) => {
   const filename = req.params.filename;
 
-  if (!hasValidSignedFileAccess(req, filename) && !req.user) {
-    return res.status(401).json({
-      error: 'Acesso negado. URL assinada inválida ou autenticação necessária.',
-    });
-  }
+  const allowed = await requireFileAccessByOwnership(req, res, filename);
+  if (!allowed) return;
 
   if (!isSafeFilename(filename)) {
     console.error('[Media] ❌ Nome de arquivo inválido (possível path traversal):', filename);
@@ -353,10 +350,15 @@ router.get('/file/:filename', optionalAuthenticateToken, async (req: AuthRequest
     return res.status(404).json({ error: 'Arquivo não encontrado' });
   }
 
-  // Headers para permitir acesso público e CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const corsOrigin = process.env.CORS_ORIGIN || '';
+  if (corsOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache de 1 ano
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `inline; filename="${path.basename(filename)}"`);
+  res.setHeader('Cache-Control', 'private, max-age=3600');
   
   // Determinar Content-Type baseado na extensão
   const ext = path.extname(filename).toLowerCase();

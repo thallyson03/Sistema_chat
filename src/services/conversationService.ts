@@ -15,7 +15,7 @@ export interface ConversationFilters {
   inBot?: boolean;
 }
 
-interface ConversationViewer {
+export interface ConversationViewer {
   id: string;
   role: string;
 }
@@ -175,11 +175,7 @@ export class ConversationService {
       })),
     );
 
-    if (viewer && viewer.role !== 'ADMIN' && viewer.role !== 'SUPERVISOR') {
-      return withMeta.filter((conv) => conv.accessible);
-    }
-
-    return withMeta;
+    return withMeta.filter((conv) => conv.accessible);
   }
 
   async getConversations(

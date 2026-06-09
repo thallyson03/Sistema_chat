@@ -12,6 +12,7 @@ import {
 import { toEvolutionInstanceName } from '../utils/evolutionInstanceName';
 import { getSocketIO } from '../routes/webhookRoutes';
 import { emitChannelStatusUpdate } from '../utils/realtimeEvents';
+import { encryptField, encryptConfigSecrets, decryptField } from '../utils/fieldEncryption';
 
 export interface CreateChannelData {
   name: string;
@@ -92,8 +93,9 @@ export class ChannelService {
     storedKey?: string | null,
     provider: WhatsAppChannelProvider = 'evolution',
   ): string | undefined {
-    if (storedKey && storedKey !== ChannelService.SECRET_MASK) {
-      return storedKey;
+    const decrypted = decryptField(storedKey);
+    if (decrypted && decrypted !== ChannelService.SECRET_MASK) {
+      return decrypted;
     }
     return resolveDefaultBaileysApiKey(provider);
   }
@@ -412,10 +414,10 @@ export class ChannelService {
         name: data.name,
         type: data.type,
         status: channelStatus,
-        config: mergedConfig as object,
-        evolutionApiKey: apiKey || null,
+        config: encryptConfigSecrets(mergedConfig) as object,
+        evolutionApiKey: apiKey ? encryptField(apiKey) : null,
         evolutionInstanceId: instanceId || null,
-        evolutionInstanceToken: instanceToken || null,
+        evolutionInstanceToken: instanceToken ? encryptField(instanceToken) : null,
         sectorId: normalizedPrimarySectorId,
       },
     });
@@ -476,7 +478,9 @@ export class ChannelService {
           const provisioned = await this.provisionEvolutionInstance(trimmedName, apiKey, provider);
           evolutionSync = {
             evolutionInstanceId: provisioned.instanceId,
-            evolutionInstanceToken: provisioned.instanceToken ?? null,
+            evolutionInstanceToken: provisioned.instanceToken
+              ? encryptField(provisioned.instanceToken)
+              : null,
             status: ChannelStatus.INACTIVE,
           };
           console.log('[ChannelService] Instância Evolution recriada após renomear canal:', {
@@ -497,11 +501,15 @@ export class ChannelService {
       data: {
         ...(isRename && { name: trimmedName }),
         ...(data.config && {
-          config: this.mergeConfigPreservingSecrets(existingChannel.config as any, data.config),
+          config: encryptConfigSecrets(
+            this.mergeConfigPreservingSecrets(existingChannel.config as any, data.config),
+          ),
         }),
-        ...(data.evolutionApiKey && { evolutionApiKey: data.evolutionApiKey }),
+        ...(data.evolutionApiKey && { evolutionApiKey: encryptField(data.evolutionApiKey) }),
         ...(data.evolutionInstanceId && { evolutionInstanceId: data.evolutionInstanceId }),
-        ...(data.evolutionInstanceToken && { evolutionInstanceToken: data.evolutionInstanceToken }),
+        ...(data.evolutionInstanceToken && {
+          evolutionInstanceToken: encryptField(data.evolutionInstanceToken),
+        }),
         ...(data.primarySectorId !== undefined || data.sectorId !== undefined
           ? { sectorId: normalizedPrimarySectorId }
           : {}),
@@ -838,7 +846,7 @@ export class ChannelService {
         console.log('[ChannelService] Atualizando token da instância...');
         await prisma.channel.update({
           where: { id: channelId },
-          data: { evolutionInstanceToken: evolutionStatus.token },
+          data: { evolutionInstanceToken: encryptField(evolutionStatus.token) },
         });
         console.log('[ChannelService] ✅ Token atualizado com sucesso');
       }
