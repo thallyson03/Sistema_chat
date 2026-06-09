@@ -12,6 +12,11 @@ function isStrictMode(): boolean {
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 }
 
+function isTruthyEnv(name: string): boolean {
+  const raw = String(process.env[name] || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 export function validateProductionSecurity(): void {
   if (process.env.NODE_ENV !== 'production') return;
 
@@ -67,6 +72,18 @@ export function validateProductionSecurity(): void {
     warnings.push(
       'PUBLIC_PIPELINE_API_KEY não configurado — API pública de pipeline permanece desabilitada (comportamento seguro)',
     );
+  }
+
+  if (isTruthyEnv('ALLOW_INSECURE_WEBHOOKS')) {
+    errors.push('ALLOW_INSECURE_WEBHOOKS não é permitido em produção');
+  }
+
+  if (isTruthyEnv('ALLOW_INSECURE_PUBLIC_API')) {
+    errors.push('ALLOW_INSECURE_PUBLIC_API não é permitido em produção');
+  }
+
+  if (!String(process.env.CORS_ORIGIN || '').trim()) {
+    errors.push('CORS_ORIGIN é obrigatório em produção');
   }
 
   for (const warn of warnings) {

@@ -25,6 +25,24 @@ function matchesSignature(buffer: Buffer, signature: number[]): boolean {
   return true;
 }
 
+export function validateImportFileContent(buffer: Buffer, ext: string): boolean {
+  const normalizedExt = ext.toLowerCase();
+  if (normalizedExt === '.csv') {
+    const sample = buffer.subarray(0, Math.min(512, buffer.length));
+    return sample.length > 0 && !sample.includes(0);
+  }
+  if (normalizedExt === '.xlsx') {
+    return validateFileMagicBytes(
+      buffer,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+  if (normalizedExt === '.xls') {
+    return validateFileMagicBytes(buffer, 'application/vnd.ms-excel');
+  }
+  return false;
+}
+
 export function validateFileMagicBytes(buffer: Buffer, mimetype: string): boolean {
   const normalized = mimetype.split(';')[0].trim().toLowerCase();
   const signatures = MAGIC_SIGNATURES[normalized];

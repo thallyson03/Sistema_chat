@@ -1,41 +1,56 @@
 import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
+import { validatePassword } from '../utils/passwordPolicy';
 
 async function createTestUser() {
-  try {
-    console.log('🔍 Verificando usuários existentes...');
+  if (process.env.NODE_ENV === 'production') {
+    console.error('createTestUser não pode ser executado em produção.');
+    process.exit(1);
+  }
 
-    // Verificar se já existe
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || process.env.CREATE_USER_ADMIN_PASSWORD;
+  const testPassword = process.env.SEED_TEST_PASSWORD || process.env.CREATE_USER_TEST_PASSWORD;
+
+  if (!adminPassword || !testPassword) {
+    console.error(
+      'Defina SEED_ADMIN_PASSWORD e SEED_TEST_PASSWORD (ou CREATE_USER_ADMIN_PASSWORD / CREATE_USER_TEST_PASSWORD) no ambiente.',
+    );
+    process.exit(1);
+  }
+
+  for (const [label, password] of [
+    ['admin', adminPassword],
+    ['teste', testPassword],
+  ] as const) {
+    const policyError = validatePassword(password);
+    if (policyError) {
+      console.error(`Senha de ${label} inválida: ${policyError}`);
+      process.exit(1);
+    }
+  }
+
+  try {
+    console.log('Verificando usuários existentes...');
+
     const existingAdmin = await prisma.user.findUnique({
       where: { email: 'admin@sistema.com' },
     });
 
     if (existingAdmin) {
-      console.log('✅ Usuário admin já existe!');
-      console.log('📧 Email:', existingAdmin.email);
-      console.log('👤 Nome:', existingAdmin.name);
-      console.log('🔐 Senha hash:', existingAdmin.password.substring(0, 20) + '...');
-      console.log('✅ Ativo:', existingAdmin.isActive);
-      
-      // Testar comparação de senha
-      const testPassword = 'admin123';
-      const passwordMatch = await bcrypt.compare(testPassword, existingAdmin.password);
-      console.log('🔑 Teste de senha "admin123":', passwordMatch ? '✅ CORRETO' : '❌ INCORRETO');
-      
+      const passwordMatch = await bcrypt.compare(adminPassword, existingAdmin.password);
       if (!passwordMatch) {
-        console.log('⚠️  Senha não confere! Recriando senha...');
-        const newHashedPassword = await bcrypt.hash(testPassword, 10);
+        const newHashedPassword = await bcrypt.hash(adminPassword, 10);
         await prisma.user.update({
           where: { id: existingAdmin.id },
           data: { password: newHashedPassword },
         });
-        console.log('✅ Senha atualizada!');
+        console.log('Senha do admin atualizada.');
+      } else {
+        console.log('Usuário admin já existe com senha correta.');
       }
     } else {
-      console.log('📝 Criando usuário admin...');
-      const hashedPassword = await bcrypt.hash('admin123', 10);
-      
-      const admin = await prisma.user.create({
+      const hashedPassword = await bcrypt.hash(adminPassword, 10);
+      await prisma.user.create({
         data: {
           email: 'admin@sistema.com',
           password: hashedPassword,
@@ -44,37 +59,28 @@ async function createTestUser() {
           isActive: true,
         },
       });
-      
-      console.log('✅ Usuário admin criado com sucesso!');
-      console.log('📧 Email:', admin.email);
-      console.log('🔑 Senha: admin123');
+      console.log('Usuário admin criado.');
     }
 
-    // Criar usuário de teste
     const existingTest = await prisma.user.findUnique({
       where: { email: 'teste@sistema.com' },
     });
 
     if (existingTest) {
-      console.log('✅ Usuário de teste já existe!');
-      const testPassword = 'teste123';
       const passwordMatch = await bcrypt.compare(testPassword, existingTest.password);
-      console.log('🔑 Teste de senha "teste123":', passwordMatch ? '✅ CORRETO' : '❌ INCORRETO');
-      
       if (!passwordMatch) {
-        console.log('⚠️  Senha não confere! Recriando senha...');
         const newHashedPassword = await bcrypt.hash(testPassword, 10);
         await prisma.user.update({
           where: { id: existingTest.id },
           data: { password: newHashedPassword },
         });
-        console.log('✅ Senha atualizada!');
+        console.log('Senha do usuário de teste atualizada.');
+      } else {
+        console.log('Usuário de teste já existe com senha correta.');
       }
     } else {
-      console.log('📝 Criando usuário de teste...');
-      const hashedPassword = await bcrypt.hash('teste123', 10);
-      
-      const testUser = await prisma.user.create({
+      const hashedPassword = await bcrypt.hash(testPassword, 10);
+      await prisma.user.create({
         data: {
           email: 'teste@sistema.com',
           password: hashedPassword,
@@ -83,35 +89,17 @@ async function createTestUser() {
           isActive: true,
         },
       });
-      
-      console.log('✅ Usuário de teste criado com sucesso!');
-      console.log('📧 Email:', testUser.email);
-      console.log('🔑 Senha: teste123');
+      console.log('Usuário de teste criado.');
     }
 
-    console.log('');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('📋 CREDENCIAIS:');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('👤 ADMIN:');
-    console.log('   📧 Email: admin@sistema.com');
-    console.log('   🔑 Senha: admin123');
-    console.log('');
-    console.log('👤 TESTE:');
-    console.log('   📧 Email: teste@sistema.com');
-    console.log('   🔑 Senha: teste123');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
+    console.log('Credenciais configuradas via variáveis de ambiente (senhas não são exibidas).');
     await prisma.$disconnect();
-  } catch (error: any) {
-    console.error('❌ Erro:', error.message);
-    console.error(error);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Erro:', message);
     await prisma.$disconnect();
     process.exit(1);
   }
 }
 
 createTestUser();
-
-
-

@@ -60,6 +60,7 @@ import { pipelineAutomationService } from './services/pipelineAutomationService'
 import { runMediaPersistJobTick } from './services/mediaPersistJob';
 import { runMediaConversionWorkerTick } from './services/mediaConversionWorker';
 import { runMediaRetentionJobTick } from './services/mediaRetentionJob';
+import { runDataRetentionJobTick } from './services/dataRetentionJob';
 import { ConversationDistributionService } from './services/conversationDistributionService';
 import { webhookIngestQueue } from './queues/webhookIngest.queue';
 import {
@@ -357,7 +358,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/channels', internalApiLimiter, channelRoutes);
 app.use('/api/conversations', internalApiLimiter, internalHeavyReadLimiter, conversationRoutes);
 app.use('/api/messages', internalApiLimiter, internalHeavyReadLimiter, messageRoutes);
-app.use('/api/media', mediaRoutes);
+app.use('/api/media', internalApiLimiter, internalHeavyReadLimiter, mediaRoutes);
 app.use('/api/quick-replies', internalApiLimiter, quickReplyRoutes);
 app.use('/api/sectors', internalApiLimiter, sectorRoutes);
 app.use('/api/users', internalApiLimiter, userRoutes);
@@ -626,5 +627,40 @@ httpServer.listen(PORT, () => {
         },
       );
     }, 25_000);
+  }
+
+  // Job em background: retenção LGPD (contatos inativos, conversas encerradas, audit logs).
+  if (process.env.DATA_RETENTION_ENABLED === 'true') {
+    const dataRetentionJobMs = Math.max(
+      60_000,
+      Number(process.env.DATA_RETENTION_INTERVAL_MS) || 24 * 60 * 60 * 1000,
+    );
+    logger.info('data retention scheduler configured', {
+      intervalSeconds: dataRetentionJobMs / 1000,
+      dryRun: String(process.env.DATA_RETENTION_DRY_RUN || 'true').trim().toLowerCase() !== 'false',
+      contactRetentionDays: Math.max(30, Number(process.env.DATA_RETENTION_CONTACT_DAYS) || 365),
+      conversationRetentionDays: Math.max(30, Number(process.env.DATA_RETENTION_CONVERSATION_DAYS) || 730),
+      auditLogRetentionDays: Math.max(90, Number(process.env.DATA_RETENTION_AUDIT_LOG_DAYS) || 365),
+    });
+
+    setInterval(() => {
+      void distributedLockService.runWithPgAdvisoryLock(
+        91006,
+        'data-retention-job',
+        async () => {
+          await runDataRetentionJobTick();
+        },
+      );
+    }, dataRetentionJobMs);
+
+    setTimeout(() => {
+      void distributedLockService.runWithPgAdvisoryLock(
+        91006,
+        'data-retention-job-first-run',
+        async () => {
+          await runDataRetentionJobTick();
+        },
+      );
+    }, 30_000);
   }
 });

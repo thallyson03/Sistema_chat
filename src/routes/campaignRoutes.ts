@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
+import { validateBody } from '../middleware/validateBody';
+import { createCampaignSchema } from '../schemas/campaignSchemas';
 
 const adminOrSupervisor = authorizeRoles('ADMIN', 'SUPERVISOR');
 import { CampaignController } from '../controllers/campaignController';
@@ -10,9 +12,14 @@ const campaignController = new CampaignController();
 // Todas as rotas precisam de autenticação
 router.use(authenticateToken);
 
-router.post('/', adminOrSupervisor, campaignController.createCampaign.bind(campaignController));
-router.get('/', campaignController.getCampaigns.bind(campaignController));
-router.get('/:id', campaignController.getCampaignById.bind(campaignController));
+router.post(
+  '/',
+  adminOrSupervisor,
+  validateBody(createCampaignSchema),
+  campaignController.createCampaign.bind(campaignController),
+);
+router.get('/', adminOrSupervisor, campaignController.getCampaigns.bind(campaignController));
+router.get('/:id', adminOrSupervisor, campaignController.getCampaignById.bind(campaignController));
 router.put('/:id', adminOrSupervisor, campaignController.updateCampaign.bind(campaignController));
 router.delete('/:id', adminOrSupervisor, campaignController.deleteCampaign.bind(campaignController));
 

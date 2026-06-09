@@ -1,12 +1,13 @@
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import { ContactListController } from '../controllers/contactListController';
 
 const router = Router();
 const contactListController = new ContactListController();
+const adminOrSupervisor = authorizeRoles('ADMIN', 'SUPERVISOR');
 
-// Todas as rotas precisam de autenticação
-router.use(authenticateToken);
+// Todas as rotas precisam de autenticação e perfil ADMIN ou SUPERVISOR
+router.use(authenticateToken, adminOrSupervisor);
 
 // CRUD de listas
 router.post('/', contactListController.createList.bind(contactListController));

@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { ContactImportService } from '../services/contactImportService';
+import { contactImportBodySchema } from '../schemas/contactImportSchemas';
+import { validateImportFileContent } from '../utils/fileMagicBytes';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -32,8 +34,7 @@ const upload = multer({
     const allowedMimes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
       'application/vnd.ms-excel', // .xls
-      'text/csv', // .csv (mantido para compatibilidade)
-      'text/plain',
+      'text/csv',
     ];
     const allowedExtensions = ['.xlsx', '.xls', '.csv'];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -63,16 +64,30 @@ export class ContactImportController {
         return res.status(400).json({ error: 'Nenhum arquivo enviado' });
       }
 
-      const { channelId, listId } = req.body;
-
-      if (!channelId) {
-        // Remover arquivo se channelId não foi fornecido
+      const bodyResult = contactImportBodySchema.safeParse(req.body);
+      if (!bodyResult.success) {
         try {
           fs.unlinkSync(req.file.path);
         } catch (e) {
           // Ignorar erro
         }
-        return res.status(400).json({ error: 'channelId é obrigatório' });
+        return res.status(400).json({
+          error: 'Dados inválidos',
+          details: bodyResult.error.flatten().fieldErrors,
+        });
+      }
+
+      const { channelId, listId } = bodyResult.data;
+
+      const fileBuffer = fs.readFileSync(req.file.path);
+      const fileExt = path.extname(req.file.originalname).toLowerCase();
+      if (!validateImportFileContent(fileBuffer, fileExt)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {
+          // Ignorar erro
+        }
+        return res.status(400).json({ error: 'Conteúdo do arquivo não corresponde ao formato declarado' });
       }
 
       try {

@@ -229,6 +229,9 @@ router.post('/:id/anonymize', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req:
 router.delete('/:id', authorizeRoles('ADMIN'), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    if (!req.user || !(await isContactVisibleToViewer(req.user, id))) {
+      return res.status(404).json({ error: 'Contato não encontrado' });
+    }
     const result = await contactPrivacyService.deleteContact(id, req.user?.id);
     res.json(result);
   } catch (error: any) {

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/authController';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
+import { validateBody } from '../middleware/validateBody';
+import { loginSchema, registerSchema } from '../schemas/authSchemas';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -35,11 +37,12 @@ router.post(
   authenticateToken,
   authorizeRoles('ADMIN'),
   authLimiter,
+  validateBody(registerSchema),
   authController.register.bind(authController)
 );
 
 // Login público, mas com rate limiting
-router.post('/login', authLimiter, authController.login.bind(authController));
+router.post('/login', authLimiter, validateBody(loginSchema), authController.login.bind(authController));
 router.post('/refresh', authLimiter, authController.refresh.bind(authController));
 router.post('/clear-session', authController.clearSession.bind(authController));
 router.post('/logout', authenticateToken, authController.logout.bind(authController));

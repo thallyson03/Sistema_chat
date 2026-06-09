@@ -9,6 +9,7 @@ import { SatisfactionSurveyService } from '../services/satisfactionSurveyService
 import { dispatchJourneyEvent } from '../services/journeyEventDispatcher';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { logger } from '../utils/logger';
 import { phase1Flags } from '../config/phase1Flags';
 import { webhookIngestQueue } from '../queues/webhookIngest.queue';
 import { idempotencyService } from '../services/idempotencyService';
@@ -80,7 +81,11 @@ export function getSocketIO() {
 }
 
 const router = Router();
-const isDevLogs = process.env.NODE_ENV !== 'production';
+function isWebhookDebugLogs(): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
+  const flag = String(process.env.DEBUG_WEBHOOKS || '').trim().toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes';
+}
 
 const webhookReceiveLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -264,7 +269,7 @@ async function resolveWhatsAppOfficialChannel(value: any) {
 
 // Middleware para log de todas as requisições ao webhook
 router.use('/whatsapp', (req: Request, res: Response, next: Function) => {
-  if (isDevLogs) {
+  if (isWebhookDebugLogs()) {
     console.log('🔔 [WebhookMiddleware] Requisição recebida:', {
       method: req.method,
       url: req.url,
@@ -299,7 +304,7 @@ router.get('/whatsapp', async (req: Request, res: Response) => {
   console.log('[WebhookWhatsApp] 🔐 ============================================');
   console.log('[WebhookWhatsApp] 🔐 Verificação do webhook (GET)');
   console.log('[WebhookWhatsApp] 🔐 URL:', req.url);
-  if (isDevLogs) {
+  if (isWebhookDebugLogs()) {
     console.log('[WebhookWhatsApp] 🔐 Query params:', JSON.stringify(req.query, null, 2));
   }
   console.log('[WebhookWhatsApp] 🔐 Mode:', mode);
@@ -334,21 +339,20 @@ router.get('/whatsapp', async (req: Request, res: Response) => {
 
 router.post('/whatsapp', webhookReceiveLimiter, async (req: Request, res: Response) => {
   try {
-    console.log('📨 ============================================');
-    console.log('📨 Webhook recebido do WhatsApp Official API');
-    console.log('📨 Timestamp:', new Date().toISOString());
-    console.log('📨 URL:', req.url);
-    console.log('📨 Method:', req.method);
-    if (isDevLogs) {
-      console.log('📨 Headers:', JSON.stringify(req.headers, null, 2));
-      console.log('📨 Body completo:', JSON.stringify(req.body, null, 2));
+    if (isWebhookDebugLogs()) {
+      logger.debug('whatsapp webhook received (debug)', {
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        body: req.body,
+      });
     } else {
-      console.log('📨 Resumo do evento:', {
+      logger.info('whatsapp webhook received', {
+        method: req.method,
         hasEntry: Array.isArray(req.body?.entry),
         entryCount: Array.isArray(req.body?.entry) ? req.body.entry.length : 0,
       });
     }
-    console.log('📨 ============================================');
 
     // Validação opcional de assinatura (X-Hub-Signature-256) do WhatsApp/META
     // Preferência: segredo por canal (config da interface). Fallback: .env
@@ -994,7 +998,7 @@ router.post('/evolution', webhookReceiveLimiter, validateEvolutionWebhook, async
     console.log('📨 Timestamp:', new Date().toISOString());
     console.log('📨 Event:', event.event || event.eventName || event.eventType);
     console.log('📨 Data keys:', Object.keys(event.data || event));
-    if (isDevLogs) {
+    if (isWebhookDebugLogs()) {
       console.log('📨 Body completo:', JSON.stringify(event, null, 2));
     }
     console.log('📨 ============================================');
@@ -1041,7 +1045,7 @@ router.post('/evolution-go', webhookReceiveLimiter, validateEvolutionWebhook, as
     console.log(`${prefix} Event:`, event.event || event.eventName || event.eventType);
     console.log(`${prefix} Instance:`, extractEvolutionInstanceName(event), extractEvolutionInstanceUuid(event));
     console.log(`${prefix} Data keys:`, Object.keys(event.data || event));
-    if (isDevLogs) {
+    if (isWebhookDebugLogs()) {
       console.log(`${prefix} Body completo:`, JSON.stringify(event, null, 2));
     }
     console.log(`${prefix} ============================================`);

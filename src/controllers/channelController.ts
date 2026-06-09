@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { validateWhatsAppOfficialConfig } from '../utils/channelAccess';
+import { canUserAccessChannel, validateWhatsAppOfficialConfig } from '../utils/channelAccess';
 import { auditLogService } from '../services/auditLogService';
 import { ChannelService } from '../services/channelService';
 import prisma from '../config/database';
@@ -265,6 +265,9 @@ export class ChannelController {
   async getQRCode(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (!req.user || !(await canUserAccessChannel(req.user, id))) {
+        return res.status(403).json({ error: 'Acesso negado ao canal' });
+      }
       const result = await channelService.getQRCode(id);
       res.json(result);
     } catch (error: any) {
@@ -285,6 +288,9 @@ export class ChannelController {
   async getStatus(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (!req.user || !(await canUserAccessChannel(req.user, id))) {
+        return res.status(403).json({ error: 'Acesso negado ao canal' });
+      }
       const result = await channelService.getChannelStatus(id);
       res.json(result);
     } catch (error: any) {
