@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
-import { buildContactVisibilityWhere } from '../utils/accessControl';
+import { buildContactVisibilityWhere, isContactVisibleToViewer } from '../utils/accessControl';
 import { contactPrivacyService } from '../services/contactPrivacyService';
 import { contactConsentService } from '../services/contactConsentService';
 import { auditAction } from '../middleware/auditMiddleware';
@@ -137,8 +137,7 @@ router.get('/', async (req: AuthRequest, res) => {
 router.get('/:id/conversations', async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const contact = await prisma.contact.findUnique({ where: { id } });
-    if (!contact) {
+    if (!req.user || !(await isContactVisibleToViewer(req.user, id))) {
       return res.status(404).json({ error: 'Contato não encontrado' });
     }
 
@@ -180,6 +179,10 @@ router.get(
 router.post('/:id/consent', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    if (!req.user || !(await isContactVisibleToViewer(req.user, id))) {
+      return res.status(404).json({ error: 'Contato não encontrado' });
+    }
+
     const { purpose, legalBasis, granted, source } = req.body || {};
     if (!purpose || !legalBasis) {
       return res.status(400).json({ error: 'purpose e legalBasis são obrigatórios' });
@@ -202,6 +205,10 @@ router.post('/:id/consent', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: A
 router.get('/:id/consents', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    if (!req.user || !(await isContactVisibleToViewer(req.user, id))) {
+      return res.status(404).json({ error: 'Contato não encontrado' });
+    }
+
     const consents = await contactConsentService.listConsents(id);
     res.json({ contactId: id, consents });
   } catch (error: any) {
@@ -212,6 +219,10 @@ router.get('/:id/consents', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: A
 router.post('/:id/anonymize', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    if (!req.user || !(await isContactVisibleToViewer(req.user, id))) {
+      return res.status(404).json({ error: 'Contato não encontrado' });
+    }
+
     const result = await contactPrivacyService.anonymizeContact(id, req.user?.id);
     res.json(result);
   } catch (error: any) {

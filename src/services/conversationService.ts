@@ -5,6 +5,10 @@ import { dispatchJourneyEvent } from './journeyEventDispatcher';
 import { getConversationMessagingWindow } from '../utils/whatsappMessagingWindow';
 import { getChannelDisplayName } from '../utils/channelSnapshot';
 import { conversationResolutionService } from './conversationResolutionService';
+import {
+  sanitizeConversationForApi,
+  sanitizeConversationsForApi,
+} from '../utils/channelSanitizer';
 
 export interface ConversationFilters {
   channelId?: string;
@@ -99,7 +103,7 @@ export class ConversationService {
     );
 
     if (data.assignedToId && conversation.assignedToId !== data.assignedToId) {
-      return prisma.conversation.update({
+      const updated = await prisma.conversation.update({
         where: { id: conversation.id },
         data: { assignedToId: data.assignedToId },
         include: {
@@ -116,9 +120,10 @@ export class ConversationService {
           assignedTo: { select: { id: true, name: true, email: true } },
         },
       });
+      return sanitizeConversationForApi(updated);
     }
 
-    return prisma.conversation.findUnique({
+    const result = await prisma.conversation.findUnique({
       where: { id: conversation.id },
       include: {
         channel: { select: { id: true, name: true, type: true } },
@@ -134,6 +139,7 @@ export class ConversationService {
         assignedTo: { select: { id: true, name: true, email: true } },
       },
     });
+    return sanitizeConversationForApi(result);
   }
 
   async canViewerAccessConversation(conversationId: string, viewer?: ConversationViewer): Promise<boolean> {
@@ -175,7 +181,7 @@ export class ConversationService {
       })),
     );
 
-    return withMeta.filter((conv) => conv.accessible);
+    return sanitizeConversationsForApi(withMeta.filter((conv) => conv.accessible));
   }
 
   async getConversations(
@@ -330,22 +336,24 @@ export class ConversationService {
       prisma.conversation.count({ where }),
     ]);
 
-    return {
-      conversations: conversations.map((conv) => {
-        const hasActiveBotSession = !!(conv as any).botSession?.isActive;
-        const hasActiveWebhook =
-          !!(conv as any).channel?.webhooks?.some((w: any) => w.isActive);
-        const inBot = hasActiveBotSession || (hasActiveWebhook && !conv.assignedToId);
+    const mapped = conversations.map((conv) => {
+      const hasActiveBotSession = !!(conv as any).botSession?.isActive;
+      const hasActiveWebhook =
+        !!(conv as any).channel?.webhooks?.some((w: any) => w.isActive);
+      const inBot = hasActiveBotSession || (hasActiveWebhook && !conv.assignedToId);
 
-        return {
-          ...conv,
-          lastMessage: conv.messages[0]?.content || '',
-          lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
-          lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
-          messagingWindow: getConversationMessagingWindow(conv),
-          inBot,
-        };
-      }),
+      return {
+        ...conv,
+        lastMessage: conv.messages[0]?.content || '',
+        lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
+        lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
+        messagingWindow: getConversationMessagingWindow(conv),
+        inBot,
+      };
+    });
+
+    return {
+      conversations: sanitizeConversationsForApi(mapped),
       total,
     };
   }
@@ -411,13 +419,13 @@ export class ConversationService {
       !!(conv as any).channel?.webhooks?.some((w: any) => w.isActive);
     const inBot = hasActiveBotSession || (hasActiveWebhook && !conv.assignedToId);
 
-    return {
+    return sanitizeConversationForApi({
       ...conv,
       lastCustomerMessageAt: conv.lastCustomerMessageAt?.toISOString() || null,
       lastAgentMessageAt: conv.lastAgentMessageAt?.toISOString() || null,
       messagingWindow: getConversationMessagingWindow(conv),
       inBot,
-    } as any;
+    } as any) as any;
   }
 
   async updateConversation(
@@ -504,7 +512,7 @@ export class ConversationService {
       });
     }
 
-    return updated;
+    return sanitizeConversationForApi(updated);
   }
 
   async deleteConversation(id: string) {
@@ -608,7 +616,7 @@ export class ConversationService {
         },
       });
 
-      return updated;
+      return sanitizeConversationForApi(updated);
     }
 
     // Limpar atendente atual (volta para a fila do setor)
@@ -671,7 +679,7 @@ export class ConversationService {
       await this.activateBotForConversation(id);
     }
 
-    return updated;
+    return sanitizeConversationForApi(updated);
   }
 
   async assignConversation(id: string, userId: string, validateSector: boolean = true) {
@@ -741,7 +749,7 @@ export class ConversationService {
       },
     });
 
-    return updated;
+    return sanitizeConversationForApi(updated);
   }
 
   /**

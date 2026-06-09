@@ -157,13 +157,22 @@ export class WebhookController {
    */
   async receiveWebhook(req: Request, res: Response) {
     try {
-      const { webhookId, secret } = req.body;
+      const webhookId =
+        String(req.body?.webhookId || req.headers['x-webhook-id'] || '').trim();
+      const secret = String(
+        req.headers['x-webhook-secret'] ||
+          req.headers['x-n8n-webhook-secret'] ||
+          req.body?.secret ||
+          '',
+      ).trim();
 
       if (!webhookId || !secret) {
-        return res.status(400).json({ error: 'webhookId e secret são obrigatórios' });
+        return res.status(400).json({
+          error:
+            'webhookId e secret são obrigatórios (use headers X-Webhook-Id e X-Webhook-Secret)',
+        });
       }
 
-      // Validar secret
       const isValid = await webhookService.validateWebhookSecret(webhookId, secret);
 
       if (!isValid) {

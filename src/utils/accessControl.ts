@@ -41,16 +41,7 @@ export async function getUserSectorIds(viewer: AccessViewer): Promise<string[] |
   return sectors.map((s) => s.sectorId);
 }
 
-export async function buildContactVisibilityWhere(viewer: AccessViewer) {
-  if (viewer.role === 'ADMIN' || viewer.role === 'SUPERVISOR') {
-    return {};
-  }
-
-  const sectorIds = await getUserSectorIds(viewer);
-  if (!sectorIds || sectorIds.length === 0) {
-    return { id: '__no_access__' };
-  }
-
+function buildSectorContactVisibilityWhere(sectorIds: string[]) {
   return {
     OR: [
       {
@@ -88,6 +79,31 @@ export async function buildContactVisibilityWhere(viewer: AccessViewer) {
       },
     ],
   };
+}
+
+export async function buildContactVisibilityWhere(viewer: AccessViewer) {
+  if (viewer.role === 'ADMIN') {
+    return {};
+  }
+
+  const sectorIds = await getUserSectorIds(viewer);
+  if (!sectorIds || sectorIds.length === 0) {
+    return { id: '__no_access__' };
+  }
+
+  return buildSectorContactVisibilityWhere(sectorIds);
+}
+
+export async function isContactVisibleToViewer(
+  viewer: AccessViewer,
+  contactId: string,
+): Promise<boolean> {
+  const visibilityWhere = await buildContactVisibilityWhere(viewer);
+  const contact = await prisma.contact.findFirst({
+    where: { id: contactId, ...visibilityWhere },
+    select: { id: true },
+  });
+  return !!contact;
 }
 
 export function canSupervisorAssignRole(role: string | undefined): boolean {

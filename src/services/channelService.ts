@@ -13,6 +13,7 @@ import { toEvolutionInstanceName } from '../utils/evolutionInstanceName';
 import { getSocketIO } from '../routes/webhookRoutes';
 import { emitChannelStatusUpdate } from '../utils/realtimeEvents';
 import { encryptField, encryptConfigSecrets, decryptField } from '../utils/fieldEncryption';
+import { sanitizeChannelForRead } from '../utils/channelSanitizer';
 
 export interface CreateChannelData {
   name: string;
@@ -41,25 +42,8 @@ export class ChannelService {
     'accessToken',
   ]);
 
-  private sanitizeConfigForRead(config: any): any {
-    if (!config || typeof config !== 'object') return config;
-    const cloned = { ...config };
-    for (const key of Object.keys(cloned)) {
-      if (ChannelService.SECRET_CONFIG_KEYS.has(key) && typeof cloned[key] === 'string' && cloned[key]) {
-        cloned[key] = ChannelService.SECRET_MASK;
-      }
-    }
-    return cloned;
-  }
-
   private sanitizeChannelForRead<T extends Record<string, any>>(channel: T): T {
-    const cloned: any = { ...channel };
-    if (cloned.config) {
-      cloned.config = this.sanitizeConfigForRead(cloned.config);
-    }
-    if (cloned.evolutionApiKey) cloned.evolutionApiKey = ChannelService.SECRET_MASK;
-    if (cloned.evolutionInstanceToken) cloned.evolutionInstanceToken = ChannelService.SECRET_MASK;
-    return cloned as T;
+    return sanitizeChannelForRead(channel) as T;
   }
 
   private mergeConfigPreservingSecrets(previousConfig: any, incomingConfig: any): any {

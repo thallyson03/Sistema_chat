@@ -12,7 +12,7 @@ function getMediaSigningSecret(): string {
 }
 
 export function getMediaSignedUrlTtlSeconds(): number {
-  return Number(process.env.MEDIA_SIGNED_URL_TTL_SECONDS || 3600);
+  return Number(process.env.MEDIA_SIGNED_URL_TTL_SECONDS || 300);
 }
 
 export function signMediaFilename(filename: string): { expires: number; sig: string } {

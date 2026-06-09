@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { isAccessTokenEpochValid } from './utils/authSessionEpoch';
 import { validateProductionSecurity } from './config/productionSecurity';
 import { getCookie } from './utils/securityHelpers';
 import { csrfProtection, enforceModernAuthSession } from './middleware/csrf';
@@ -108,7 +109,15 @@ io.use(async (socket, next) => {
       return next(new Error('Socket indisponível: JWT_SECRET não configurado'));
     }
 
-    const decoded = jwt.verify(token, jwtSecret) as any;
+    const decoded = jwt.verify(token, jwtSecret) as {
+      id?: string;
+      sv?: string;
+    };
+
+    if (!isAccessTokenEpochValid(decoded.sv)) {
+      return next(new Error('Socket não autenticado: sessão expirada'));
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: decoded?.id },
       select: { id: true, role: true, isActive: true },

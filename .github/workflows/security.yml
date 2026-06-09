@@ -22,7 +22,6 @@ jobs:
 
       - name: npm audit (high+)
         run: npm audit --audit-level=high
-        continue-on-error: true
 
       - name: Lint server
         run: npm run lint
@@ -40,7 +39,6 @@ jobs:
       - name: Client audit (high+)
         working-directory: client
         run: npm audit --audit-level=high
-        continue-on-error: true
 
       - name: Build client
         working-directory: client

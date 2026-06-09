@@ -1,21 +1,58 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { WebhookController } from '../controllers/webhookController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authorizeRoles } from '../middleware/auth';
 
 const router = Router();
 const webhookController = new WebhookController();
 
-// Rotas protegidas (precisam autenticação)
-router.post('/register', authenticateToken, webhookController.registerWebhook.bind(webhookController));
-router.get('/', authenticateToken, webhookController.listWebhooks.bind(webhookController));
-router.put('/:id', authenticateToken, webhookController.updateWebhook.bind(webhookController));
-router.delete('/:id', authenticateToken, webhookController.deleteWebhook.bind(webhookController));
-router.get('/:id/executions', authenticateToken, webhookController.getWebhookExecutions.bind(webhookController));
+const n8nReceiveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.N8N_WEBHOOK_RATE_LIMIT_MAX || 60),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Muitas requisições ao webhook n8n. Tente novamente em alguns minutos.',
+  },
+});
 
-// Rota pública para receber webhooks do n8n (com autenticação via secret)
-router.post('/receive', webhookController.receiveWebhook.bind(webhookController));
+// Rotas protegidas (precisam autenticação de administrador)
+router.post(
+  '/register',
+  authenticateToken,
+  authorizeRoles('ADMIN'),
+  webhookController.registerWebhook.bind(webhookController),
+);
+router.get(
+  '/',
+  authenticateToken,
+  authorizeRoles('ADMIN'),
+  webhookController.listWebhooks.bind(webhookController),
+);
+router.put(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('ADMIN'),
+  webhookController.updateWebhook.bind(webhookController),
+);
+router.delete(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('ADMIN'),
+  webhookController.deleteWebhook.bind(webhookController),
+);
+router.get(
+  '/:id/executions',
+  authenticateToken,
+  authorizeRoles('ADMIN'),
+  webhookController.getWebhookExecutions.bind(webhookController),
+);
+
+// Rota pública para receber webhooks do n8n (autenticação via header ou body)
+router.post(
+  '/receive',
+  n8nReceiveLimiter,
+  webhookController.receiveWebhook.bind(webhookController),
+);
 
 export default router;
-
-
-

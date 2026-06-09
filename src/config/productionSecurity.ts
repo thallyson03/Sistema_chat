@@ -36,6 +36,17 @@ export function validateProductionSecurity(): void {
     errors.push('MEDIA_SIGNED_URL_SECRET ou JWT_SECRET é obrigatório para URLs de mídia');
   }
 
+  const channelEncryptionKey = (process.env.CHANNEL_SECRETS_ENCRYPTION_KEY || '').trim();
+  if (!channelEncryptionKey) {
+    errors.push(
+      'CHANNEL_SECRETS_ENCRYPTION_KEY é obrigatório em produção para criptografar segredos de canais',
+    );
+  } else if (!/^[0-9a-fA-F]{64}$/.test(channelEncryptionKey) && channelEncryptionKey.length < 16) {
+    errors.push(
+      'CHANNEL_SECRETS_ENCRYPTION_KEY deve ter 64 caracteres hex ou passphrase com pelo menos 16 caracteres',
+    );
+  }
+
   if (!process.env.METRICS_AUTH_TOKEN) {
     const msg = 'METRICS_AUTH_TOKEN não configurado — /metrics ficará desabilitado';
     if (strict) errors.push(msg);
