@@ -2,6 +2,8 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { WebhookController } from '../controllers/webhookController';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
+import { validateBody } from '../middleware/validateBody';
+import { registerWebhookSchema, updateWebhookSchema } from '../schemas/webhookSchemas';
 
 const router = Router();
 const webhookController = new WebhookController();
@@ -21,6 +23,7 @@ router.post(
   '/register',
   authenticateToken,
   authorizeRoles('ADMIN'),
+  validateBody(registerWebhookSchema),
   webhookController.registerWebhook.bind(webhookController),
 );
 router.get(
@@ -33,6 +36,7 @@ router.put(
   '/:id',
   authenticateToken,
   authorizeRoles('ADMIN'),
+  validateBody(updateWebhookSchema),
   webhookController.updateWebhook.bind(webhookController),
 );
 router.delete(

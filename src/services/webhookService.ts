@@ -2,7 +2,15 @@ import prisma from '../config/database';
 import axios from 'axios';
 import crypto from 'crypto';
 import { encryptField, decryptField } from '../utils/fieldEncryption';
-import { redactSensitiveFields } from '../utils/securityHelpers';
+import { isUrlSafeForOutboundRequest, redactSensitiveFields } from '../utils/securityHelpers';
+
+function assertSafeOutboundWebhookUrl(url: string): void {
+  if (!isUrlSafeForOutboundRequest(url)) {
+    throw new Error(
+      'URL de webhook não permitida: use apenas hosts públicos com HTTP/HTTPS',
+    );
+  }
+}
 import { MessageService } from './messageService';
 import { MessageType } from '@prisma/client';
 
@@ -27,6 +35,8 @@ export class WebhookService {
    * Registra um novo webhook do n8n
    */
   async registerWebhook(data: RegisterWebhookData, userId: string) {
+    assertSafeOutboundWebhookUrl(data.url);
+
     // Gerar secret se não fornecido
     const secret = data.secret || crypto.randomBytes(32).toString('hex');
 
@@ -105,7 +115,10 @@ export class WebhookService {
     const updateData: any = {};
 
     if (data.name) updateData.name = data.name;
-    if (data.url) updateData.url = data.url;
+    if (data.url) {
+      assertSafeOutboundWebhookUrl(data.url);
+      updateData.url = data.url;
+    }
     if (data.events) updateData.events = data.events;
     if (data.secret) updateData.secret = data.secret;
     if (data.channelId !== undefined) updateData.channelId = data.channelId;
@@ -278,6 +291,10 @@ export class WebhookService {
           timestamp: new Date().toISOString(),
           data,
         };
+
+        if (!isUrlSafeForOutboundRequest(webhook.url)) {
+          throw new Error('URL de webhook bloqueada por política SSRF');
+        }
 
         console.log('[WebhookService] Enviando evento para webhook:', {
           id: webhook.id,

@@ -1,6 +1,10 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { canUserAccessChannel, validateWhatsAppOfficialConfig } from '../utils/channelAccess';
+import {
+  buildChannelVisibilityWhere,
+  canUserAccessChannel,
+  validateWhatsAppOfficialConfig,
+} from '../utils/channelAccess';
 import { auditLogService } from '../services/auditLogService';
 import { ChannelService } from '../services/channelService';
 import prisma from '../config/database';
@@ -10,7 +14,13 @@ const channelService = new ChannelService();
 export class ChannelController {
   async getHealthPanel(req: AuthRequest, res: Response) {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Não autenticado' });
+      }
+
+      const visibilityWhere = await buildChannelVisibilityWhere(req.user);
       const channels = await prisma.channel.findMany({
+        where: visibilityWhere,
         include: {
           conversations: {
             select: {
@@ -81,8 +91,12 @@ export class ChannelController {
 
   async getChannels(req: AuthRequest, res: Response) {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Não autenticado' });
+      }
+
       console.log('[ChannelController] 📡 Buscando canais...');
-      const channels = await channelService.getChannels();
+      const channels = await channelService.getChannels(req.user);
       console.log(`[ChannelController] ✅ ${channels.length} canal(is) encontrado(s):`, channels.map(c => ({ id: c.id, name: c.name, status: c.status })));
       res.json(channels);
     } catch (error: any) {
@@ -94,6 +108,10 @@ export class ChannelController {
   async getChannelById(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (!req.user || !(await canUserAccessChannel(req.user, id))) {
+        return res.status(404).json({ error: 'Canal não encontrado' });
+      }
+
       const channel = await channelService.getChannelById(id);
 
       if (!channel) {
@@ -326,10 +344,15 @@ export class ChannelController {
 
   async checkWhatsAppOfficial(req: AuthRequest, res: Response) {
     try {
-      // Buscar todos os canais WhatsApp
+      if (!req.user) {
+        return res.status(401).json({ error: 'Não autenticado' });
+      }
+
+      const visibilityWhere = await buildChannelVisibilityWhere(req.user);
       const whatsappChannels = await prisma.channel.findMany({
         where: {
           type: 'WHATSAPP',
+          ...visibilityWhere,
         },
         select: {
           id: true,

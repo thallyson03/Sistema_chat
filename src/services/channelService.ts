@@ -14,6 +14,8 @@ import { getSocketIO } from '../routes/webhookRoutes';
 import { emitChannelStatusUpdate } from '../utils/realtimeEvents';
 import { encryptField, encryptConfigSecrets, decryptField } from '../utils/fieldEncryption';
 import { sanitizeChannelForRead } from '../utils/channelSanitizer';
+import { AccessViewer } from '../utils/accessControl';
+import { buildChannelVisibilityWhere } from '../utils/channelAccess';
 
 export interface CreateChannelData {
   name: string;
@@ -311,8 +313,10 @@ export class ChannelService {
     }
   }
 
-  async getChannels(): Promise<Channel[]> {
+  async getChannels(viewer?: AccessViewer): Promise<Channel[]> {
+    const visibilityWhere = viewer ? await buildChannelVisibilityWhere(viewer) : {};
     const channels = await prisma.channel.findMany({
+      where: visibilityWhere,
       include: {
         sector: {
           select: {

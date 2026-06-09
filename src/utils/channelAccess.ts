@@ -1,5 +1,45 @@
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { AccessViewer } from './accessControl';
+
+export async function buildChannelVisibilityWhere(
+  viewer: AccessViewer,
+): Promise<Prisma.ChannelWhereInput> {
+  if (viewer.role === 'ADMIN' || viewer.role === 'SUPERVISOR') {
+    return {};
+  }
+
+  const [userSectors, channelAccess] = await Promise.all([
+    prisma.userSector.findMany({
+      where: { userId: viewer.id },
+      select: { sectorId: true },
+    }),
+    prisma.userChannelAccess.findMany({
+      where: { userId: viewer.id },
+      select: { channelId: true },
+    }),
+  ]);
+
+  const sectorIds = userSectors.map((s) => s.sectorId);
+  const directChannelIds = channelAccess.map((a) => a.channelId);
+
+  if (sectorIds.length === 0 && directChannelIds.length === 0) {
+    return { id: '__no_access__' };
+  }
+
+  const or: Prisma.ChannelWhereInput[] = [];
+  if (directChannelIds.length > 0) {
+    or.push({ id: { in: directChannelIds } });
+  }
+  if (sectorIds.length > 0) {
+    or.push(
+      { sectorId: { in: sectorIds } },
+      { secondarySectors: { some: { sectorId: { in: sectorIds } } } },
+    );
+  }
+
+  return { OR: or };
+}
 
 export async function canUserAccessChannel(
   viewer: AccessViewer,

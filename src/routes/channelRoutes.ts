@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { ChannelController } from '../controllers/channelController';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
+import { validateBody } from '../middleware/validateBody';
+import { createChannelSchema, updateChannelSchema } from '../schemas/channelSchemas';
 
 const router = Router();
 const channelController = new ChannelController();
@@ -20,7 +22,8 @@ router.get('/:id/status', channelController.getStatus.bind(channelController));
 router.post(
   '/',
   authorizeRoles('ADMIN', 'SUPERVISOR'),
-  channelController.createChannel.bind(channelController)
+  validateBody(createChannelSchema),
+  channelController.createChannel.bind(channelController),
 );
 router.post(
   '/:id/webhook',
@@ -35,7 +38,8 @@ router.post(
 router.put(
   '/:id',
   authorizeRoles('ADMIN', 'SUPERVISOR'),
-  channelController.updateChannel.bind(channelController)
+  validateBody(updateChannelSchema),
+  channelController.updateChannel.bind(channelController),
 );
 // Exclusão de canais apenas para ADMIN
 router.delete(

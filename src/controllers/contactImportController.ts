@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { ContactImportService } from '../services/contactImportService';
 import { contactImportBodySchema } from '../schemas/contactImportSchemas';
+import { canUserAccessChannel } from '../utils/channelAccess';
 import { validateImportFileContent } from '../utils/fileMagicBytes';
 import multer from 'multer';
 import path from 'path';
@@ -78,6 +79,15 @@ export class ContactImportController {
       }
 
       const { channelId, listId } = bodyResult.data;
+
+      if (!req.user || !(await canUserAccessChannel(req.user, channelId))) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {
+          // Ignorar erro
+        }
+        return res.status(403).json({ error: 'Acesso negado ao canal informado' });
+      }
 
       const fileBuffer = fs.readFileSync(req.file.path);
       const fileExt = path.extname(req.file.originalname).toLowerCase();
