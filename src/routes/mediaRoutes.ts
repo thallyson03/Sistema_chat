@@ -13,7 +13,7 @@ import {
   hasValidSignedFileAccess,
   requireMessageMediaAccess,
 } from '../middleware/mediaAccess';
-import { buildSignedMediaFilePath } from '../utils/signedMediaUrl';
+import { buildSignedMediaFilePath, getMediaSignedUrlTtlSeconds } from '../utils/signedMediaUrl';
 import { isUrlAllowedForFetch } from '../utils/securityHelpers';
 import { validateFileMagicBytes } from '../utils/fileMagicBytes';
 import { safeHttpGet } from '../utils/ssrfGuard';
@@ -112,8 +112,7 @@ function getPublicMediaUrlForFilename(filename: string): string {
 }
 
 function getSignedMediaUrlForObjectKey(objectKey: string): Promise<string> {
-  const ttl = Number(process.env.MEDIA_SIGNED_URL_TTL_SECONDS || 300);
-  return objectStorageService.getSignedReadUrl(objectKey, ttl);
+  return objectStorageService.getSignedReadUrl(objectKey, getMediaSignedUrlTtlSeconds());
 }
 
 function extractObjectKeyFromMediaUrl(mediaUrl: string): string | null {
@@ -258,22 +257,26 @@ router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('fil
       }
     }
 
-    let fileUrl = buildSignedMediaFilePath(finalFilename);
+    // URL sempre via proxy CRM assinado — MinIO fica como backend de armazenamento
+    const fileUrl = buildSignedMediaFilePath(finalFilename);
+    let storageKey: string | undefined;
+    let storageProvider: string | undefined;
 
     if (objectStorageService.isEnabled() && fs.existsSync(finalFilePath)) {
       try {
         const fileBuffer = fs.readFileSync(finalFilePath);
         const objectKey = getMediaObjectKey(finalFilename);
-        const uploadedUrl = await objectStorageService.uploadBuffer({
+        await objectStorageService.uploadBuffer({
           objectKey,
           buffer: fileBuffer,
           contentType: finalMimetype,
         });
-        fileUrl = uploadedUrl;
+        storageKey = objectKey;
+        storageProvider = 'object';
         console.log('[Media] ☁️ Upload para object storage concluído:', {
           provider: process.env.STORAGE_PROVIDER,
           objectKey,
-          url: uploadedUrl,
+          proxyUrl: fileUrl,
         });
         if (!isLocalMediaFallbackEnabled()) {
           try {
@@ -287,19 +290,21 @@ router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('fil
           }
         }
       } catch (storageError: any) {
-        console.error('[Media] ❌ Falha ao enviar arquivo para object storage, mantendo URL local:', {
+        console.error('[Media] ❌ Falha ao enviar arquivo para object storage, mantendo cópia local:', {
           error: storageError?.message || storageError,
           filename: finalFilename,
         });
       }
     }
-    
+
     res.json({
       url: fileUrl,
       filename: finalFilename,
       originalName: req.file.originalname,
       mimetype: finalMimetype,
       size: finalSize,
+      storageKey,
+      storageProvider,
     });
   } catch (error: any) {
     console.error('[Media] Erro no upload:', error);

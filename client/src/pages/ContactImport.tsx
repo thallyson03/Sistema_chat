@@ -67,6 +67,7 @@ export default function ContactImport() {
   const [contactLists, setContactLists] = useState<ContactList[]>([]);
   const [loadingLists, setLoadingLists] = useState(false);
   const [selectedListId, setSelectedListId] = useState<string>('');
+  const [anonymizingId, setAnonymizingId] = useState<string | null>(null);
 
   const isImportPage = location.pathname.includes('/contacts/import');
   const isAutoCreatedPage = location.pathname.includes('/contacts/auto-created');
@@ -76,6 +77,23 @@ export default function ContactImport() {
     fetchContacts();
     fetchContactLists();
   }, []);
+
+  const handleAnonymizeContact = async (contact: Contact) => {
+    const confirmed = window.confirm(
+      `Anonimizar o contato "${contact.name}"?\n\nDados pessoais serão removidos conforme LGPD. Esta ação não pode ser desfeita.`,
+    );
+    if (!confirmed) return;
+
+    setAnonymizingId(contact.id);
+    try {
+      await api.post(`/api/contacts/${contact.id}/anonymize`);
+      await fetchContacts();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Erro ao anonimizar contato');
+    } finally {
+      setAnonymizingId(null);
+    }
+  };
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -580,6 +598,9 @@ export default function ContactImport() {
                       <th className="border-b border-outline-variant px-3 py-3 font-semibold">Canal</th>
                       <th className="border-b border-outline-variant px-3 py-3 font-semibold">Conversas</th>
                       <th className="border-b border-outline-variant px-3 py-3 font-semibold">Criado em</th>
+                      {isAutoCreatedPage && (
+                        <th className="border-b border-outline-variant px-3 py-3 font-semibold">Ações</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -628,6 +649,21 @@ export default function ContactImport() {
                         <td className="px-3 py-3 text-xs text-on-surface-variant">
                           {formatDate(contact.createdAt)}
                         </td>
+                        {isAutoCreatedPage && (
+                          <td className="px-3 py-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleAnonymizeContact(contact)}
+                              disabled={
+                                anonymizingId === contact.id || contact.name === 'Contato removido'
+                              }
+                              className="rounded-md border border-red-500/40 bg-red-950/20 px-2 py-1 text-xs text-red-300 transition hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-40"
+                              title="Anonimizar dados pessoais (LGPD)"
+                            >
+                              {anonymizingId === contact.id ? '…' : 'Anonimizar'}
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

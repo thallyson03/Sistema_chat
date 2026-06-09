@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import { AuthRequest } from './auth';
 import { ConversationService } from '../services/conversationService';
 import { verifySignedMediaFilename } from '../utils/signedMediaUrl';
+import { hasInternalMediaAccess } from '../utils/internalMediaToken';
 
 const conversationService = new ConversationService();
 
@@ -17,6 +18,10 @@ export async function requireMessageMediaAccess(
   res: Response,
   messageId: string,
 ): Promise<boolean> {
+  if (hasInternalMediaAccess(req)) {
+    return true;
+  }
+
   if (!req.user) {
     res.status(401).json({ error: 'Autenticação necessária' });
     return false;

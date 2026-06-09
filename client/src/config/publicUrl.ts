@@ -18,26 +18,40 @@ export function getMessageMediaUrl(messageId: string): string {
   return `${getPublicApiOrigin()}/api/media/${messageId}`;
 }
 
-/** URL que o browser pode carregar sem passar pelo proxy /api/media/:id. */
+/** URL que o browser pode carregar sem passar pelo proxy autenticado /api/media/:id. */
 export function isDirectlyRenderableMediaUrl(
   mediaUrl: string | undefined,
   metadata?: Record<string, unknown> | null,
 ): boolean {
   if (!mediaUrl || typeof mediaUrl !== 'string') return false;
-  if (mediaUrl.startsWith('/api/media/file/')) return true;
-  if (metadata?.storageProvider === 'object') return true;
+
+  // MinIO/object storage: sempre via backend autenticado
+  if (metadata?.storageProvider === 'object') return false;
   const mm = metadata?.mediaMetadata as Record<string, unknown> | undefined;
-  if (mm?.storageKey) return true;
-  if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
-    if (/mmg\.whatsapp\.net|whatsapp\.net|pps\.whatsapp/i.test(mediaUrl)) {
-      return false;
-    }
-    return true;
+  if (mm?.storageKey) return false;
+
+  // Proxy CRM assinado — browser carrega com cookie de sessão ou URL já assinada
+  if (mediaUrl.startsWith('/api/media/file/')) return true;
+  if (mediaUrl.includes('/api/media/file/') && mediaUrl.includes('sig=')) return true;
+
+  // URLs externas temporárias (WhatsApp CDN) — não renderizar direto
+  if (/mmg\.whatsapp\.net|whatsapp\.net|pps\.whatsapp/i.test(mediaUrl)) {
+    return false;
   }
+
+  // URLs MinIO/S3 diretas — não renderizar (bucket pode ser privado)
+  if (/minio\.|\/crm-media\/|X-Amz-Signature=/i.test(mediaUrl)) {
+    return false;
+  }
+
+  if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
+    return false;
+  }
+
   return false;
 }
 
-/** Preview de mídia: sempre via backend para Evolution/WhatsApp CDN. */
+/** Preview de mídia: via backend autenticado (compatível com MinIO privado). */
 export function resolveMessageMediaPreviewUrl(message: {
   id: string;
   metadata?: {

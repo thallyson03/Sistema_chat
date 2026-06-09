@@ -55,10 +55,17 @@ export async function runMediaPersistJobTick(): Promise<void> {
 
   for (const messageId of pendingIds) {
     try {
+      const headers: Record<string, string> = {};
+      const internalToken = process.env.INTERNAL_MEDIA_TOKEN;
+      if (internalToken) {
+        headers['x-internal-media-token'] = internalToken;
+      }
+
       const res = await axios.get(`${base}/api/media/${messageId}`, {
         responseType: 'arraybuffer',
         timeout: 180_000,
         validateStatus: () => true,
+        headers,
       });
 
       if (res.status === 200) {

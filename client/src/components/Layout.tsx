@@ -91,6 +91,10 @@ export default function Layout() {
     return () => clearInterval(id);
   }, [user]);
 
+  const userRole = user?.role as string | undefined;
+  const isAdmin = userRole === 'ADMIN';
+  const isSupervisorOrAdmin = userRole === 'ADMIN' || userRole === 'SUPERVISOR';
+
   const fetchUser = async () => {
     try {
       const response = await api.get('/api/auth/me');
@@ -215,33 +219,46 @@ export default function Layout() {
               label="Contatos"
               submenuTitle="CONTATOS E CONTAS"
               items={[
+                ...(isSupervisorOrAdmin
+                  ? [
+                      {
+                        to: '/contacts/import',
+                        label: 'Importar Contatos',
+                        icon: '📥',
+                      },
+                      {
+                        to: '/contacts/auto-created',
+                        label: 'Contatos',
+                        icon: '📋',
+                      },
+                    ]
+                  : []),
                 {
-                  to: "/contacts/import",
-                  label: "Importar Contatos",
-                  icon: "📥"
-                },
-                {
-                  to: "/contacts/auto-created",
-                  label: "Contatos",
-                  icon: "📋"
-                },
-                {
-                  to: "/contact-lists",
-                  label: "Listas",
-                  icon: "📋"
+                  to: '/contact-lists',
+                  label: 'Listas',
+                  icon: '📋',
                 },
               ]}
             />
             <SidebarLink to="/channels" icon="📡">Canais</SidebarLink>
-            <SidebarLink to="/journeys" icon="🧩">Jornadas</SidebarLink>
+            {isSupervisorOrAdmin && (
+              <SidebarLink to="/journeys" icon="🧩">Jornadas</SidebarLink>
+            )}
             <SidebarLink to="/calendario" icon="🗓️">Calendario</SidebarLink>
             <SidebarLink to="/templates" icon="🧾">Templates WhatsApp</SidebarLink>
           </div>
 
           <div className="mb-4">
             <p className="mb-2 px-4 text-[10px] font-bold uppercase tracking-[0.18em] text-primary/50">Configurações</p>
-            <SidebarLink to="/users" icon="👤">Usuários</SidebarLink>
-            <SidebarLink to="/sectors" icon="🏢">Setores</SidebarLink>
+            {isSupervisorOrAdmin && (
+              <>
+                <SidebarLink to="/users" icon="👤">Usuários</SidebarLink>
+                <SidebarLink to="/sectors" icon="🏢">Setores</SidebarLink>
+              </>
+            )}
+            {isAdmin && (
+              <SidebarLink to="/audit-logs" icon="📜">Auditoria</SidebarLink>
+            )}
             <SidebarLink to="/pipelines" icon="📈">Pipelines</SidebarLink>
             <SidebarLink to="/quick-replies" icon="⚡">Respostas Rápidas</SidebarLink>
             <SidebarLink to="/integrations" icon="🔌">Integrações</SidebarLink>

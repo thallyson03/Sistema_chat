@@ -19,6 +19,7 @@ import Journeys from './pages/Journeys';
 import ContactLists from './pages/ContactLists';
 import Templates from './pages/Templates';
 import Calendario from './pages/Calendario';
+import AuditLogs from './pages/AuditLogs';
 import Layout from './components/Layout';
 import TicketsRedirect from './pages/TicketsRedirect';
 import api from './utils/api';
@@ -154,6 +155,14 @@ function App() {
           <Route path="contact-lists" element={<ContactLists />} />
           <Route path="templates" element={<Templates />} />
           <Route path="calendario" element={<Calendario />} />
+          <Route
+            path="audit-logs"
+            element={
+              <RoleRoute roles={['ADMIN']}>
+                <AuditLogs />
+              </RoleRoute>
+            }
+          />
           <Route path="bots" element={<Bots />} />
           <Route path="bots/:botId/flows" element={<BotFlowBuilder />} />
           <Route path="bots/:botId/flows/visual" element={<BotFlowBuilderVisual />} />

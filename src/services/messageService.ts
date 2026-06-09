@@ -223,12 +223,8 @@ export class MessageService {
             null;
 
           const baseUrl = resolvePublicAppBaseUrl(channelPublicOverride) || '';
-
-          const fullMediaUrl = data.mediaUrl.startsWith('http')
-            ? data.mediaUrl
-            : baseUrl
-            ? `${baseUrl}${data.mediaUrl}`
-            : data.mediaUrl;
+          const { resolveOutboundMediaUrl } = await import('../utils/mediaOutboundUrl');
+          const fullMediaUrl = resolveOutboundMediaUrl(data.mediaUrl, channelPublicOverride);
 
           const isValidHttpUrl =
             fullMediaUrl.startsWith('https://') ||
@@ -237,7 +233,7 @@ export class MessageService {
           console.log('[MessageService] URL de mídia para WhatsApp Official:', {
             originalUrl: data.mediaUrl,
             fullMediaUrl,
-            baseUrl,
+            baseUrl: baseUrl || undefined,
             channelPublicOverride: channelPublicOverride || undefined,
             mediaType,
             isValidHttpUrl,
@@ -537,13 +533,8 @@ export class MessageService {
             (channel.config as any)?.mediaBaseUrl ||
             null;
           const baseUrl = resolvePublicAppBaseUrl(evoOverride) || 'http://localhost:3007';
-          const { appendSignatureToMediaUrl } = await import('../utils/signedMediaUrl');
-          const signedRelativeUrl = data.mediaUrl.startsWith('http')
-            ? data.mediaUrl
-            : appendSignatureToMediaUrl(data.mediaUrl);
-          const fullMediaUrl = signedRelativeUrl.startsWith('http')
-            ? signedRelativeUrl
-            : `${baseUrl}${signedRelativeUrl}`;
+          const { resolveOutboundMediaUrl } = await import('../utils/mediaOutboundUrl');
+          const fullMediaUrl = resolveOutboundMediaUrl(data.mediaUrl, evoOverride);
 
           const isPublicUrl = fullMediaUrl.startsWith('https://') || fullMediaUrl.startsWith('http://');
           const isNgrok = fullMediaUrl.includes('ngrok');
