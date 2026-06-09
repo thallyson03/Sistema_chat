@@ -6,7 +6,7 @@ import { contactConsentService } from '../services/contactConsentService';
 import { auditAction } from '../middleware/auditMiddleware';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
-import * as XLSX from 'xlsx';
+import { buildContactTemplateBuffer } from '../utils/excelWorkbook';
 import { contactResolutionService } from '../services/contactResolutionService';
 import { ConversationService } from '../services/conversationService';
 const router = Router();
@@ -69,11 +69,7 @@ router.get('/template', authorizeRoles('ADMIN', 'SUPERVISOR'), async (req: AuthR
       { name: 'Maria Santos', phone: '559977665544', email: 'maria@example.com' },
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(rows, { header: ['name', 'phone', 'email'] });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Contatos');
-
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await buildContactTemplateBuffer(rows);
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="template-contatos.xlsx"');

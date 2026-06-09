@@ -84,7 +84,7 @@ export class ContactImportController {
         });
 
         // Validar formato do arquivo
-        const validation = contactImportService.validateFileFormat(req.file.path);
+        const validation = await contactImportService.validateFileFormat(req.file.path);
         if (!validation.valid) {
           // Remover arquivo se inválido
           try {

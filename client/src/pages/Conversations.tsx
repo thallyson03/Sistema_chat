@@ -1434,8 +1434,14 @@ export default function Conversations() {
         responseType: 'blob',
       });
 
-      const contentType = response.headers['content-type'];
-      const blob = new Blob([response.data], { type: contentType || undefined });
+      const rawContentType = response.headers['content-type'];
+      const contentType =
+        typeof rawContentType === 'string'
+          ? rawContentType
+          : Array.isArray(rawContentType)
+            ? rawContentType[0]
+            : undefined;
+      const blob = new Blob([response.data], { type: contentType });
       const url = window.URL.createObjectURL(blob);
 
       const a = document.createElement('a');

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import prisma from '../config/database';
-import * as XLSX from 'xlsx';
+import { readExcelSheetAsJson, readExcelSheetHeaders } from '../utils/excelWorkbook';
 import { contactResolutionService } from './contactResolutionService';
 import { normalizePhone } from '../utils/phone';
 
@@ -52,17 +52,14 @@ export class ContactImportService {
       const ext = path.extname(filePath).toLowerCase();
       let records: any[] = [];
 
-      if (ext === '.xlsx' || ext === '.xls') {
-        // Processar arquivo Excel
+      if (ext === '.xlsx') {
         console.log(`[ContactImport] Processando arquivo Excel: ${filePath}`);
-        const workbook = XLSX.readFile(filePath);
-        const sheetName = workbook.SheetNames[0]; // Primeira planilha
-        const worksheet = workbook.Sheets[sheetName];
-        records = XLSX.utils.sheet_to_json(worksheet, { 
-          defval: '', // Valor padrão para células vazias
-          raw: false, // Converter tudo para string
-        });
+        records = await readExcelSheetAsJson(filePath);
         console.log(`[ContactImport] Processando ${records.length} linhas do Excel...`);
+      } else if (ext === '.xls') {
+        throw new Error(
+          'Formato .xls legado não é suportado. Salve o arquivo como .xlsx ou use CSV.',
+        );
       } else if (ext === '.csv') {
         // Processar arquivo CSV
         if (!parse) {
@@ -222,25 +219,20 @@ export class ContactImportService {
   /**
    * Valida o formato do arquivo (Excel ou CSV) antes de importar
    */
-  validateFileFormat(filePath: string): { valid: boolean; message?: string; columns?: string[] } {
+  async validateFileFormat(
+    filePath: string,
+  ): Promise<{ valid: boolean; message?: string; columns?: string[] }> {
     try {
       const ext = path.extname(filePath).toLowerCase();
       let fileColumns: string[] = [];
 
-      if (ext === '.xlsx' || ext === '.xls') {
-        // Validar arquivo Excel
-        const workbook = XLSX.readFile(filePath);
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const firstRow = XLSX.utils.sheet_to_json(worksheet, { 
-          defval: '',
-          header: 1,
-          range: 0, // Apenas primeira linha
-        });
-        
-        if (Array.isArray(firstRow) && firstRow.length > 0) {
-          fileColumns = (firstRow[0] as string[]).map((col: any) => String(col).toLowerCase().trim());
-        }
+      if (ext === '.xlsx') {
+        fileColumns = await readExcelSheetHeaders(filePath);
+      } else if (ext === '.xls') {
+        return {
+          valid: false,
+          message: 'Formato .xls legado não é suportado. Salve o arquivo como .xlsx ou use CSV.',
+        };
       } else if (ext === '.csv') {
         // Validar arquivo CSV
         if (!parse) {
