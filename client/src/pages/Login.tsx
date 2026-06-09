@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 
 export default function Login() {
@@ -9,6 +9,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const reloginRequired = searchParams.get('relogin') === '1';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,6 +79,11 @@ export default function Login() {
                     </h2>
                   </div>
                 </div>
+                {reloginRequired && (
+                  <p className="mb-4 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                    Sua sessão expirou após uma atualização do sistema. Faça login novamente para continuar.
+                  </p>
+                )}
                 <p className="text-xs text-slate-300">
                   Entre com suas credenciais para gerenciar canais, contatos e jornadas.
                 </p>

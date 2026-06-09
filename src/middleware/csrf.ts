@@ -4,13 +4,15 @@ import { getCookie } from '../utils/securityHelpers';
 
 export const CSRF_COOKIE_NAME = 'csrfToken';
 const CSRF_HEADER = 'x-csrf-token';
+const ACCESS_TOKEN_COOKIE = 'accessToken';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-const EXEMPT_PATH_PREFIXES = [
+export const SESSION_EXEMPT_PATH_PREFIXES = [
   '/api/auth/login',
   '/api/auth/register',
   '/api/auth/refresh',
+  '/api/auth/clear-session',
   '/api/webhooks',
   '/webhooks',
   '/api/whatsapp',
@@ -19,10 +21,43 @@ const EXEMPT_PATH_PREFIXES = [
   '/metrics',
 ];
 
-function isExemptPath(path: string): boolean {
-  return EXEMPT_PATH_PREFIXES.some(
+export function isSessionExemptPath(path: string): boolean {
+  return SESSION_EXEMPT_PATH_PREFIXES.some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`),
   );
+}
+
+export function respondSessionReloginRequired(res: Response): void {
+  res.status(401).json({
+    error: 'Sessão desatualizada após atualização do sistema. Faça login novamente.',
+    code: 'SESSION_RELOGIN_REQUIRED',
+  });
+}
+
+/**
+ * Sessões emitidas antes do CSRF (deploy antigo) não podem usar a API autenticada.
+ */
+export function enforceModernAuthSession(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!req.path.startsWith('/api/')) {
+    return next();
+  }
+  if (isSessionExemptPath(req.path)) {
+    return next();
+  }
+
+  const accessToken = getCookie(req, ACCESS_TOKEN_COOKIE);
+  const csrfToken = getCookie(req, CSRF_COOKIE_NAME);
+
+  if (accessToken && !csrfToken) {
+    respondSessionReloginRequired(res);
+    return;
+  }
+
+  next();
 }
 
 export function generateCsrfToken(): string {
@@ -51,7 +86,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     return next();
   }
 
-  if (isExemptPath(req.path)) {
+  if (isSessionExemptPath(req.path)) {
     return next();
   }
 
@@ -59,7 +94,15 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
   const headerToken = String(req.headers[CSRF_HEADER] || '').trim();
 
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {
-    res.status(403).json({ error: 'Token CSRF inválido ou ausente' });
+    const hasAccess = getCookie(req, ACCESS_TOKEN_COOKIE);
+    if (hasAccess && !cookieToken) {
+      respondSessionReloginRequired(res);
+      return;
+    }
+    res.status(403).json({
+      error: 'Token CSRF inválido ou ausente',
+      code: 'CSRF_INVALID',
+    });
     return;
   }
 

@@ -12,6 +12,25 @@ function getCsrfToken(): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
+function isSessionReloginRequired(error: unknown): boolean {
+  const data = (error as { response?: { data?: { code?: string } } })?.response?.data;
+  return data?.code === 'SESSION_RELOGIN_REQUIRED';
+}
+
+async function clearStaleSession(): Promise<void> {
+  try {
+    await api.post('/api/auth/clear-session');
+  } catch {
+    // ignora — cookies podem já estar inválidos
+  }
+}
+
+function redirectToRelogin(): void {
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname === '/login') return;
+  window.location.href = '/login?relogin=1';
+}
+
 api.interceptors.request.use((config) => {
   const method = (config.method || 'get').toLowerCase();
   if (['post', 'put', 'patch', 'delete'].includes(method)) {
@@ -43,20 +62,35 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    if (isSessionReloginRequired(error)) {
+      await clearStaleSession();
+      redirectToRelogin();
+      return Promise.reject(error);
+    }
+
     if (
       error.response?.status === 401 &&
       originalRequest &&
       !originalRequest._retry &&
       !String(originalRequest.url || '').includes('/api/auth/login') &&
-      !String(originalRequest.url || '').includes('/api/auth/refresh')
+      !String(originalRequest.url || '').includes('/api/auth/refresh') &&
+      !String(originalRequest.url || '').includes('/api/auth/clear-session')
     ) {
       originalRequest._retry = true;
       const refreshed = await refreshSession();
       if (refreshed) {
         return api(originalRequest);
       }
-      window.location.href = '/login';
+      await clearStaleSession();
+      redirectToRelogin();
     }
+
+    if (error.response?.status === 403 && isSessionReloginRequired(error)) {
+      await clearStaleSession();
+      redirectToRelogin();
+    }
+
     return Promise.reject(error);
   },
 );

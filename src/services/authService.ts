@@ -9,6 +9,10 @@ import { validatePassword } from '../utils/passwordPolicy';
 import { auditLogService } from './auditLogService';
 import { logger } from '../utils/logger';
 import { setCsrfCookie, clearCsrfCookie } from '../middleware/csrf';
+import {
+  getAuthSessionEpoch,
+  isRefreshTokenIssuedBeforeCutoff,
+} from '../utils/authSessionEpoch';
 
 export interface LoginCredentials {
   email: string;
@@ -68,7 +72,12 @@ function buildCookieOptions(maxAgeMs: number) {
 
 function signAccessToken(user: { id: string; email: string; role: string }) {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      sv: getAuthSessionEpoch(),
+    },
     getJwtSecret(),
     { expiresIn: getAccessExpiresIn() } as jwt.SignOptions,
   );
@@ -274,6 +283,14 @@ export class AuthService {
     });
 
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+      return null;
+    }
+
+    if (isRefreshTokenIssuedBeforeCutoff(stored.createdAt)) {
+      await prisma.refreshToken.update({
+        where: { id: stored.id },
+        data: { revokedAt: new Date() },
+      });
       return null;
     }
 

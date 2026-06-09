@@ -9,7 +9,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { validateProductionSecurity } from './config/productionSecurity';
 import { getCookie } from './utils/securityHelpers';
-import { csrfProtection } from './middleware/csrf';
+import { csrfProtection, enforceModernAuthSession } from './middleware/csrf';
+import { appContentSecurityPolicy } from './config/contentSecurityPolicy';
 import { ConversationService } from './services/conversationService';
 import prisma from './config/database';
 
@@ -160,22 +161,11 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
 });
 
 app.use(helmet({
-  contentSecurityPolicy: {
-    useDefaults: true,
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-      connectSrc: ["'self'", 'wss:', 'ws:'],
-      fontSrc: ["'self'", 'data:'],
-      objectSrc: ["'none'"],
-      frameAncestors: ["'self'"],
-    },
-  },
+  contentSecurityPolicy: appContentSecurityPolicy,
   crossOriginEmbedderPolicy: false,
 }));
 app.use(cookieParser());
+app.use(enforceModernAuthSession);
 app.use(csrfProtection);
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',

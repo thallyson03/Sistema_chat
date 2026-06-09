@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/database';
 import { getCookie } from '../utils/securityHelpers';
+import { isAccessTokenEpochValid } from '../utils/authSessionEpoch';
+import { CSRF_COOKIE_NAME, respondSessionReloginRequired } from './csrf';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -30,7 +32,12 @@ async function resolveAuthenticatedUser(token: string) {
     id: string;
     email: string;
     role: string;
+    sv?: string;
   };
+
+  if (!isAccessTokenEpochValid(decoded.sv)) {
+    return null;
+  }
 
   const user = await prisma.user.findUnique({
     where: { id: decoded.id },
@@ -63,6 +70,11 @@ export const authenticateToken = async (
     const user = await resolveAuthenticatedUser(token);
     if (!user) {
       return res.status(401).json({ error: 'Usuário inativo ou não encontrado' });
+    }
+
+    if (!getCookie(req, CSRF_COOKIE_NAME)) {
+      respondSessionReloginRequired(res);
+      return;
     }
 
     req.user = user;

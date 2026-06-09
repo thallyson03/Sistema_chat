@@ -111,6 +111,18 @@ export class AuthController {
     }
   }
 
+  async clearSession(req: AuthRequest, res: Response) {
+    try {
+      const refreshToken = getCookie(req, 'refreshToken');
+      await authService.revokeRefreshToken(refreshToken);
+      clearAuthCookies(res);
+      res.json({ ok: true });
+    } catch (error: any) {
+      clearAuthCookies(res);
+      res.json({ ok: true });
+    }
+  }
+
   async logout(req: AuthRequest, res: Response) {
     try {
       if (!req.user) {
