@@ -27,6 +27,9 @@ jobs:
       - name: Lint server
         run: npm run lint
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Build server
         run: npm run build
 
