@@ -3,12 +3,12 @@ import { AuthController } from '../controllers/authController';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import { validateBody } from '../middleware/validateBody';
 import { loginSchema, registerSchema } from '../schemas/authSchemas';
-import rateLimit from 'express-rate-limit';
+import { createRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 const authController = new AuthController();
 
-const authGeneralLimiter = rateLimit({
+const authGeneralLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: Number(process.env.AUTH_RATE_LIMIT_PER_MIN || 120),
   standardHeaders: true,
@@ -18,10 +18,9 @@ const authGeneralLimiter = rateLimit({
   },
 });
 
-// Rate limiting para evitar brute force no login e registro
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 20, // limite de tentativas por IP
+const authLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -31,17 +30,15 @@ const authLimiter = rateLimit({
 
 router.use(authGeneralLimiter);
 
-// Registro de usuários deve ser restrito a administradores autenticados
 router.post(
   '/register',
   authenticateToken,
   authorizeRoles('ADMIN'),
   authLimiter,
   validateBody(registerSchema),
-  authController.register.bind(authController)
+  authController.register.bind(authController),
 );
 
-// Login público, mas com rate limiting
 router.post('/login', authLimiter, validateBody(loginSchema), authController.login.bind(authController));
 router.post('/refresh', authLimiter, authController.refresh.bind(authController));
 router.post('/clear-session', authController.clearSession.bind(authController));
@@ -50,10 +47,3 @@ router.post('/heartbeat', authenticateToken, authController.heartbeat.bind(authC
 router.get('/me', authenticateToken, authController.getCurrentUser.bind(authController));
 
 export default router;
-
-
-
-
-
-
-

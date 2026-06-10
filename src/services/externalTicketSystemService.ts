@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as crypto from 'crypto';
 import prisma from '../config/database';
+import { assertAllowedSsoRedirect } from '../utils/ssoRedirectValidator';
 
 function isEnabled(): boolean {
   const v = process.env.EXTERNAL_TICKET_ENABLED;
@@ -35,10 +36,13 @@ function externalOrigin(): string | null {
 function toAbsoluteExternalUrl(rawUrl: string): string {
   const url = (rawUrl || '').trim();
   if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
+  if (/^https?:\/\//i.test(url)) {
+    return assertAllowedSsoRedirect(url);
+  }
   const origin = externalOrigin();
   if (!origin) return url;
-  return url.startsWith('/') ? `${origin}${url}` : `${origin}/${url}`;
+  const absolute = url.startsWith('/') ? `${origin}${url}` : `${origin}/${url}`;
+  return assertAllowedSsoRedirect(absolute);
 }
 
 function ssoExchangePath(): string {

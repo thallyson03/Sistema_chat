@@ -115,13 +115,9 @@ export default function Login() {
                     <label className="text-xs font-semibold text-slate-200 uppercase tracking-wide">
                       Senha
                     </label>
-                    <button
-                      type="button"
-                      className="text-[11px] font-medium text-emerald-300 hover:text-emerald-200"
-                      onClick={() => alert('Recuperação de senha em desenvolvimento.')}
-                    >
-                      Esqueceu a senha?
-                    </button>
+                    <span className="text-[11px] font-medium text-slate-400">
+                      Esqueceu a senha? Fale com o administrador.
+                    </span>
                   </div>
                   <input
                     type="password"

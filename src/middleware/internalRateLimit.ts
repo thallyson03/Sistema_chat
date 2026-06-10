@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import rateLimit from 'express-rate-limit';
 import type { Request } from 'express';
+import { createRateLimiter } from './rateLimiter';
 
 function asInt(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -21,7 +21,7 @@ function requestIdentity(req: Request): string {
 
 const defaultWindowMs = asInt(process.env.INTERNAL_RATE_LIMIT_WINDOW_MS, 60_000);
 
-export const internalApiLimiter = rateLimit({
+export const internalApiLimiter = createRateLimiter({
   keyGenerator: requestIdentity,
   standardHeaders: true,
   legacyHeaders: false,
@@ -33,7 +33,7 @@ export const internalApiLimiter = rateLimit({
   skip: (req) => req.path === '/health',
 });
 
-export const internalHeavyReadLimiter = rateLimit({
+export const internalHeavyReadLimiter = createRateLimiter({
   keyGenerator: requestIdentity,
   standardHeaders: true,
   legacyHeaders: false,
@@ -44,4 +44,3 @@ export const internalHeavyReadLimiter = rateLimit({
   },
   skip: (req) => req.method !== 'GET',
 });
-

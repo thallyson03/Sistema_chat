@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { PipelineController } from '../controllers/pipelineController';
 import { DealController } from '../controllers/dealController';
-import rateLimit from 'express-rate-limit';
+import { createRateLimiter } from '../middleware/rateLimiter';
 import crypto from 'crypto';
 
 const router = Router();
 const pipelineController = new PipelineController();
 const dealController = new DealController();
 
-const publicPipelineLimiter = rateLimit({
+const publicPipelineLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.PUBLIC_PIPELINE_RATE_LIMIT_MAX || 120),
   standardHeaders: true,
@@ -18,7 +18,7 @@ const publicPipelineLimiter = rateLimit({
   },
 });
 
-const publicPipelineReadLimiter = rateLimit({
+const publicPipelineReadLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: Number(process.env.PUBLIC_PIPELINE_READ_RATE_LIMIT_PER_MIN || 240),
   standardHeaders: true,

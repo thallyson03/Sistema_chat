@@ -4,6 +4,7 @@ import { ContactImportService } from '../services/contactImportService';
 import { contactImportBodySchema } from '../schemas/contactImportSchemas';
 import { canUserAccessChannel } from '../utils/channelAccess';
 import { validateImportFileContent } from '../utils/fileMagicBytes';
+import { rejectIfInfected } from '../services/antivirusService';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -87,6 +88,11 @@ export class ContactImportController {
           // Ignorar erro
         }
         return res.status(403).json({ error: 'Acesso negado ao canal informado' });
+      }
+
+      const avCheck = await rejectIfInfected(req.file.path);
+      if (!avCheck.ok) {
+        return res.status(avCheck.status).json({ error: avCheck.error });
       }
 
       const fileBuffer = fs.readFileSync(req.file.path);

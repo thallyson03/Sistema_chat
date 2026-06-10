@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import { createRateLimiter } from '../middleware/rateLimiter';
 import { WebhookController } from '../controllers/webhookController';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import { validateBody } from '../middleware/validateBody';
@@ -8,7 +8,7 @@ import { registerWebhookSchema, updateWebhookSchema } from '../schemas/webhookSc
 const router = Router();
 const webhookController = new WebhookController();
 
-const n8nReceiveLimiter = rateLimit({
+const n8nReceiveLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.N8N_WEBHOOK_RATE_LIMIT_MAX || 60),
   standardHeaders: true,

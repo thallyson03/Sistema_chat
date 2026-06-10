@@ -6,7 +6,8 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import rateLimit from 'express-rate-limit';
+import { createRateLimiter } from '../middleware/rateLimiter';
+import { rejectIfInfected } from '../services/antivirusService';
 import { authenticateToken, optionalAuthenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
 import {
@@ -28,7 +29,7 @@ import { buildEvolutionMediaMessagePayload, isWhatsAppCdnUrl, normalizeWhatsAppM
 
 const router = Router();
 
-const mediaUploadLimiter = rateLimit({
+const mediaUploadLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.MEDIA_UPLOAD_RATE_LIMIT_MAX || 120),
   standardHeaders: true,
@@ -157,6 +158,11 @@ router.post('/upload', mediaUploadLimiter, authenticateToken, upload.single('fil
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+    }
+
+    const avCheck = await rejectIfInfected(req.file.path);
+    if (!avCheck.ok) {
+      return res.status(avCheck.status).json({ error: avCheck.error });
     }
 
     let finalFilename = req.file.filename;

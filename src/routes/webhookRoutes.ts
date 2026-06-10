@@ -8,7 +8,7 @@ import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
 import { dispatchJourneyEvent } from '../services/journeyEventDispatcher';
 import crypto from 'crypto';
-import rateLimit from 'express-rate-limit';
+import { createRateLimiter } from '../middleware/rateLimiter';
 import { logger } from '../utils/logger';
 import { phase1Flags } from '../config/phase1Flags';
 import { webhookIngestQueue } from '../queues/webhookIngest.queue';
@@ -87,7 +87,7 @@ function isWebhookDebugLogs(): boolean {
   return flag === '1' || flag === 'true' || flag === 'yes';
 }
 
-const webhookReceiveLimiter = rateLimit({
+const webhookReceiveLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: Number(process.env.WEBHOOK_RATE_LIMIT_PER_MIN || 600),
   standardHeaders: true,
