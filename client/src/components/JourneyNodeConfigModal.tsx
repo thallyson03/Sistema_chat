@@ -453,6 +453,46 @@ export default function JourneyNodeConfigModal({
               </div>
             )}
 
+            {config.actionType === 'create_ticket' && (
+              <>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>
+                    Título do ticket *
+                  </label>
+                  <input
+                    type="text"
+                    value={config.title || ''}
+                    onChange={(e) => setConfig({ ...config, title: e.target.value })}
+                    placeholder="Ex: Solicitação de suporte"
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid rgba(63, 73, 69, 0.55)',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>
+                    Descrição (opcional)
+                  </label>
+                  <textarea
+                    value={config.description || ''}
+                    onChange={(e) => setConfig({ ...config, description: e.target.value })}
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid rgba(63, 73, 69, 0.55)',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                    }}
+                  />
+                </div>
+              </>
+            )}
+
             {config.actionType === 'move_to_pipeline' && (
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>

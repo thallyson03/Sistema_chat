@@ -21,7 +21,7 @@ import Templates from './pages/Templates';
 import Calendario from './pages/Calendario';
 import AuditLogs from './pages/AuditLogs';
 import Layout from './components/Layout';
-import TicketsRedirect from './pages/TicketsRedirect';
+import Tickets from './pages/Tickets';
 import api from './utils/api';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -106,7 +106,7 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:id" element={<ConversationDetail />} />
-          <Route path="tickets" element={<TicketsRedirect />} />
+          <Route path="tickets" element={<Tickets />} />
           <Route path="channels" element={<Channels />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="quick-replies" element={<QuickReplies />} />

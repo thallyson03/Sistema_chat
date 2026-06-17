@@ -276,6 +276,11 @@ export default function ConversationDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [linkedTicket, setLinkedTicket] = useState<{
+    id: string;
+    title: string;
+    status: string;
+  } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [newMessage, setNewMessage] = useState('');
@@ -348,8 +353,21 @@ export default function ConversationDetail() {
       if (response.data.messages) {
         setMessages(response.data.messages);
       }
+      fetchLinkedTicket();
     } catch (error) {
       console.error('Erro ao carregar conversa:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchLinkedTicket = async () => {
+    if (!id) return;
+    try {
+      const response = await api.get(`/api/tickets/by-conversation/${id}`);
+      setLinkedTicket(response.data);
+    } catch {
+      setLinkedTicket(null);
     }
   };
 
@@ -481,6 +499,43 @@ export default function ConversationDetail() {
         >
           {conversation.status}
         </span>
+        <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {linkedTicket ? (
+            <button
+              type="button"
+              onClick={() => navigate(`/tickets?conversationId=${id}`)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #f59e0b',
+                backgroundColor: '#fffbeb',
+                color: '#b45309',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🎫 {linkedTicket.title} ({linkedTicket.status})
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => navigate(`/tickets?conversationId=${id}&create=1`)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #3b82f6',
+                backgroundColor: '#eff6ff',
+                color: '#1d4ed8',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              + Criar ticket
+            </button>
+          )}
+        </div>
       </div>
 
       <div

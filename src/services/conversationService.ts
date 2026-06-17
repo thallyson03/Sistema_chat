@@ -142,6 +142,11 @@ export class ConversationService {
     return sanitizeConversationForApi(result);
   }
 
+  /** Filtro Prisma de visibilidade por setor (reutilizado por tickets e outros módulos). */
+  async getVisibilityWhere(viewer?: ConversationViewer) {
+    return this.buildVisibilityWhere(viewer);
+  }
+
   async canViewerAccessConversation(conversationId: string, viewer?: ConversationViewer): Promise<boolean> {
     if (!viewer) return false;
     if (viewer.role === 'ADMIN') return true;

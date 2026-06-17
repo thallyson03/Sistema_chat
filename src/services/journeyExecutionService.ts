@@ -394,6 +394,10 @@ export class JourneyExecutionService {
         await this.executeAssignToUser(config, contact);
         break;
 
+      case 'create_ticket':
+        await this.executeCreateTicket(config, contact);
+        break;
+
       case 'move_to_pipeline':
         await this.executeMoveToPipeline(config, contact);
         break;
@@ -596,6 +600,51 @@ export class JourneyExecutionService {
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { assignedToId: user.id },
+    });
+  }
+
+  private async executeCreateTicket(config: any, contact: any): Promise<void> {
+    const title = String(
+      config.title || config.ticketTitle || `Atendimento - ${contact.name || 'Contato'}`,
+    ).trim();
+    if (!title) {
+      console.warn('[JourneyExecution] create_ticket ignorado: título vazio');
+      return;
+    }
+
+    const conversation = await this.getLatestConversationForContact(contact.id);
+    if (!conversation) {
+      console.warn(`[JourneyExecution] create_ticket ignorado: contato ${contact.id} sem conversa`);
+      return;
+    }
+
+    const existing = await prisma.ticket.findUnique({
+      where: { conversationId: conversation.id },
+      select: { id: true },
+    });
+    if (existing) {
+      console.log(
+        `[JourneyExecution] create_ticket ignorado: conversa ${conversation.id} já possui ticket`,
+      );
+      return;
+    }
+
+    const assignedToId =
+      String(config.assignedToId || config.userId || '').trim() ||
+      conversation.assignedToId ||
+      null;
+    const description = config.description ? String(config.description).trim() : null;
+    const priority = String(config.priority || 'MEDIUM').toUpperCase();
+
+    await prisma.ticket.create({
+      data: {
+        conversationId: conversation.id,
+        title,
+        description,
+        assignedToId,
+        priority: priority as any,
+        status: 'OPEN',
+      },
     });
   }
 
