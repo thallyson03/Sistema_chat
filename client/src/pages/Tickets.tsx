@@ -5,7 +5,7 @@ import api from '../utils/api';
 import { Button } from '../components/ui/Button';
 import { useConfirm } from '../components/ui/ConfirmProvider';
 
-type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+type TicketStatus = 'OPEN' | 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
 type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
 interface Ticket {
@@ -22,6 +22,12 @@ interface Ticket {
   updatedAt: string;
   closedAt?: string | null;
   assignedTo?: { id: string; name: string; email: string } | null;
+  closureNotes?: Array<{
+    id: string;
+    note: string;
+    createdAt: string;
+    user?: { id: string; name: string; email: string } | null;
+  }>;
   contact?: {
     id: string;
     name: string;
@@ -71,6 +77,7 @@ function getTicketContactDisplay(ticket: Ticket) {
 interface TicketStats {
   total: number;
   open: number;
+  pending: number;
   inProgress: number;
   resolved: number;
   closed: number;
@@ -94,6 +101,7 @@ interface SectorOption {
 
 const STATUS_LABELS: Record<TicketStatus, string> = {
   OPEN: 'Aberto',
+  PENDING: 'Pendente',
   IN_PROGRESS: 'Em andamento',
   RESOLVED: 'Resolvido',
   CLOSED: 'Encerrado',
@@ -108,6 +116,7 @@ const PRIORITY_LABELS: Record<Priority, string> = {
 
 const STATUS_COLORS: Record<TicketStatus, string> = {
   OPEN: '#3b82f6',
+  PENDING: '#8b5cf6',
   IN_PROGRESS: '#f59e0b',
   RESOLVED: '#10b981',
   CLOSED: '#6b7280',
@@ -344,10 +353,11 @@ export default function Tickets() {
       </div>
 
       {stats && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
           {[
             { label: 'Total', value: stats.total, color: '#64748b' },
             { label: 'Abertos', value: stats.open, color: STATUS_COLORS.OPEN },
+            { label: 'Pendentes', value: stats.pending, color: STATUS_COLORS.PENDING },
             { label: 'Em andamento', value: stats.inProgress, color: STATUS_COLORS.IN_PROGRESS },
             { label: 'Resolvidos', value: stats.resolved, color: STATUS_COLORS.RESOLVED },
             { label: 'Encerrados', value: stats.closed, color: STATUS_COLORS.CLOSED },
@@ -594,6 +604,26 @@ export default function Tickets() {
                       size="sm"
                       variant="secondary"
                       disabled={saving}
+                      onClick={() => handleStatusChange(selectedTicket, 'PENDING')}
+                    >
+                      Pendente
+                    </Button>
+                  )}
+                  {selectedTicket.status === 'PENDING' && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={saving}
+                      onClick={() => handleStatusChange(selectedTicket, 'IN_PROGRESS')}
+                    >
+                      Retomar
+                    </Button>
+                  )}
+                  {['OPEN', 'IN_PROGRESS', 'PENDING'].includes(selectedTicket.status) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={saving}
                       onClick={() => handleStatusChange(selectedTicket, 'RESOLVED')}
                     >
                       Resolver
@@ -648,6 +678,30 @@ export default function Tickets() {
                   <p>Encerrado: {new Date(selectedTicket.closedAt).toLocaleString('pt-BR')}</p>
                 )}
               </div>
+
+              {(selectedTicket.closureNotes?.length ?? 0) > 0 && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase text-on-surface-variant">
+                    Histórico de encerramento
+                  </p>
+                  <div className="space-y-2">
+                    {selectedTicket.closureNotes!.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-lg border border-primary/10 bg-surface px-3 py-2"
+                      >
+                        <p className="whitespace-pre-wrap text-sm">
+                          {entry.note.trim() || '(sem observação)'}
+                        </p>
+                        <p className="mt-1 text-xs text-on-surface-variant">
+                          {entry.user?.name || 'Sistema'} ·{' '}
+                          {new Date(entry.createdAt).toLocaleString('pt-BR')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="border-t border-primary/10 p-4">

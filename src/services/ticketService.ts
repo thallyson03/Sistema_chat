@@ -17,6 +17,12 @@ const ticketInclude = {
   assignedTo: {
     select: { id: true, name: true, email: true },
   },
+  closureNotes: {
+    orderBy: { createdAt: 'desc' as const },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+    },
+  },
   contact: {
     select: {
       id: true,
@@ -188,6 +194,7 @@ export class TicketService {
     return {
       total,
       open: statusCounts.OPEN || 0,
+      pending: statusCounts.PENDING || 0,
       inProgress: statusCounts.IN_PROGRESS || 0,
       resolved: statusCounts.RESOLVED || 0,
       closed: statusCounts.CLOSED || 0,
@@ -389,9 +396,34 @@ export class TicketService {
       updateData.status = data.status;
       if (data.status === TicketStatus.CLOSED || data.status === TicketStatus.RESOLVED) {
         updateData.closedAt = new Date();
-      } else if (data.status === TicketStatus.OPEN || data.status === TicketStatus.IN_PROGRESS) {
+      } else if (
+        data.status === TicketStatus.OPEN ||
+        data.status === TicketStatus.PENDING ||
+        data.status === TicketStatus.IN_PROGRESS
+      ) {
         updateData.closedAt = null;
       }
+    }
+
+    const closingViaUpdate =
+      data.status === TicketStatus.CLOSED &&
+      ticket.status !== TicketStatus.CLOSED;
+
+    if (closingViaUpdate) {
+      return prisma.$transaction(async (tx) => {
+        await tx.ticketClosureNote.create({
+          data: {
+            ticketId: id,
+            userId: viewer?.id || null,
+            note: '',
+          },
+        });
+        return tx.ticket.update({
+          where: { id },
+          data: updateData,
+          include: ticketInclude,
+        });
+      });
     }
 
     return prisma.ticket.update({
@@ -447,22 +479,25 @@ export class TicketService {
       throw new Error('Ticket já está encerrado');
     }
 
-    const description =
-      resolutionNote?.trim() &&
-      ticket.description?.trim() !== resolutionNote.trim()
-        ? [ticket.description, `Encerramento: ${resolutionNote.trim()}`]
-            .filter(Boolean)
-            .join('\n\n')
-        : ticket.description;
+    const noteText = resolutionNote?.trim() || '';
 
-    return prisma.ticket.update({
-      where: { id },
-      data: {
-        status: TicketStatus.CLOSED,
-        closedAt: new Date(),
-        description,
-      },
-      include: ticketInclude,
+    return prisma.$transaction(async (tx) => {
+      await tx.ticketClosureNote.create({
+        data: {
+          ticketId: id,
+          userId: viewer?.id || null,
+          note: noteText,
+        },
+      });
+
+      return tx.ticket.update({
+        where: { id },
+        data: {
+          status: TicketStatus.CLOSED,
+          closedAt: new Date(),
+        },
+        include: ticketInclude,
+      });
     });
   }
 

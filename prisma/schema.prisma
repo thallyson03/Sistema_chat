@@ -74,6 +74,7 @@ enum MessageStatus {
 
 enum TicketStatus {
   OPEN
+  PENDING
   IN_PROGRESS
   RESOLVED
   CLOSED
@@ -146,6 +147,7 @@ model User {
 
   assignedConversations Conversation[] @relation("AssignedConversations")
   assignedTickets       Ticket[]       @relation("AssignedTickets")
+  ticketClosureNotes    TicketClosureNote[] @relation("TicketClosureNotes")
   assignedDeals         Deal[]         @relation("AssignedDeals")
   dealActivities        DealActivity[] @relation("DealActivities")
   messages              Message[]
@@ -602,11 +604,25 @@ model Ticket {
   contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
   sector       Sector?       @relation(fields: [sectorId], references: [id], onDelete: SetNull)
   assignedTo   User?         @relation("AssignedTickets", fields: [assignedToId], references: [id], onDelete: SetNull)
+  closureNotes TicketClosureNote[]
 
   @@index([assignedToId])
   @@index([status])
   @@index([sectorId])
   @@index([requesterPhone])
+}
+
+model TicketClosureNote {
+  id        String   @id @default(cuid())
+  ticketId  String
+  userId    String?
+  note      String   @db.Text
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User?  @relation("TicketClosureNotes", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
 }
 
 // ============================================

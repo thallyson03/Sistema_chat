@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const ticketStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']);
+const ticketStatusSchema = z.enum(['OPEN', 'PENDING', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']);
 const prioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
 
 const optionalString = z.string().trim().optional().nullable();
