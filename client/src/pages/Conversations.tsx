@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Socket } from 'socket.io-client';
 import { createAuthenticatedSocket } from '../utils/socket';
 import { motion } from 'framer-motion';
@@ -210,6 +210,30 @@ const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
 ];
 const PRIMARY_STATUS_FILTER_VALUES = new Set(['ALL', 'OPEN', 'CLOSED']);
 
+type LinkedTicket = {
+  id: string;
+  protocol: string;
+  title: string;
+  status: 'OPEN' | 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+};
+
+const TICKET_STATUS_LABELS: Record<LinkedTicket['status'], string> = {
+  OPEN: 'Aberto',
+  PENDING: 'Pendente',
+  IN_PROGRESS: 'Em andamento',
+  RESOLVED: 'Resolvido',
+  CLOSED: 'Encerrado',
+};
+
+const TICKET_STATUS_COLORS: Record<LinkedTicket['status'], string> = {
+  OPEN: '#3b82f6',
+  PENDING: '#8b5cf6',
+  IN_PROGRESS: '#f59e0b',
+  RESOLVED: '#10b981',
+  CLOSED: '#6b7280',
+};
+
 export default function Conversations() {
   // Base da API (mesma usada pelo axios)
   const apiBase = (api.defaults.baseURL || '').replace(/\/$/, '') || getPublicApiOrigin();
@@ -290,6 +314,8 @@ export default function Conversations() {
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  const [linkedTickets, setLinkedTickets] = useState<LinkedTicket[]>([]);
+  const [loadingLinkedTickets, setLoadingLinkedTickets] = useState(false);
   /** Mensagens novas enquanto o usuário não está no fim do scroll (seta + contador). */
   const [newMessagesBelowCount, setNewMessagesBelowCount] = useState(0);
   const MESSAGES_PAGE_SIZE = 50;
@@ -698,6 +724,28 @@ export default function Conversations() {
       fetchMessages(selectedConversation.id, { reset: true });
     }
   }, [selectedConversation]);
+
+  const fetchLinkedTickets = useCallback(async (conversationId: string) => {
+    setLoadingLinkedTickets(true);
+    try {
+      const res = await api.get('/api/tickets', {
+        params: { conversationId, limit: '20' },
+      });
+      setLinkedTickets(res.data?.tickets || []);
+    } catch {
+      setLinkedTickets([]);
+    } finally {
+      setLoadingLinkedTickets(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedConversation?.id) {
+      setLinkedTickets([]);
+      return;
+    }
+    fetchLinkedTickets(selectedConversation.id);
+  }, [selectedConversation?.id, fetchLinkedTickets]);
 
   const handleMessagesPaneScroll = useCallback(() => {
     const el = messagesScrollRef.current;
@@ -3359,6 +3407,64 @@ export default function Conversations() {
                       </span>
                       <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary">chevron_right</span>
                     </button>
+                  </div>
+                  <div className="space-y-2 border-t border-primary/10 pt-4">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary/50">
+                      Tickets vinculados
+                    </p>
+                    {loadingLinkedTickets ? (
+                      <p className="text-xs text-on-surface-variant">Carregando tickets...</p>
+                    ) : linkedTickets.length === 0 ? (
+                      <Link
+                        to={`/tickets?conversationId=${selectedConversation.id}&create=1`}
+                        className="group flex w-full items-center justify-between rounded-xl border border-dashed border-primary/25 bg-emerald-950/10 p-3 text-left text-sm text-on-surface transition hover:bg-emerald-900/20"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary-fixed-dim">confirmation_number</span>
+                          Criar ticket
+                        </span>
+                        <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary">
+                          add
+                        </span>
+                      </Link>
+                    ) : (
+                      <div className="space-y-2">
+                        {linkedTickets.map((ticket) => (
+                          <Link
+                            key={ticket.id}
+                            to={`/tickets?conversationId=${selectedConversation.id}`}
+                            className="group block rounded-xl border border-[rgba(63,73,69,0.2)] bg-emerald-950/20 p-3 text-left transition hover:bg-emerald-900/25"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="font-mono text-[11px] font-bold text-primary">
+                                  #{ticket.protocol}
+                                </p>
+                                <p className="truncate text-sm font-medium text-on-surface">
+                                  {ticket.title}
+                                </p>
+                              </div>
+                              <span className="material-symbols-outlined shrink-0 text-on-surface-variant group-hover:text-primary">
+                                chevron_right
+                              </span>
+                            </div>
+                            <span
+                              className="mt-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+                              style={{ backgroundColor: TICKET_STATUS_COLORS[ticket.status] }}
+                            >
+                              {TICKET_STATUS_LABELS[ticket.status]}
+                            </span>
+                          </Link>
+                        ))}
+                        <Link
+                          to={`/tickets?conversationId=${selectedConversation.id}&create=1`}
+                          className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-primary/25 px-3 py-2 text-xs font-semibold text-primary transition hover:bg-emerald-900/15"
+                        >
+                          <span className="material-symbols-outlined text-base">add</span>
+                          Novo ticket
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
