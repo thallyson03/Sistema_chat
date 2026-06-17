@@ -68,3 +68,7 @@ export const assignTicketSchema = z.object({
 export const closeTicketSchema = z.object({
   resolutionNote: z.string().max(5000).optional().nullable(),
 });
+
+export const addTicketNoteSchema = z.object({
+  note: z.string().trim().min(1, 'Anotação é obrigatória').max(5000),
+});

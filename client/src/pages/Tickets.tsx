@@ -285,6 +285,24 @@ export default function Tickets() {
     }
   };
 
+  const handleSaveNote = async (ticket: Ticket) => {
+    const note = closeNote.trim();
+    if (!note) {
+      alert('Digite uma anotação antes de salvar');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post(`/api/tickets/${ticket.id}/notes`, { note });
+      setCloseNote('');
+      await refreshSelected(ticket.id);
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Erro ao salvar anotação');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleStatusChange = async (ticket: Ticket, status: TicketStatus) => {
     setSaving(true);
     try {
@@ -661,15 +679,28 @@ export default function Tickets() {
                     </Button>
                   )}
                 </div>
-                {selectedTicket.status !== 'CLOSED' && (
-                  <textarea
-                    value={closeNote}
-                    onChange={(e) => setCloseNote(e.target.value)}
-                    placeholder="Nota de encerramento (opcional)"
-                    className="mt-2 w-full rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
-                    rows={2}
-                  />
-                )}
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase text-on-surface-variant">
+                  Anotações
+                </p>
+                <textarea
+                  value={closeNote}
+                  onChange={(e) => setCloseNote(e.target.value)}
+                  placeholder="Digite uma anotação sobre o atendimento..."
+                  className="w-full rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
+                  rows={3}
+                  disabled={saving}
+                />
+                <Button
+                  size="sm"
+                  className="mt-2"
+                  disabled={saving || !closeNote.trim()}
+                  onClick={() => handleSaveNote(selectedTicket)}
+                >
+                  Salvar anotação
+                </Button>
               </div>
 
               <div className="text-xs text-on-surface-variant">
@@ -682,7 +713,7 @@ export default function Tickets() {
               {(selectedTicket.closureNotes?.length ?? 0) > 0 && (
                 <div>
                   <p className="mb-2 text-xs font-semibold uppercase text-on-surface-variant">
-                    Histórico de encerramento
+                    Histórico de anotações
                   </p>
                   <div className="space-y-2">
                     {selectedTicket.closureNotes!.map((entry) => (

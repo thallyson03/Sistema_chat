@@ -103,6 +103,17 @@ export class TicketController {
     }
   }
 
+  async addNote(req: AuthRequest, res: Response) {
+    try {
+      const { note } = req.body;
+      const ticket = await ticketService.addNote(req.params.id, note, req.user);
+      res.json(ticket);
+    } catch (error: any) {
+      const status = error.message.includes('não encontrado') ? 404 : 400;
+      res.status(status).json({ error: error.message });
+    }
+  }
+
   async reopen(req: AuthRequest, res: Response) {
     try {
       const ticket = await ticketService.reopen(req.params.id, req.user);

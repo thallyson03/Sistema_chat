@@ -501,6 +501,28 @@ export class TicketService {
     });
   }
 
+  async addNote(id: string, note: string, viewer?: ConversationViewer) {
+    const ticket = await this.getById(id, viewer);
+    if (!ticket) {
+      throw new Error('Ticket não encontrado');
+    }
+
+    const noteText = note.trim();
+    if (!noteText) {
+      throw new Error('Anotação é obrigatória');
+    }
+
+    await prisma.ticketClosureNote.create({
+      data: {
+        ticketId: id,
+        userId: viewer?.id || null,
+        note: noteText,
+      },
+    });
+
+    return this.getById(id, viewer);
+  }
+
   async reopen(id: string, viewer?: ConversationViewer) {
     const ticket = await this.getById(id, viewer);
     if (!ticket) {

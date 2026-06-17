@@ -3,6 +3,7 @@ import { TicketController } from '../controllers/ticketController';
 import { authenticateToken } from '../middleware/auth';
 import { validateBody } from '../middleware/validateBody';
 import {
+  addTicketNoteSchema,
   assignTicketSchema,
   closeTicketSchema,
   createTicketSchema,
@@ -32,6 +33,11 @@ router.post(
   '/:id/close',
   validateBody(closeTicketSchema),
   ticketController.close.bind(ticketController),
+);
+router.post(
+  '/:id/notes',
+  validateBody(addTicketNoteSchema),
+  ticketController.addNote.bind(ticketController),
 );
 router.post('/:id/reopen', ticketController.reopen.bind(ticketController));
 router.delete('/:id', ticketController.delete.bind(ticketController));
