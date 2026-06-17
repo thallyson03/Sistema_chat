@@ -138,10 +138,6 @@ model User {
   lastActiveAt DateTime?
   failedLoginAttempts Int @default(0)
   lockedUntil DateTime?
-  /// ID do usuário correspondente no sistema externo de tickets (API de provisionamento).
-  ticketSystemUserId   String?
-  ticketSystemSyncedAt DateTime?
-  ticketSystemSyncError String?  @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -903,8 +899,6 @@ model QuickReply {
 model Sector {
   id          String   @id @default(cuid())
   name        String   @unique
-  /// ID numérico do setor correspondente no sistema externo de tickets (CEAPDesk).
-  ticketSystemSectorId Int?     @unique
   description String?
   color       String   @default("#3B82F6")
   isActive    Boolean  @default(true)

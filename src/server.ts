@@ -27,9 +27,7 @@ import botRoutes from './routes/botRoutes';
 import quickReplyRoutes from './routes/quickReplyRoutes';
 import sectorRoutes from './routes/sectorRoutes';
 import userRoutes from './routes/userRoutes';
-import ticketPortalRoutes from './routes/ticketPortalRoutes';
 import ticketRoutes from './routes/ticketRoutes';
-import externalDashboardRoutes from './routes/externalDashboardRoutes';
 import pipelineRoutes from './routes/pipelineRoutes';
 import publicPipelineRoutes from './routes/publicPipelineRoutes';
 import contactRoutes from './routes/contactRoutes';
@@ -363,9 +361,7 @@ app.use('/api/media', internalApiLimiter, internalHeavyReadLimiter, mediaRoutes)
 app.use('/api/quick-replies', internalApiLimiter, quickReplyRoutes);
 app.use('/api/sectors', internalApiLimiter, sectorRoutes);
 app.use('/api/users', internalApiLimiter, userRoutes);
-app.use('/api/ticket-portal', internalApiLimiter, internalHeavyReadLimiter, ticketPortalRoutes);
 app.use('/api/tickets', internalApiLimiter, internalHeavyReadLimiter, ticketRoutes);
-app.use('/api/external-dashboard', internalApiLimiter, internalHeavyReadLimiter, externalDashboardRoutes);
 app.use('/api/pipelines', internalApiLimiter, internalHeavyReadLimiter, pipelineRoutes);
 app.use('/api/public/pipelines', publicPipelineRoutes); // API pública para pipelines
 app.use('/api/contacts', internalApiLimiter, contactImportRoutes); // Rotas de importação de contatos (deve vir antes)

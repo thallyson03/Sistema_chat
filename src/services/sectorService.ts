@@ -1,5 +1,4 @@
 import prisma from '../config/database';
-import { syncSectorToExternalTicketSystem } from './externalTicketSystemService';
 
 export interface CreateSectorData {
   name: string;
@@ -24,15 +23,6 @@ export class SectorService {
         color: data.color || '#3B82F6',
         isActive: data.isActive !== undefined ? data.isActive : true,
       },
-    });
-    // Best-effort: tenta criar o setor correspondente no sistema externo de tickets.
-    // Não bloqueia o fluxo local em caso de erro.
-    syncSectorToExternalTicketSystem({
-      localSectorId: sector.id,
-      name: sector.name,
-      description: sector.description,
-    }).catch((err) => {
-      console.error('[SectorService] Falha ao sincronizar setor com sistema externo de tickets:', err);
     });
     return sector;
   }

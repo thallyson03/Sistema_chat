@@ -2,7 +2,6 @@ import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
 import { validatePassword } from '../utils/passwordPolicy';
 import { userPresenceFromLastActiveAt } from '../utils/userPresence';
-import { isExternalTicketEnabled, syncUserToExternalTicketSystem } from './externalTicketSystemService';
 
 export interface CreateUserData {
   email: string;
@@ -86,29 +85,8 @@ export class UserService {
       });
     }
 
-    await syncUserToExternalTicketSystem({
-      localUserId: user.id,
-      email: user.email,
-      name: user.name,
-      plainPassword: data.password,
-    });
-
     const { password: _, ...userWithoutPassword } = user;
-    const refreshed = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: {
-        sectors: {
-          include: {
-            sector: true,
-          },
-        },
-      },
-    });
-    if (!refreshed) {
-      return userWithoutPassword as any;
-    }
-    const { password: __, ...out } = refreshed;
-    return out as any;
+    return userWithoutPassword as any;
   }
 
   async updateUser(id: string, data: UpdateUserData): Promise<any> {
@@ -186,15 +164,6 @@ export class UserService {
         },
       },
     });
-
-    if (isExternalTicketEnabled()) {
-      await syncUserToExternalTicketSystem({
-        localUserId: id,
-        email: user.email,
-        name: user.name,
-        plainPassword: data.password,
-      });
-    }
 
     const { password: _, ...userWithoutPassword } = user;
     return userWithoutPassword as any;

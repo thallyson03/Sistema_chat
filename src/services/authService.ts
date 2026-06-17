@@ -4,7 +4,6 @@ import crypto from 'crypto';
 import { Response } from 'express';
 import prisma from '../config/database';
 import { User } from '@prisma/client';
-import { syncUserToExternalTicketSystem } from './externalTicketSystemService';
 import { validatePassword } from '../utils/passwordPolicy';
 import { auditLogService } from './auditLogService';
 import { logger } from '../utils/logger';
@@ -147,28 +146,7 @@ export class AuthService {
       },
     });
 
-    await syncUserToExternalTicketSystem({
-      localUserId: user.id,
-      email: user.email,
-      name: user.name,
-      plainPassword: data.password,
-    });
-
-    const reloaded = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: {
-        sectors: {
-          include: {
-            sector: true,
-          },
-        },
-      },
-    });
-    if (!reloaded) {
-      const { password: _, sectors, ...userWithoutSensitive } = user;
-      return userWithoutSensitive as User;
-    }
-    const { password: __, sectors, ...userWithoutSensitive } = reloaded;
+    const { password: _, sectors, ...userWithoutSensitive } = user;
     return userWithoutSensitive as User;
   }
 

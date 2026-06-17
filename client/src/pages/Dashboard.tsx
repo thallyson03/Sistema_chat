@@ -74,33 +74,6 @@ type ConversationDashboardMetrics = {
   };
 };
 
-/** Alinha período do seletor com query `periodo` do CEAPDesk (30 | 60 | 90 | all). */
-function periodoFromDays(days: number): string {
-  if (days <= 30) return '30';
-  if (days <= 60) return '60';
-  if (days <= 90) return '90';
-  return 'all';
-}
-
-function mapCeapdeskStatsToCards(raw: unknown): {
-  total: number;
-  open: number;
-  waiting: number;
-  closed: number;
-} {
-  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const n = (v: unknown) => {
-    const x = Number(v);
-    return Number.isFinite(x) ? x : 0;
-  };
-  const open = n(o.ticketsAbertos ?? o.abertos);
-  const closed = n(o.ticketsFechados ?? o.fechados);
-  const waiting = n(o.ticketsAguardando ?? o.emFila ?? o.aguardando);
-  let total = n(o.totalTickets ?? o.total);
-  if (!total) total = open + closed + waiting;
-  return { total, open, waiting, closed };
-}
-
 function formatDurationMinutes(minutes: number | null | undefined): string {
   if (minutes == null || Number.isNaN(minutes)) return '—';
   if (minutes < 60) return `${Math.round(minutes)} min`;
@@ -191,9 +164,6 @@ function ExternalLinkIcon({ className }: { className?: string }) {
 }
 
 export default function Dashboard() {
-  const [externalStats, setExternalStats] = useState({ total: 0, open: 0, waiting: 0, closed: 0 });
-  const [ceapdeskEnabled, setCeapdeskEnabled] = useState<boolean | null>(null);
-  const [externalLoading, setExternalLoading] = useState(true);
   const [surveyStats, setSurveyStats] = useState<SatisfactionStatsResponse | null>(null);
   const [perfStats, setPerfStats] = useState<DashboardPerformancePayload | null>(null);
   const [periodLoading, setPeriodLoading] = useState(true);
@@ -253,57 +223,6 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [globalDays, globalChannelId, globalSectorId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const en = await api.get<{ enabled: boolean }>('/api/external-dashboard/enabled');
-        if (cancelled) return;
-        setCeapdeskEnabled(!!en.data?.enabled);
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setCeapdeskEnabled(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (ceapdeskEnabled === null) return;
-    let cancelled = false;
-    (async () => {
-      setExternalLoading(true);
-      const commonParams: Record<string, string> = {
-        days: String(globalDays),
-      };
-      if (globalChannelId) commonParams.channelId = globalChannelId;
-      if (globalSectorId) commonParams.sectorId = globalSectorId;
-      try {
-        if (ceapdeskEnabled) {
-          const s = await api.get<Record<string, unknown>>('/api/external-dashboard/stats', {
-            params: {
-              periodo: periodoFromDays(globalDays),
-              ...commonParams,
-            },
-          });
-          if (!cancelled) setExternalStats(mapCeapdeskStatsToCards(s.data));
-        } else {
-          if (!cancelled) setExternalStats({ total: 0, open: 0, waiting: 0, closed: 0 });
-        }
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setExternalStats({ total: 0, open: 0, waiting: 0, closed: 0 });
-      } finally {
-        if (!cancelled) setExternalLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [ceapdeskEnabled, globalDays, globalChannelId, globalSectorId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -488,57 +407,6 @@ export default function Dashboard() {
           ) : (
             <p className="text-sm text-[#6b7280]">Não foi possível carregar as métricas de conversas.</p>
           )}
-        </section>
-
-        <section className="mt-8">
-          <div className={`rounded-2xl border p-5 sm:p-6 ${neon.panel}`}>
-            <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Tickets (CEAPDesk)</h2>
-            <p className="mt-1 text-xs text-[#8b9490]">
-              {ceapdeskEnabled
-                ? 'Indicadores externos no mesmo recorte global.'
-                : 'Integração CEAPDesk desabilitada.'}
-            </p>
-            {externalLoading ? (
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className={`h-[120px] animate-pulse rounded-xl border ${neon.card}`} />
-          ))}
-        </div>
-            ) : !ceapdeskEnabled ? (
-              <p className="mt-4 text-sm text-[#6b7280]">
-                Ative o CEAPDesk para visualizar métricas externas de tickets neste bloco.
-              </p>
-            ) : (
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <RefStatCard
-                  title="TOTAL DE TICKETS"
-                  value={externalStats.total}
-                  trend="+0%"
-                  icon="💬"
-                  barActive={externalStats.total > 0}
-                />
-                <RefStatCard
-                  title="ABERTOS"
-                  value={externalStats.open}
-                  trend="+0%"
-                  icon="🚩"
-                  barActive={externalStats.open > 0}
-                />
-                <RefStatCard
-                  title="EM FILA"
-                  value={externalStats.waiting}
-                  icon="📋"
-                  barActive={externalStats.waiting > 0}
-                />
-                <RefStatCard
-                  title="FECHADOS"
-                  value={externalStats.closed}
-                  icon="✓"
-                  barActive={externalStats.closed > 0}
-                />
-              </div>
-            )}
-          </div>
         </section>
 
         {/* Tempo de atendimento + performance de usuários */}
