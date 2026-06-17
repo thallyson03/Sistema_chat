@@ -10,15 +10,27 @@ type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
 interface Ticket {
   id: string;
+  protocol: string;
   title: string;
   description?: string | null;
   status: TicketStatus;
   priority: Priority;
+  requesterName?: string | null;
+  requesterPhone?: string | null;
+  requesterEmail?: string | null;
   createdAt: string;
   updatedAt: string;
   closedAt?: string | null;
   assignedTo?: { id: string; name: string; email: string } | null;
-  conversation: {
+  contact?: {
+    id: string;
+    name: string;
+    phone?: string;
+    email?: string;
+    profilePicture?: string;
+  } | null;
+  sector?: { id: string; name: string; color: string } | null;
+  conversation?: {
     id: string;
     status: string;
     contact: {
@@ -31,6 +43,28 @@ interface Ticket {
     channel?: { id: string; name: string; type: string } | null;
     sector?: { id: string; name: string; color: string } | null;
     assignedTo?: { id: string; name: string } | null;
+  } | null;
+}
+
+function getTicketContactDisplay(ticket: Ticket) {
+  if (ticket.conversation?.contact) {
+    return {
+      name: ticket.conversation.contact.name,
+      phone: ticket.conversation.contact.phone,
+      email: ticket.conversation.contact.email,
+    };
+  }
+  if (ticket.contact) {
+    return {
+      name: ticket.contact.name,
+      phone: ticket.contact.phone,
+      email: ticket.contact.email,
+    };
+  }
+  return {
+    name: ticket.requesterName || 'Solicitante avulso',
+    phone: ticket.requesterPhone,
+    email: ticket.requesterEmail,
   };
 }
 
@@ -49,6 +83,11 @@ interface ConversationOption {
 }
 
 interface UserOption {
+  id: string;
+  name: string;
+}
+
+interface SectorOption {
   id: string;
   name: string;
 }
@@ -83,6 +122,7 @@ export default function Tickets() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserOption[]>([]);
+  const [sectors, setSectors] = useState<SectorOption[]>([]);
   const [conversations, setConversations] = useState<ConversationOption[]>([]);
 
   const [statusFilter, setStatusFilter] = useState<TicketStatus | 'ALL'>(
@@ -94,8 +134,15 @@ export default function Tickets() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createMode, setCreateMode] = useState<'standalone' | 'conversation'>(
+    searchParams.get('conversationId') ? 'conversation' : 'standalone',
+  );
   const [createForm, setCreateForm] = useState({
     conversationId: searchParams.get('conversationId') || '',
+    requesterName: '',
+    requesterPhone: '',
+    requesterEmail: '',
+    sectorId: '',
     title: '',
     description: '',
     priority: 'MEDIUM' as Priority,
@@ -137,13 +184,15 @@ export default function Tickets() {
   useEffect(() => {
     const loadAux = async () => {
       try {
-        const [usersRes, convRes] = await Promise.all([
+        const [usersRes, convRes, sectorsRes] = await Promise.all([
           api.get('/api/users', { params: { limit: 200 } }),
           api.get('/api/conversations', { params: { limit: 100, status: 'OPEN' } }),
+          api.get('/api/sectors'),
         ]);
         setUsers((usersRes.data?.users || usersRes.data || []).map((u: any) => ({ id: u.id, name: u.name })));
         const convList = convRes.data?.conversations || convRes.data || [];
         setConversations(convList);
+        setSectors((sectorsRes.data || []).map((s: any) => ({ id: s.id, name: s.name })));
         if (searchParams.get('conversationId') && searchParams.get('create') === '1') {
           setShowCreateModal(true);
         }
@@ -165,22 +214,61 @@ export default function Tickets() {
   };
 
   const handleCreate = async () => {
-    if (!createForm.conversationId || !createForm.title.trim()) {
-      alert('Informe a conversa e o título do ticket');
+    if (!createForm.title.trim()) {
+      alert('Informe o título do ticket');
+      return;
+    }
+    if (createMode === 'conversation' && !createForm.conversationId) {
+      alert('Selecione uma conversa');
+      return;
+    }
+    if (
+      createMode === 'standalone' &&
+      !createForm.requesterName.trim() &&
+      !createForm.requesterPhone.trim()
+    ) {
+      alert('Informe nome ou telefone do solicitante');
       return;
     }
     setSaving(true);
     try {
-      await api.post('/api/tickets', {
-        conversationId: createForm.conversationId,
-        title: createForm.title.trim(),
-        description: createForm.description.trim() || null,
-        priority: createForm.priority,
-        assignedToId: createForm.assignedToId || null,
-      });
+      const payload =
+        createMode === 'conversation'
+          ? {
+              conversationId: createForm.conversationId,
+              title: createForm.title.trim(),
+              description: createForm.description.trim() || null,
+              priority: createForm.priority,
+              assignedToId: createForm.assignedToId || null,
+            }
+          : {
+              requesterName: createForm.requesterName.trim() || null,
+              requesterPhone: createForm.requesterPhone.trim() || null,
+              requesterEmail: createForm.requesterEmail.trim() || null,
+              sectorId: createForm.sectorId || null,
+              title: createForm.title.trim(),
+              description: createForm.description.trim() || null,
+              priority: createForm.priority,
+              assignedToId: createForm.assignedToId || null,
+            };
+
+      const res = await api.post('/api/tickets', payload);
       setShowCreateModal(false);
-      setCreateForm({ conversationId: '', title: '', description: '', priority: 'MEDIUM', assignedToId: '' });
+      setCreateForm({
+        conversationId: '',
+        requesterName: '',
+        requesterPhone: '',
+        requesterEmail: '',
+        sectorId: '',
+        title: '',
+        description: '',
+        priority: 'MEDIUM',
+        assignedToId: '',
+      });
       await fetchTickets();
+      if (res.data?.id) {
+        setSelectedTicket(res.data);
+      }
     } catch (error: any) {
       alert(error.response?.data?.error || 'Erro ao criar ticket');
     } finally {
@@ -249,7 +337,7 @@ export default function Tickets() {
         <div>
           <h1 className="text-2xl font-bold text-on-surface">Tickets</h1>
           <p className="text-sm text-on-surface-variant">
-            Gestão nativa de tickets vinculados às conversas do CRM
+            Gestão de tickets com protocolo de atendimento — avulsos ou vinculados a conversas
           </p>
         </div>
         <Button onClick={() => setShowCreateModal(true)}>+ Novo ticket</Button>
@@ -282,7 +370,7 @@ export default function Tickets() {
       <div className="flex flex-wrap gap-2 rounded-xl border border-primary/10 bg-surface-container p-3">
         <input
           type="text"
-          placeholder="Buscar por título, contato ou telefone..."
+          placeholder="Buscar por protocolo, título, contato ou telefone..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="min-w-[220px] flex-1 rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
@@ -341,8 +429,9 @@ export default function Tickets() {
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 bg-surface-container-high text-xs uppercase text-on-surface-variant">
                 <tr>
+                  <th className="px-4 py-3">Protocolo</th>
                   <th className="px-4 py-3">Ticket</th>
-                  <th className="px-4 py-3">Contato</th>
+                  <th className="px-4 py-3">Solicitante</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Prioridade</th>
                   <th className="px-4 py-3">Responsável</th>
@@ -350,7 +439,9 @@ export default function Tickets() {
                 </tr>
               </thead>
               <tbody>
-                {tickets.map((ticket) => (
+                {tickets.map((ticket) => {
+                  const contact = getTicketContactDisplay(ticket);
+                  return (
                   <tr
                     key={ticket.id}
                     onClick={() => setSelectedTicket(ticket)}
@@ -358,11 +449,12 @@ export default function Tickets() {
                       selectedTicket?.id === ticket.id ? 'bg-primary/10' : ''
                     }`}
                   >
+                    <td className="px-4 py-3 font-mono font-bold text-primary">#{ticket.protocol}</td>
                     <td className="px-4 py-3 font-medium">{ticket.title}</td>
                     <td className="px-4 py-3">
-                      <div>{ticket.conversation.contact.name}</div>
+                      <div>{contact.name}</div>
                       <div className="text-xs text-on-surface-variant">
-                        {ticket.conversation.contact.phone || '—'}
+                        {contact.phone || contact.email || '—'}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -379,7 +471,8 @@ export default function Tickets() {
                       {new Date(ticket.updatedAt).toLocaleString('pt-BR')}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -393,7 +486,10 @@ export default function Tickets() {
           >
             <div className="border-b border-primary/10 p-4">
               <div className="mb-2 flex items-start justify-between gap-2">
-                <h2 className="text-lg font-semibold">{selectedTicket.title}</h2>
+                <div>
+                  <p className="text-xs font-mono font-bold text-primary">Protocolo #{selectedTicket.protocol}</p>
+                  <h2 className="text-lg font-semibold">{selectedTicket.title}</h2>
+                </div>
                 <button
                   type="button"
                   onClick={() => setSelectedTicket(null)}
@@ -424,19 +520,27 @@ export default function Tickets() {
               )}
 
               <div>
-                <p className="mb-1 text-xs font-semibold uppercase text-on-surface-variant">Contato</p>
-                <p className="font-medium">{selectedTicket.conversation.contact.name}</p>
-                <p className="text-on-surface-variant">
-                  {selectedTicket.conversation.contact.phone || selectedTicket.conversation.contact.email || '—'}
-                </p>
+                <p className="mb-1 text-xs font-semibold uppercase text-on-surface-variant">Solicitante</p>
+                {(() => {
+                  const contact = getTicketContactDisplay(selectedTicket);
+                  return (
+                    <>
+                      <p className="font-medium">{contact.name}</p>
+                      <p className="text-on-surface-variant">
+                        {contact.phone || contact.email || '—'}
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
 
+              {selectedTicket.conversation ? (
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase text-on-surface-variant">Conversa / Canal</p>
                 <p>{selectedTicket.conversation.channel?.name || '—'}</p>
-                {selectedTicket.conversation.sector && (
+                {(selectedTicket.conversation.sector || selectedTicket.sector) && (
                   <p className="text-xs text-on-surface-variant">
-                    Setor: {selectedTicket.conversation.sector.name}
+                    Setor: {selectedTicket.conversation.sector?.name || selectedTicket.sector?.name}
                   </p>
                 )}
                 <Link
@@ -446,6 +550,14 @@ export default function Tickets() {
                   Abrir conversa →
                 </Link>
               </div>
+              ) : (
+                selectedTicket.sector && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase text-on-surface-variant">Setor</p>
+                    <p>{selectedTicket.sector.name}</p>
+                  </div>
+                )
+              )}
 
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase text-on-surface-variant">Responsável</p>
@@ -555,22 +667,100 @@ export default function Tickets() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg rounded-xl border border-primary/10 bg-surface-container p-6 shadow-xl">
             <h3 className="mb-4 text-lg font-semibold">Novo ticket</h3>
+            <p className="mb-3 text-xs text-on-surface-variant">
+              O protocolo de 4 dígitos será gerado automaticamente.
+            </p>
+            <div className="mb-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCreateMode('standalone')}
+                className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold ${
+                  createMode === 'standalone'
+                    ? 'bg-primary text-on-primary'
+                    : 'bg-surface-container-high text-on-surface-variant'
+                }`}
+              >
+                Avulso (sem conversa)
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateMode('conversation')}
+                className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold ${
+                  createMode === 'conversation'
+                    ? 'bg-primary text-on-primary'
+                    : 'bg-surface-container-high text-on-surface-variant'
+                }`}
+              >
+                Vincular à conversa
+              </button>
+            </div>
             <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-on-surface-variant">Conversa *</label>
-                <select
-                  value={createForm.conversationId}
-                  onChange={(e) => setCreateForm({ ...createForm, conversationId: e.target.value })}
-                  className="w-full rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
-                >
-                  <option value="">Selecione uma conversa</option>
-                  {conversations.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.contact.name} — {c.channel?.name || 'Canal'}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {createMode === 'conversation' ? (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-on-surface-variant">Conversa *</label>
+                  <select
+                    value={createForm.conversationId}
+                    onChange={(e) => setCreateForm({ ...createForm, conversationId: e.target.value })}
+                    className="w-full rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
+                  >
+                    <option value="">Selecione uma conversa</option>
+                    {conversations.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.contact.name} — {c.channel?.name || 'Canal'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-on-surface-variant">
+                      Nome do solicitante *
+                    </label>
+                    <input
+                      value={createForm.requesterName}
+                      onChange={(e) => setCreateForm({ ...createForm, requesterName: e.target.value })}
+                      className="w-full rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
+                      placeholder="Nome (não precisa estar cadastrado)"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-on-surface-variant">Telefone</label>
+                      <input
+                        value={createForm.requesterPhone}
+                        onChange={(e) => setCreateForm({ ...createForm, requesterPhone: e.target.value })}
+                        className="w-full rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
+                        placeholder="11999999999"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-on-surface-variant">E-mail</label>
+                      <input
+                        value={createForm.requesterEmail}
+                        onChange={(e) => setCreateForm({ ...createForm, requesterEmail: e.target.value })}
+                        className="w-full rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
+                        placeholder="opcional"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-on-surface-variant">Setor</label>
+                    <select
+                      value={createForm.sectorId}
+                      onChange={(e) => setCreateForm({ ...createForm, sectorId: e.target.value })}
+                      className="w-full rounded-lg border border-primary/20 bg-surface px-3 py-2 text-sm"
+                    >
+                      <option value="">Nenhum</option>
+                      {sectors.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
               <div>
                 <label className="mb-1 block text-xs font-semibold text-on-surface-variant">Título *</label>
                 <input

@@ -1,4 +1,5 @@
 import prisma from '../config/database';
+import { generateTicketProtocol } from '../utils/ticketProtocol';
 import { journeyDelayMsFromConfig } from '../utils/journeyDelay';
 import { MessageService } from './messageService';
 
@@ -636,9 +637,16 @@ export class JourneyExecutionService {
     const description = config.description ? String(config.description).trim() : null;
     const priority = String(config.priority || 'MEDIUM').toUpperCase();
 
+    const protocol = await generateTicketProtocol();
+
     await prisma.ticket.create({
       data: {
+        protocol,
         conversationId: conversation.id,
+        requesterName: contact.name || null,
+        requesterPhone: contact.phone || null,
+        requesterEmail: contact.email || null,
+        contactId: contact.id,
         title,
         description,
         assignedToId,

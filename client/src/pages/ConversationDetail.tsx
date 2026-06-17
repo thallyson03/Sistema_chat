@@ -278,6 +278,7 @@ export default function ConversationDetail() {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [linkedTicket, setLinkedTicket] = useState<{
     id: string;
+    protocol: string;
     title: string;
     status: string;
   } | null>(null);
@@ -515,7 +516,7 @@ export default function ConversationDetail() {
                 cursor: 'pointer',
               }}
             >
-              🎫 {linkedTicket.title} ({linkedTicket.status})
+              🎫 #{linkedTicket.protocol} — {linkedTicket.title} ({linkedTicket.status})
             </button>
           ) : (
             <button
