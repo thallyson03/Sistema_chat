@@ -46,7 +46,10 @@ export class DealController {
       const allowed = await this.ensurePipelineBodyAccess(req, res, req.body?.pipelineId);
       if (!allowed) return;
 
-      const deal = await dealService.createDeal(req.body);
+      const deal = await dealService.createDeal({
+        ...req.body,
+        createdById: req.user?.id,
+      });
       res.status(201).json(deal);
     } catch (error: any) {
       res.status(400).json({ error: error.message });

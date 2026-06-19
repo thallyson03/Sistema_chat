@@ -8,6 +8,7 @@ export interface CreateDealData {
   contactId: string;
   conversationId?: string;
   assignedToId?: string;
+  createdById?: string;
   name: string; // Nome do lead/negócio
   value?: number; // Valor opcional
   currency?: string;
@@ -146,7 +147,7 @@ export class DealService {
     await prisma.dealActivity.create({
       data: {
         dealId: deal.id,
-        userId: data.assignedToId,
+        userId: data.createdById || data.assignedToId || null,
         type: 'STAGE_CHANGE',
         title: 'Negócio criado',
         description: `Negócio criado na etapa "${stage?.name || 'N/A'}"`,

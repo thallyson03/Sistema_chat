@@ -104,6 +104,10 @@ export class PipelineService {
     const pipeline = await prisma.pipeline.findUnique({
       where: { id },
       include: {
+        customFields: {
+          where: { isActive: true },
+          orderBy: { order: 'asc' },
+        },
         stages: {
           orderBy: { order: 'asc' },
           include: {
@@ -131,6 +135,16 @@ export class PipelineService {
                       include: {
                         tag: true,
                       },
+                    },
+                  },
+                },
+                activities: {
+                  where: { title: 'Negócio criado' },
+                  take: 1,
+                  orderBy: { createdAt: 'asc' },
+                  include: {
+                    user: {
+                      select: { id: true, name: true },
                     },
                   },
                 },

@@ -35,17 +35,25 @@ interface Deal {
   currency: string;
   status: 'OPEN' | 'WON' | 'LOST' | 'ABANDONED';
   probability: number;
+  createdAt?: string;
   customFields?: Record<string, any>; // Campos personalizados
   contact: {
     id: string;
     name: string;
     phone?: string;
     profilePicture?: string;
+    channelIdentities?: Array<{
+      channel?: { name?: string; type?: string } | null;
+    }>;
   };
   assignedTo?: {
     id: string;
     name: string;
   };
+  activities?: Array<{
+    id: string;
+    user?: { id: string; name: string } | null;
+  }>;
   conversation?: {
     id: string;
     status: string;
@@ -58,6 +66,114 @@ interface Deal {
       };
     }>;
   };
+}
+
+function getDealCreatorId(deal: Deal): string | null {
+  return deal.activities?.[0]?.user?.id || null;
+}
+
+function getDealLeadSource(deal: Deal, pipelineCustomFields?: PipelineCustomField[]): string | null {
+  if (pipelineCustomFields?.length && deal.customFields) {
+    for (const field of pipelineCustomFields) {
+      if (/fonte|origem|source/i.test(field.name)) {
+        const value = deal.customFields[field.id] ?? deal.customFields[field.name];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          return String(value).trim();
+        }
+      }
+    }
+  }
+
+  if (deal.customFields) {
+    for (const [key, value] of Object.entries(deal.customFields)) {
+      if (/fonte|origem|source/i.test(key) && value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+  }
+
+  const channel = deal.contact.channelIdentities?.[0]?.channel;
+  if (channel?.name?.trim()) return channel.name.trim();
+  if (channel?.type?.trim()) return channel.type.trim();
+
+  return null;
+}
+
+function parseBoundaryDateTime(date: string, time: string, endOfDay: boolean): Date | null {
+  if (!date) return null;
+  const fallbackTime = endOfDay ? '23:59:59' : '00:00:00';
+  const normalizedTime = time || fallbackTime;
+  const withSeconds = normalizedTime.length === 5 ? `${normalizedTime}:00` : normalizedTime;
+  const parsed = new Date(`${date}T${withSeconds}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toMinutesOfDay(date: Date): number {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function parseTimeToMinutes(time: string): number | null {
+  if (!time) return null;
+  const [hours, minutes] = time.split(':').map((part) => Number(part));
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function dealMatchesDateTimeFilter(
+  deal: Deal,
+  dateFrom: string,
+  dateTo: string,
+  timeFrom: string,
+  timeTo: string,
+): boolean {
+  if (!deal.createdAt) {
+    return !dateFrom && !dateTo && !timeFrom && !timeTo;
+  }
+
+  const created = new Date(deal.createdAt);
+  if (Number.isNaN(created.getTime())) return false;
+
+  const start = parseBoundaryDateTime(dateFrom, timeFrom, false);
+  const end = parseBoundaryDateTime(dateTo, timeTo, true);
+
+  if (start && created < start) return false;
+  if (end && created > end) return false;
+
+  if (!dateFrom && !dateTo && (timeFrom || timeTo)) {
+    const createdMinutes = toMinutesOfDay(created);
+    const fromMinutes = parseTimeToMinutes(timeFrom);
+    const toMinutes = parseTimeToMinutes(timeTo);
+
+    if (fromMinutes !== null && createdMinutes < fromMinutes) return false;
+    if (toMinutes !== null && createdMinutes > toMinutes) return false;
+  }
+
+  return true;
+}
+
+function countActivePipelineFilters(filters: {
+  searchTerm: string;
+  responsibleFilter: string;
+  statusFilter: string;
+  stageFilter: string;
+  dateFrom: string;
+  dateTo: string;
+  timeFrom: string;
+  timeTo: string;
+  createdByFilter: string;
+  sourceFilter: string;
+  tagFilter: string;
+}): number {
+  let count = 0;
+  if (filters.searchTerm.trim()) count += 1;
+  if (filters.responsibleFilter !== 'ALL') count += 1;
+  if (filters.statusFilter !== 'ALL') count += 1;
+  if (filters.stageFilter !== 'ALL') count += 1;
+  if (filters.dateFrom || filters.dateTo || filters.timeFrom || filters.timeTo) count += 1;
+  if (filters.createdByFilter !== 'ALL') count += 1;
+  if (filters.sourceFilter !== 'ALL') count += 1;
+  if (filters.tagFilter !== 'ALL') count += 1;
+  return count;
 }
 
 interface PipelineCustomField {
@@ -87,11 +203,33 @@ export default function Pipelines() {
   const [responsibleFilter, setResponsibleFilter] = useState<'ALL' | 'UNASSIGNED' | string>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | Deal['status']>('ALL');
   const [stageFilter, setStageFilter] = useState<'ALL' | string>('ALL');
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
+  const [timeFromFilter, setTimeFromFilter] = useState('');
+  const [timeToFilter, setTimeToFilter] = useState('');
+  const [createdByFilter, setCreatedByFilter] = useState<'ALL' | 'UNKNOWN' | string>('ALL');
+  const [sourceFilter, setSourceFilter] = useState<'ALL' | string>('ALL');
+  const [tagFilter, setTagFilter] = useState<'ALL' | string>('ALL');
+  const [systemUsers, setSystemUsers] = useState<Array<{ id: string; name: string }>>([]);
   const filterPanelRef = useRef<HTMLDivElement>(null);
   const pipelineDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchPipelines();
+    const loadUsers = async () => {
+      try {
+        const response = await api.get('/api/users', { params: { limit: 300 } });
+        const users = response.data?.users || response.data || [];
+        setSystemUsers(
+          users
+            .map((user: { id: string; name: string }) => ({ id: user.id, name: user.name }))
+            .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)),
+        );
+      } catch (error) {
+        console.error('Erro ao carregar usuários para filtros:', error);
+      }
+    };
+    loadUsers();
   }, []);
 
   useEffect(() => {
@@ -140,10 +278,24 @@ export default function Pipelines() {
     }
   };
 
+  const resetPipelineFilters = () => {
+    setSearchTerm('');
+    setResponsibleFilter('ALL');
+    setStatusFilter('ALL');
+    setStageFilter('ALL');
+    setDateFromFilter('');
+    setDateToFilter('');
+    setTimeFromFilter('');
+    setTimeToFilter('');
+    setCreatedByFilter('ALL');
+    setSourceFilter('ALL');
+    setTagFilter('ALL');
+  };
+
   const handlePipelineSelect = async (pipeline: Pipeline) => {
     setSelectedPipeline(pipeline);
     setSelectedDealIds([]);
-    setStageFilter('ALL');
+    resetPipelineFilters();
     setShowPipelineDropdown(false);
     await fetchPipelineDetails(pipeline.id);
   };
@@ -163,6 +315,85 @@ export default function Pipelines() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [selectedPipeline]);
 
+  const availableCreatedByOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    systemUsers.forEach((user) => map.set(user.id, user.name));
+    if (selectedPipeline) {
+      selectedPipeline.stages.forEach((stage) => {
+        (stage.deals || []).forEach((deal) => {
+          const creator = deal.activities?.[0]?.user;
+          if (creator?.id && creator.name) {
+            map.set(creator.id, creator.name);
+          }
+        });
+      });
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [selectedPipeline, systemUsers]);
+
+  const availableSourceOptions = useMemo(() => {
+    if (!selectedPipeline) return [];
+    const values = new Set<string>();
+    selectedPipeline.stages.forEach((stage) => {
+      (stage.deals || []).forEach((deal) => {
+        const source = getDealLeadSource(deal, selectedPipeline.customFields);
+        if (source) values.add(source);
+      });
+    });
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [selectedPipeline]);
+
+  const availableTagOptions = useMemo(() => {
+    if (!selectedPipeline) return [];
+    const map = new Map<string, { id: string; name: string; color?: string }>();
+    selectedPipeline.stages.forEach((stage) => {
+      (stage.deals || []).forEach((deal) => {
+        (deal.conversation?.tags || []).forEach((item) => {
+          if (item.tag?.id) {
+            map.set(item.tag.id, {
+              id: item.tag.id,
+              name: item.tag.name,
+              color: item.tag.color,
+            });
+          }
+        });
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [selectedPipeline]);
+
+  const activeFiltersCount = useMemo(
+    () =>
+      countActivePipelineFilters({
+        searchTerm,
+        responsibleFilter,
+        statusFilter,
+        stageFilter,
+        dateFrom: dateFromFilter,
+        dateTo: dateToFilter,
+        timeFrom: timeFromFilter,
+        timeTo: timeToFilter,
+        createdByFilter,
+        sourceFilter,
+        tagFilter,
+      }),
+    [
+      searchTerm,
+      responsibleFilter,
+      statusFilter,
+      stageFilter,
+      dateFromFilter,
+      dateToFilter,
+      timeFromFilter,
+      timeToFilter,
+      createdByFilter,
+      sourceFilter,
+      tagFilter,
+    ],
+  );
+
   const filteredStages = useMemo(() => {
     if (!selectedPipeline) return [];
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -175,6 +406,33 @@ export default function Pipelines() {
           if (statusFilter !== 'ALL' && deal.status !== statusFilter) return false;
           if (responsibleFilter === 'UNASSIGNED' && deal.assignedTo?.id) return false;
           if (responsibleFilter !== 'ALL' && responsibleFilter !== 'UNASSIGNED' && deal.assignedTo?.id !== responsibleFilter) return false;
+          if (
+            !dealMatchesDateTimeFilter(
+              deal,
+              dateFromFilter,
+              dateToFilter,
+              timeFromFilter,
+              timeToFilter,
+            )
+          ) {
+            return false;
+          }
+          if (createdByFilter === 'UNKNOWN' && getDealCreatorId(deal)) return false;
+          if (
+            createdByFilter !== 'ALL' &&
+            createdByFilter !== 'UNKNOWN' &&
+            getDealCreatorId(deal) !== createdByFilter
+          ) {
+            return false;
+          }
+          if (sourceFilter !== 'ALL') {
+            const source = getDealLeadSource(deal, selectedPipeline.customFields);
+            if (source !== sourceFilter) return false;
+          }
+          if (tagFilter !== 'ALL') {
+            const hasTag = (deal.conversation?.tags || []).some((item) => item.tag.id === tagFilter);
+            if (!hasTag) return false;
+          }
           if (normalizedSearch) {
             const haystack = `${deal.name} ${deal.contact?.name || ''} ${deal.contact?.phone || ''}`.toLowerCase();
             if (!haystack.includes(normalizedSearch)) return false;
@@ -183,7 +441,20 @@ export default function Pipelines() {
         });
         return { ...stage, deals };
       });
-  }, [selectedPipeline, searchTerm, responsibleFilter, statusFilter, stageFilter]);
+  }, [
+    selectedPipeline,
+    searchTerm,
+    responsibleFilter,
+    statusFilter,
+    stageFilter,
+    dateFromFilter,
+    dateToFilter,
+    timeFromFilter,
+    timeToFilter,
+    createdByFilter,
+    sourceFilter,
+    tagFilter,
+  ]);
 
   const handleDragStart = (dealId: string, stageId: string) => {
     setDraggedDeal({ dealId, stageId });
@@ -338,14 +609,20 @@ export default function Pipelines() {
             className="flex w-full items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2.5 text-left text-sm text-on-surface-variant transition hover:bg-surface-container"
           >
             <span className="material-symbols-outlined text-base">search</span>
-            <span className="flex-1">{searchTerm ? `Busca: ${searchTerm}` : 'Busca e filtro'}</span>
+            <span className="flex-1">
+              {activeFiltersCount > 0
+                ? `Busca e filtros (${activeFiltersCount} ativo${activeFiltersCount > 1 ? 's' : ''})`
+                : searchTerm
+                  ? `Busca: ${searchTerm}`
+                  : 'Busca e filtro'}
+            </span>
             <span className="material-symbols-outlined text-base">
               {showFilterPanel ? 'expand_less' : 'expand_more'}
             </span>
           </button>
 
           {showFilterPanel && (
-            <div className="absolute left-0 right-0 z-20 mt-2 rounded-xl border border-outline-variant bg-surface-container-high p-3 shadow-forest-glow">
+            <div className="absolute left-0 right-0 z-20 mt-2 max-h-[min(70vh,520px)] overflow-y-auto rounded-xl border border-outline-variant bg-surface-container-high p-3 shadow-forest-glow">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
@@ -373,6 +650,58 @@ export default function Pipelines() {
                     {availableResponsibleOptions.map((user) => (
                       <option key={user.id} value={user.id}>
                         {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Criado por
+                  </label>
+                  <select
+                    value={createdByFilter}
+                    onChange={(e) => setCreatedByFilter(e.target.value as any)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  >
+                    <option value="ALL">Todos</option>
+                    <option value="UNKNOWN">Sem criador identificado</option>
+                    {availableCreatedByOptions.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Fonte do lead
+                  </label>
+                  <select
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  >
+                    <option value="ALL">Todas</option>
+                    {availableSourceOptions.map((source) => (
+                      <option key={source} value={source}>
+                        {source}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Tag
+                  </label>
+                  <select
+                    value={tagFilter}
+                    onChange={(e) => setTagFilter(e.target.value)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  >
+                    <option value="ALL">Todas</option>
+                    {availableTagOptions.map((tag) => (
+                      <option key={tag.id} value={tag.id}>
+                        {tag.name}
                       </option>
                     ))}
                   </select>
@@ -413,16 +742,58 @@ export default function Pipelines() {
                       ))}
                   </select>
                 </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Data inicial
+                  </label>
+                  <input
+                    type="date"
+                    value={dateFromFilter}
+                    onChange={(e) => setDateFromFilter(e.target.value)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Data final
+                  </label>
+                  <input
+                    type="date"
+                    value={dateToFilter}
+                    onChange={(e) => setDateToFilter(e.target.value)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Hora inicial
+                  </label>
+                  <input
+                    type="time"
+                    value={timeFromFilter}
+                    onChange={(e) => setTimeFromFilter(e.target.value)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                    Hora final
+                  </label>
+                  <input
+                    type="time"
+                    value={timeToFilter}
+                    onChange={(e) => setTimeToFilter(e.target.value)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
+                  />
+                </div>
               </div>
+              <p className="mt-3 text-[11px] text-on-surface-variant">
+                Data e hora usam a criação do negócio. Se informar só hora, filtra pelo horário em qualquer dia.
+              </p>
               <div className="mt-3 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setResponsibleFilter('ALL');
-                    setStatusFilter('ALL');
-                    setStageFilter('ALL');
-                  }}
+                  onClick={resetPipelineFilters}
                   className="rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-xs font-semibold text-on-surface-variant transition hover:bg-surface-container"
                 >
                   Limpar filtros
