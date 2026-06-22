@@ -190,6 +190,17 @@ interface PipelineCustomField {
   order: number;
 }
 
+const PIPELINE_MODAL_LABEL =
+  'mb-1.5 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant';
+const PIPELINE_MODAL_INPUT =
+  'w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/55 outline-none transition focus:border-primary/45 focus:ring-1 focus:ring-primary/25';
+const PIPELINE_MODAL_SELECT = `${PIPELINE_MODAL_INPUT} cursor-pointer`;
+const PIPELINE_FILTER_LABEL = 'w-40 shrink-0 text-sm text-on-surface-variant';
+const PIPELINE_QUICK_FILTER_ACTIVE =
+  'bg-primary/15 font-semibold text-primary-fixed-dim';
+const PIPELINE_QUICK_FILTER_IDLE =
+  'text-on-surface-variant hover:bg-surface-container-high';
+
 export default function Pipelines() {
   const confirm = useConfirm();
   const navigate = useNavigate();
@@ -548,10 +559,6 @@ export default function Pipelines() {
     return { count, total };
   }, [filteredStages]);
 
-  const filterFieldClass =
-    'w-full rounded border border-[#d5dbe3] bg-white px-2.5 py-1.5 text-sm text-[#2e3640] outline-none transition focus:border-[#4c8bf5]';
-  const filterLabelClass = 'w-40 shrink-0 text-sm text-[#6b7785]';
-
   const handleDragStart = (dealId: string, stageId: string) => {
     setDraggedDeal({ dealId, stageId });
   };
@@ -701,15 +708,15 @@ export default function Pipelines() {
         <button
           type="button"
           onClick={() => setShowFilterModal(true)}
-          className="flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-[#d5dbe3] bg-white px-3 py-2 text-left text-sm text-[#6b7785] shadow-sm transition hover:border-[#b8c2cf]"
+          className="flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-left text-sm text-on-surface-variant transition hover:bg-surface-container"
         >
-          <span className="material-symbols-outlined text-base text-[#8b95a5]">search</span>
-          <span className="flex-1 truncate">
+          <span className="material-symbols-outlined text-base text-primary-fixed-dim">search</span>
+          <span className="flex-1 truncate text-on-surface">
             {selectedPipeline?.name || 'Pipeline'} | Busca e filtro
             {searchTerm ? ` — ${searchTerm}` : ''}
           </span>
           {activeFiltersCount > 0 && (
-            <span className="rounded-full bg-[#4c8bf5] px-2 py-0.5 text-[10px] font-bold text-white">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-on-primary">
               {activeFiltersCount}
             </span>
           )}
@@ -724,23 +731,25 @@ export default function Pipelines() {
 
       {showFilterModal && (
         <div
-          className="fixed inset-0 z-[1200] flex items-start justify-center bg-black/45 p-4 pt-8"
+          className="fixed inset-0 z-[1200] flex items-start justify-center bg-black/55 p-4 pt-8 backdrop-blur-[2px]"
           onClick={() => setShowFilterModal(false)}
         >
           <div
-            className="flex h-[min(86vh,760px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-[#eef1f5] shadow-2xl"
+            className="flex h-[min(86vh,760px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-highest shadow-forest-glow"
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="pipeline-filter-title"
           >
-            <div className="flex items-center justify-between border-b border-[#d8dce2] bg-white px-4 py-3">
+            <div className="flex items-center justify-between border-b border-outline-variant bg-surface-container-high px-4 py-3">
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                <span className="truncate text-sm text-[#6b7785]">
+                <span id="pipeline-filter-title" className="truncate text-sm font-semibold text-on-surface">
                   {selectedPipeline?.name || 'Pipeline'} | Busca e filtro
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setShowFilterModal(false)}
-                className="rounded p-1 text-[#8b95a5] transition hover:bg-[#f2f4f7] hover:text-[#2e3640]"
+                className="rounded-lg p-1 text-on-surface-variant transition hover:bg-surface-container hover:text-on-surface"
                 aria-label="Fechar filtros"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
@@ -748,10 +757,10 @@ export default function Pipelines() {
             </div>
 
             <div className="flex min-h-0 flex-1">
-              <aside className="w-56 shrink-0 overflow-y-auto border-r border-[#d8dce2] bg-white p-3">
+              <aside className="w-56 shrink-0 overflow-y-auto border-r border-outline-variant bg-surface-container-low p-3">
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-[#2e3640]">Leads ativos</p>
-                  <span className="material-symbols-outlined text-base text-[#8b95a5]">edit</span>
+                  <p className="text-sm font-semibold text-on-surface">Leads ativos</p>
+                  <span className="material-symbols-outlined text-base text-on-surface-variant">edit</span>
                 </div>
                 <div className="space-y-1">
                   {[
@@ -765,10 +774,10 @@ export default function Pipelines() {
                       key={item.id}
                       type="button"
                       onClick={() => applyQuickFilter(item.id)}
-                      className={`flex w-full rounded px-2 py-1.5 text-left text-sm transition ${
+                      className={`flex w-full rounded-lg px-2 py-1.5 text-left text-sm transition ${
                         quickFilterPreset === item.id
-                          ? 'bg-[#edf3ff] font-semibold text-[#2e5aac]'
-                          : 'text-[#4f5d6f] hover:bg-[#f5f7fa]'
+                          ? PIPELINE_QUICK_FILTER_ACTIVE
+                          : PIPELINE_QUICK_FILTER_IDLE
                       }`}
                     >
                       {item.label}
@@ -777,64 +786,64 @@ export default function Pipelines() {
                 </div>
               </aside>
 
-              <div className="min-w-0 flex-1 overflow-y-auto bg-white p-4">
-                <p className="mb-4 text-xs font-bold tracking-wide text-[#8b95a5]">
-                  PROPRIEDADES DE LEAD
+              <div className="min-w-0 flex-1 overflow-y-auto bg-surface-container-lowest p-4">
+                <p className="mb-4 text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Propriedades de lead
                 </p>
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Nome do lead</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Nome do lead</label>
                     <input
                       type="text"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       placeholder="Buscar por nome, contato ou telefone"
-                      className={filterFieldClass}
+                      className={PIPELINE_MODAL_INPUT}
                     />
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Período</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Período</label>
                     <div className="grid flex-1 grid-cols-2 gap-2">
                       <input
                         type="date"
                         value={dateFromFilter}
                         onChange={(e) => setDateFromFilter(e.target.value)}
-                        className={filterFieldClass}
+                        className={PIPELINE_MODAL_INPUT}
                       />
                       <input
                         type="date"
                         value={dateToFilter}
                         onChange={(e) => setDateToFilter(e.target.value)}
-                        className={filterFieldClass}
+                        className={PIPELINE_MODAL_INPUT}
                       />
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Horário</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Horário</label>
                     <div className="grid flex-1 grid-cols-2 gap-2">
                       <input
                         type="time"
                         value={timeFromFilter}
                         onChange={(e) => setTimeFromFilter(e.target.value)}
-                        className={filterFieldClass}
+                        className={PIPELINE_MODAL_INPUT}
                       />
                       <input
                         type="time"
                         value={timeToFilter}
                         onChange={(e) => setTimeToFilter(e.target.value)}
-                        className={filterFieldClass}
+                        className={PIPELINE_MODAL_INPUT}
                       />
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Etapas ativas</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Etapas ativas</label>
                     <select
                       value={stageFilter}
                       onChange={(e) => setStageFilter(e.target.value)}
-                      className={filterFieldClass}
+                      className={PIPELINE_MODAL_SELECT}
                     >
                       <option value="ALL">Todas as etapas</option>
                       {(selectedPipeline?.stages || [])
@@ -849,11 +858,11 @@ export default function Pipelines() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Status</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Status</label>
                     <select
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value as Deal['status'] | 'ALL')}
-                      className={filterFieldClass}
+                      className={PIPELINE_MODAL_SELECT}
                     >
                       <option value="ALL">Todos os status</option>
                       <option value="OPEN">Abertos</option>
@@ -864,11 +873,11 @@ export default function Pipelines() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Lead fonte</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Lead fonte</label>
                     <select
                       value={sourceFilter}
                       onChange={(e) => setSourceFilter(e.target.value)}
-                      className={filterFieldClass}
+                      className={PIPELINE_MODAL_SELECT}
                     >
                       <option value="ALL">Todos os valores</option>
                       {availableSourceOptions.map((source) => (
@@ -880,11 +889,11 @@ export default function Pipelines() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Responsável</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Responsável</label>
                     <select
                       value={responsibleFilter}
                       onChange={(e) => setResponsibleFilter(e.target.value as any)}
-                      className={filterFieldClass}
+                      className={PIPELINE_MODAL_SELECT}
                     >
                       <option value="ALL">Todos os usuários</option>
                       <option value="UNASSIGNED">Sem responsável</option>
@@ -897,11 +906,11 @@ export default function Pipelines() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Criado por</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Criado por</label>
                     <select
                       value={createdByFilter}
                       onChange={(e) => setCreatedByFilter(e.target.value as any)}
-                      className={filterFieldClass}
+                      className={PIPELINE_MODAL_SELECT}
                     >
                       <option value="ALL">Todos os usuários</option>
                       <option value="UNKNOWN">Sem criador identificado</option>
@@ -914,7 +923,7 @@ export default function Pipelines() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className={filterLabelClass}>Valor de venda</label>
+                    <label className={PIPELINE_FILTER_LABEL}>Valor de venda</label>
                     <div className="grid flex-1 grid-cols-2 gap-2">
                       <input
                         type="number"
@@ -923,7 +932,7 @@ export default function Pipelines() {
                         value={valueMinFilter}
                         onChange={(e) => setValueMinFilter(e.target.value)}
                         placeholder="Mínimo"
-                        className={filterFieldClass}
+                        className={PIPELINE_MODAL_INPUT}
                       />
                       <input
                         type="number"
@@ -932,54 +941,52 @@ export default function Pipelines() {
                         value={valueMaxFilter}
                         onChange={(e) => setValueMaxFilter(e.target.value)}
                         placeholder="Máximo"
-                        className={filterFieldClass}
+                        className={PIPELINE_MODAL_INPUT}
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <aside className="flex w-60 shrink-0 flex-col border-l border-[#d8dce2] bg-white">
-                <div className="border-b border-[#e8ebf0] px-3 py-3">
+              <aside className="flex w-60 shrink-0 flex-col border-l border-outline-variant bg-surface-container-low">
+                <div className="border-b border-outline-variant px-3 py-3">
                   <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xs font-bold tracking-wide text-[#8b95a5]">TAGS</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">Tags</p>
                   </div>
                   <input
                     type="text"
                     value={tagSearchTerm}
                     onChange={(e) => setTagSearchTerm(e.target.value)}
                     placeholder="Localizar tags"
-                    className={filterFieldClass}
+                    className={PIPELINE_MODAL_INPUT}
                   />
                 </div>
                 <div className="flex-1 overflow-y-auto p-2">
                   <button
                     type="button"
                     onClick={() => setTagFilter('ALL')}
-                    className={`mb-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm transition ${
-                      tagFilter === 'ALL'
-                        ? 'bg-[#edf3ff] font-semibold text-[#2e5aac]'
-                        : 'text-[#4f5d6f] hover:bg-[#f5f7fa]'
+                    className={`mb-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm transition ${
+                      tagFilter === 'ALL' ? PIPELINE_QUICK_FILTER_ACTIVE : PIPELINE_QUICK_FILTER_IDLE
                     }`}
                   >
                     <span>Todas as tags</span>
                   </button>
                   {visibleTagOptions.length === 0 ? (
-                    <p className="px-2 py-4 text-center text-xs text-[#8b95a5]">Nenhuma tag encontrada</p>
+                    <p className="px-2 py-4 text-center text-xs text-on-surface-variant">
+                      Nenhuma tag encontrada
+                    </p>
                   ) : (
                     visibleTagOptions.map((tag) => (
                       <button
                         key={tag.id}
                         type="button"
                         onClick={() => setTagFilter((prev) => (prev === tag.id ? 'ALL' : tag.id))}
-                        className={`mb-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm transition ${
-                          tagFilter === tag.id
-                            ? 'bg-[#edf3ff] font-semibold text-[#2e5aac]'
-                            : 'text-[#4f5d6f] hover:bg-[#f5f7fa]'
+                        className={`mb-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm transition ${
+                          tagFilter === tag.id ? PIPELINE_QUICK_FILTER_ACTIVE : PIPELINE_QUICK_FILTER_IDLE
                         }`}
                       >
                         <span className="truncate">{tag.name}</span>
-                        <span className="ml-2 shrink-0 text-xs text-[#8b95a5]">{tag.count}</span>
+                        <span className="ml-2 shrink-0 text-xs text-on-surface-variant">{tag.count}</span>
                       </button>
                     ))
                   )}
@@ -987,8 +994,8 @@ export default function Pipelines() {
               </aside>
             </div>
 
-            <div className="flex items-center justify-between border-t border-[#d8dce2] bg-white px-4 py-3">
-              <p className="text-xs text-[#8b95a5]">
+            <div className="flex items-center justify-between border-t border-outline-variant bg-surface-container-high px-4 py-3">
+              <p className="text-xs text-on-surface-variant">
                 {filteredDealsSummary.count} lead{filteredDealsSummary.count === 1 ? '' : 's'} encontrado
                 {filteredDealsSummary.count === 1 ? '' : 's'} — {formatCurrency(filteredDealsSummary.total)}
               </p>
@@ -996,14 +1003,14 @@ export default function Pipelines() {
                 <button
                   type="button"
                   onClick={resetPipelineFilters}
-                  className="rounded border border-[#d5dbe3] bg-white px-4 py-2 text-sm font-medium text-[#4f5d6f] transition hover:bg-[#f5f7fa]"
+                  className="rounded-lg border border-outline-variant bg-surface-container-highest px-4 py-2 text-sm font-semibold text-on-surface-variant transition hover:bg-surface-container"
                 >
                   Limpar filtros
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowFilterModal(false)}
-                  className="rounded bg-[#4c8bf5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#3b7be0]"
+                  className="primary-gradient-channel rounded-lg px-4 py-2 text-sm font-bold text-[#003919] shadow-emerald-send transition hover:brightness-110"
                 >
                   Aplicar
                 </button>
@@ -1180,12 +1187,6 @@ export default function Pipelines() {
     </div>
   );
 }
-
-const PIPELINE_MODAL_LABEL =
-  'mb-1.5 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant';
-const PIPELINE_MODAL_INPUT =
-  'w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/55 outline-none transition focus:border-primary/45 focus:ring-1 focus:ring-primary/25';
-const PIPELINE_MODAL_SELECT = `${PIPELINE_MODAL_INPUT} cursor-pointer`;
 
 // Modal para criar pipeline
 function CreatePipelineModal({
