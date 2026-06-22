@@ -163,6 +163,8 @@ function countActivePipelineFilters(filters: {
   createdByFilter: string;
   sourceFilter: string;
   tagFilter: string;
+  valueMin: string;
+  valueMax: string;
 }): number {
   let count = 0;
   if (filters.searchTerm.trim()) count += 1;
@@ -173,8 +175,11 @@ function countActivePipelineFilters(filters: {
   if (filters.createdByFilter !== 'ALL') count += 1;
   if (filters.sourceFilter !== 'ALL') count += 1;
   if (filters.tagFilter !== 'ALL') count += 1;
+  if (filters.valueMin.trim() || filters.valueMax.trim()) count += 1;
   return count;
 }
+
+type QuickFilterPreset = 'all' | 'active' | 'mine' | 'won' | 'lost';
 
 interface PipelineCustomField {
   id: string;
@@ -198,10 +203,15 @@ export default function Pipelines() {
   const [draggedDeal, setDraggedDeal] = useState<{ dealId: string; stageId: string } | null>(null);
   const [selectedDealIds, setSelectedDealIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
   const [showPipelineDropdown, setShowPipelineDropdown] = useState(false);
+  const [quickFilterPreset, setQuickFilterPreset] = useState<QuickFilterPreset>('active');
+  const [tagSearchTerm, setTagSearchTerm] = useState('');
+  const [valueMinFilter, setValueMinFilter] = useState('');
+  const [valueMaxFilter, setValueMaxFilter] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [responsibleFilter, setResponsibleFilter] = useState<'ALL' | 'UNASSIGNED' | string>('ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | Deal['status']>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | Deal['status']>('OPEN');
   const [stageFilter, setStageFilter] = useState<'ALL' | string>('ALL');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
@@ -211,20 +221,23 @@ export default function Pipelines() {
   const [sourceFilter, setSourceFilter] = useState<'ALL' | string>('ALL');
   const [tagFilter, setTagFilter] = useState<'ALL' | string>('ALL');
   const [systemUsers, setSystemUsers] = useState<Array<{ id: string; name: string }>>([]);
-  const filterPanelRef = useRef<HTMLDivElement>(null);
   const pipelineDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchPipelines();
     const loadUsers = async () => {
       try {
-        const response = await api.get('/api/users', { params: { limit: 300 } });
-        const users = response.data?.users || response.data || [];
+        const [usersRes, meRes] = await Promise.all([
+          api.get('/api/users', { params: { limit: 300 } }),
+          api.get('/api/auth/me'),
+        ]);
+        const users = usersRes.data?.users || usersRes.data || [];
         setSystemUsers(
           users
             .map((user: { id: string; name: string }) => ({ id: user.id, name: user.name }))
             .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)),
         );
+        setCurrentUserId(meRes.data?.id || null);
       } catch (error) {
         console.error('Erro ao carregar usuários para filtros:', error);
       }
@@ -235,9 +248,6 @@ export default function Pipelines() {
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (showFilterPanel && filterPanelRef.current && !filterPanelRef.current.contains(target)) {
-        setShowFilterPanel(false);
-      }
       if (
         showPipelineDropdown &&
         pipelineDropdownRef.current &&
@@ -248,7 +258,7 @@ export default function Pipelines() {
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showFilterPanel, showPipelineDropdown]);
+  }, [showPipelineDropdown]);
 
   const fetchPipelines = async () => {
     try {
@@ -290,12 +300,56 @@ export default function Pipelines() {
     setCreatedByFilter('ALL');
     setSourceFilter('ALL');
     setTagFilter('ALL');
+    setTagSearchTerm('');
+    setValueMinFilter('');
+    setValueMaxFilter('');
+    setQuickFilterPreset('all');
+  };
+
+  const applyQuickFilter = (preset: QuickFilterPreset) => {
+    setQuickFilterPreset(preset);
+    setSearchTerm('');
+    setStageFilter('ALL');
+    setDateFromFilter('');
+    setDateToFilter('');
+    setTimeFromFilter('');
+    setTimeToFilter('');
+    setCreatedByFilter('ALL');
+    setSourceFilter('ALL');
+    setTagFilter('ALL');
+    setTagSearchTerm('');
+    setValueMinFilter('');
+    setValueMaxFilter('');
+
+    switch (preset) {
+      case 'active':
+        setStatusFilter('OPEN');
+        setResponsibleFilter('ALL');
+        break;
+      case 'mine':
+        setStatusFilter('OPEN');
+        setResponsibleFilter(currentUserId || 'ALL');
+        break;
+      case 'won':
+        setStatusFilter('WON');
+        setResponsibleFilter('ALL');
+        break;
+      case 'lost':
+        setStatusFilter('LOST');
+        setResponsibleFilter('ALL');
+        break;
+      default:
+        setStatusFilter('ALL');
+        setResponsibleFilter('ALL');
+        break;
+    }
   };
 
   const handlePipelineSelect = async (pipeline: Pipeline) => {
     setSelectedPipeline(pipeline);
     setSelectedDealIds([]);
     resetPipelineFilters();
+    applyQuickFilter('active');
     setShowPipelineDropdown(false);
     await fetchPipelineDetails(pipeline.id);
   };
@@ -347,22 +401,34 @@ export default function Pipelines() {
 
   const availableTagOptions = useMemo(() => {
     if (!selectedPipeline) return [];
-    const map = new Map<string, { id: string; name: string; color?: string }>();
+    const map = new Map<string, { id: string; name: string; color?: string; count: number }>();
     selectedPipeline.stages.forEach((stage) => {
       (stage.deals || []).forEach((deal) => {
         (deal.conversation?.tags || []).forEach((item) => {
           if (item.tag?.id) {
-            map.set(item.tag.id, {
-              id: item.tag.id,
-              name: item.tag.name,
-              color: item.tag.color,
-            });
+            const existing = map.get(item.tag.id);
+            if (existing) {
+              existing.count += 1;
+            } else {
+              map.set(item.tag.id, {
+                id: item.tag.id,
+                name: item.tag.name,
+                color: item.tag.color,
+                count: 1,
+              });
+            }
           }
         });
       });
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [selectedPipeline]);
+
+  const visibleTagOptions = useMemo(() => {
+    const q = tagSearchTerm.trim().toLowerCase();
+    if (!q) return availableTagOptions;
+    return availableTagOptions.filter((tag) => tag.name.toLowerCase().includes(q));
+  }, [availableTagOptions, tagSearchTerm]);
 
   const activeFiltersCount = useMemo(
     () =>
@@ -378,6 +444,8 @@ export default function Pipelines() {
         createdByFilter,
         sourceFilter,
         tagFilter,
+        valueMin: valueMinFilter,
+        valueMax: valueMaxFilter,
       }),
     [
       searchTerm,
@@ -391,6 +459,8 @@ export default function Pipelines() {
       createdByFilter,
       sourceFilter,
       tagFilter,
+      valueMinFilter,
+      valueMaxFilter,
     ],
   );
 
@@ -433,6 +503,14 @@ export default function Pipelines() {
             const hasTag = (deal.conversation?.tags || []).some((item) => item.tag.id === tagFilter);
             if (!hasTag) return false;
           }
+          if (valueMinFilter.trim()) {
+            const min = Number(valueMinFilter);
+            if (!Number.isNaN(min) && Number(deal.value || 0) < min) return false;
+          }
+          if (valueMaxFilter.trim()) {
+            const max = Number(valueMaxFilter);
+            if (!Number.isNaN(max) && Number(deal.value || 0) > max) return false;
+          }
           if (normalizedSearch) {
             const haystack = `${deal.name} ${deal.contact?.name || ''} ${deal.contact?.phone || ''}`.toLowerCase();
             if (!haystack.includes(normalizedSearch)) return false;
@@ -454,7 +532,25 @@ export default function Pipelines() {
     createdByFilter,
     sourceFilter,
     tagFilter,
+    valueMinFilter,
+    valueMaxFilter,
   ]);
+
+  const filteredDealsSummary = useMemo(() => {
+    let count = 0;
+    let total = 0;
+    filteredStages.forEach((stage) => {
+      (stage.deals || []).forEach((deal) => {
+        count += 1;
+        total += Number(deal.value || 0);
+      });
+    });
+    return { count, total };
+  }, [filteredStages]);
+
+  const filterFieldClass =
+    'w-full rounded border border-[#d5dbe3] bg-white px-2.5 py-1.5 text-sm text-[#2e3640] outline-none transition focus:border-[#4c8bf5]';
+  const filterLabelClass = 'w-40 shrink-0 text-sm text-[#6b7785]';
 
   const handleDragStart = (dealId: string, stageId: string) => {
     setDraggedDeal({ dealId, stageId });
@@ -601,208 +697,321 @@ export default function Pipelines() {
         </div>
       </div>
 
-      <div className="mb-4 rounded-xl border border-outline-variant bg-surface-container-low p-3">
-        <div className="relative" ref={filterPanelRef}>
-          <button
-            type="button"
-            onClick={() => setShowFilterPanel((prev) => !prev)}
-            className="flex w-full items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2.5 text-left text-sm text-on-surface-variant transition hover:bg-surface-container"
-          >
-            <span className="material-symbols-outlined text-base">search</span>
-            <span className="flex-1">
-              {activeFiltersCount > 0
-                ? `Busca e filtros (${activeFiltersCount} ativo${activeFiltersCount > 1 ? 's' : ''})`
-                : searchTerm
-                  ? `Busca: ${searchTerm}`
-                  : 'Busca e filtro'}
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2.5">
+        <button
+          type="button"
+          onClick={() => setShowFilterModal(true)}
+          className="flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-[#d5dbe3] bg-white px-3 py-2 text-left text-sm text-[#6b7785] shadow-sm transition hover:border-[#b8c2cf]"
+        >
+          <span className="material-symbols-outlined text-base text-[#8b95a5]">search</span>
+          <span className="flex-1 truncate">
+            {selectedPipeline?.name || 'Pipeline'} | Busca e filtro
+            {searchTerm ? ` — ${searchTerm}` : ''}
+          </span>
+          {activeFiltersCount > 0 && (
+            <span className="rounded-full bg-[#4c8bf5] px-2 py-0.5 text-[10px] font-bold text-white">
+              {activeFiltersCount}
             </span>
-            <span className="material-symbols-outlined text-base">
-              {showFilterPanel ? 'expand_less' : 'expand_more'}
-            </span>
-          </button>
+          )}
+        </button>
+        <div className="text-sm font-medium text-on-surface-variant">
+          {filteredDealsSummary.count} lead{filteredDealsSummary.count === 1 ? '' : 's'}:{' '}
+          <span className="text-primary-fixed-dim">
+            {formatCurrency(filteredDealsSummary.total)}
+          </span>
+        </div>
+      </div>
 
-          {showFilterPanel && (
-            <div className="absolute left-0 right-0 z-20 mt-2 max-h-[min(70vh,520px)] overflow-y-auto rounded-xl border border-outline-variant bg-surface-container-high p-3 shadow-forest-glow">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Buscar
-                  </label>
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Lead, contato, telefone..."
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  />
+      {showFilterModal && (
+        <div
+          className="fixed inset-0 z-[1200] flex items-start justify-center bg-black/45 p-4 pt-8"
+          onClick={() => setShowFilterModal(false)}
+        >
+          <div
+            className="flex h-[min(86vh,760px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-[#eef1f5] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#d8dce2] bg-white px-4 py-3">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="truncate text-sm text-[#6b7785]">
+                  {selectedPipeline?.name || 'Pipeline'} | Busca e filtro
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFilterModal(false)}
+                className="rounded p-1 text-[#8b95a5] transition hover:bg-[#f2f4f7] hover:text-[#2e3640]"
+                aria-label="Fechar filtros"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <div className="flex min-h-0 flex-1">
+              <aside className="w-56 shrink-0 overflow-y-auto border-r border-[#d8dce2] bg-white p-3">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-[#2e3640]">Leads ativos</p>
+                  <span className="material-symbols-outlined text-base text-[#8b95a5]">edit</span>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Responsável
-                  </label>
-                  <select
-                    value={responsibleFilter}
-                    onChange={(e) => setResponsibleFilter(e.target.value as any)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  >
-                    <option value="ALL">Todos</option>
-                    <option value="UNASSIGNED">Sem responsável</option>
-                    {availableResponsibleOptions.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="space-y-1">
+                  {[
+                    { id: 'active' as const, label: 'Leads ativos' },
+                    { id: 'mine' as const, label: 'Meus leads' },
+                    { id: 'won' as const, label: 'Leads ganhos' },
+                    { id: 'lost' as const, label: 'Leads perdidos' },
+                    { id: 'all' as const, label: 'Todos os leads' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => applyQuickFilter(item.id)}
+                      className={`flex w-full rounded px-2 py-1.5 text-left text-sm transition ${
+                        quickFilterPreset === item.id
+                          ? 'bg-[#edf3ff] font-semibold text-[#2e5aac]'
+                          : 'text-[#4f5d6f] hover:bg-[#f5f7fa]'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Criado por
-                  </label>
-                  <select
-                    value={createdByFilter}
-                    onChange={(e) => setCreatedByFilter(e.target.value as any)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  >
-                    <option value="ALL">Todos</option>
-                    <option value="UNKNOWN">Sem criador identificado</option>
-                    {availableCreatedByOptions.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Fonte do lead
-                  </label>
-                  <select
-                    value={sourceFilter}
-                    onChange={(e) => setSourceFilter(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  >
-                    <option value="ALL">Todas</option>
-                    {availableSourceOptions.map((source) => (
-                      <option key={source} value={source}>
-                        {source}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Tag
-                  </label>
-                  <select
-                    value={tagFilter}
-                    onChange={(e) => setTagFilter(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  >
-                    <option value="ALL">Todas</option>
-                    {availableTagOptions.map((tag) => (
-                      <option key={tag.id} value={tag.id}>
-                        {tag.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Status
-                  </label>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as any)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  >
-                    <option value="ALL">Todos</option>
-                    <option value="OPEN">Abertos</option>
-                    <option value="WON">Ganhos</option>
-                    <option value="LOST">Perdidos</option>
-                    <option value="ABANDONED">Abandonados</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Etapa
-                  </label>
-                  <select
-                    value={stageFilter}
-                    onChange={(e) => setStageFilter(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  >
-                    <option value="ALL">Todas</option>
-                    {(selectedPipeline?.stages || [])
-                      .filter((s) => s.isActive)
-                      .sort((a, b) => a.order - b.order)
-                      .map((stage) => (
-                        <option key={stage.id} value={stage.id}>
-                          {stage.name}
+              </aside>
+
+              <div className="min-w-0 flex-1 overflow-y-auto bg-white p-4">
+                <p className="mb-4 text-xs font-bold tracking-wide text-[#8b95a5]">
+                  PROPRIEDADES DE LEAD
+                </p>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Nome do lead</label>
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Buscar por nome, contato ou telefone"
+                      className={filterFieldClass}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Período</label>
+                    <div className="grid flex-1 grid-cols-2 gap-2">
+                      <input
+                        type="date"
+                        value={dateFromFilter}
+                        onChange={(e) => setDateFromFilter(e.target.value)}
+                        className={filterFieldClass}
+                      />
+                      <input
+                        type="date"
+                        value={dateToFilter}
+                        onChange={(e) => setDateToFilter(e.target.value)}
+                        className={filterFieldClass}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Horário</label>
+                    <div className="grid flex-1 grid-cols-2 gap-2">
+                      <input
+                        type="time"
+                        value={timeFromFilter}
+                        onChange={(e) => setTimeFromFilter(e.target.value)}
+                        className={filterFieldClass}
+                      />
+                      <input
+                        type="time"
+                        value={timeToFilter}
+                        onChange={(e) => setTimeToFilter(e.target.value)}
+                        className={filterFieldClass}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Etapas ativas</label>
+                    <select
+                      value={stageFilter}
+                      onChange={(e) => setStageFilter(e.target.value)}
+                      className={filterFieldClass}
+                    >
+                      <option value="ALL">Todas as etapas</option>
+                      {(selectedPipeline?.stages || [])
+                        .filter((s) => s.isActive)
+                        .sort((a, b) => a.order - b.order)
+                        .map((stage) => (
+                          <option key={stage.id} value={stage.id}>
+                            {stage.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Status</label>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value as Deal['status'] | 'ALL')}
+                      className={filterFieldClass}
+                    >
+                      <option value="ALL">Todos os status</option>
+                      <option value="OPEN">Abertos</option>
+                      <option value="WON">Ganhos</option>
+                      <option value="LOST">Perdidos</option>
+                      <option value="ABANDONED">Abandonados</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Lead fonte</label>
+                    <select
+                      value={sourceFilter}
+                      onChange={(e) => setSourceFilter(e.target.value)}
+                      className={filterFieldClass}
+                    >
+                      <option value="ALL">Todos os valores</option>
+                      {availableSourceOptions.map((source) => (
+                        <option key={source} value={source}>
+                          {source}
                         </option>
                       ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Data inicial
-                  </label>
-                  <input
-                    type="date"
-                    value={dateFromFilter}
-                    onChange={(e) => setDateFromFilter(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Data final
-                  </label>
-                  <input
-                    type="date"
-                    value={dateToFilter}
-                    onChange={(e) => setDateToFilter(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Hora inicial
-                  </label>
-                  <input
-                    type="time"
-                    value={timeFromFilter}
-                    onChange={(e) => setTimeFromFilter(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    Hora final
-                  </label>
-                  <input
-                    type="time"
-                    value={timeToFilter}
-                    onChange={(e) => setTimeToFilter(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/40"
-                  />
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Responsável</label>
+                    <select
+                      value={responsibleFilter}
+                      onChange={(e) => setResponsibleFilter(e.target.value as any)}
+                      className={filterFieldClass}
+                    >
+                      <option value="ALL">Todos os usuários</option>
+                      <option value="UNASSIGNED">Sem responsável</option>
+                      {availableResponsibleOptions.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Criado por</label>
+                    <select
+                      value={createdByFilter}
+                      onChange={(e) => setCreatedByFilter(e.target.value as any)}
+                      className={filterFieldClass}
+                    >
+                      <option value="ALL">Todos os usuários</option>
+                      <option value="UNKNOWN">Sem criador identificado</option>
+                      {availableCreatedByOptions.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className={filterLabelClass}>Valor de venda</label>
+                    <div className="grid flex-1 grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={valueMinFilter}
+                        onChange={(e) => setValueMinFilter(e.target.value)}
+                        placeholder="Mínimo"
+                        className={filterFieldClass}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={valueMaxFilter}
+                        onChange={(e) => setValueMaxFilter(e.target.value)}
+                        placeholder="Máximo"
+                        className={filterFieldClass}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <p className="mt-3 text-[11px] text-on-surface-variant">
-                Data e hora usam a criação do negócio. Se informar só hora, filtra pelo horário em qualquer dia.
+
+              <aside className="flex w-60 shrink-0 flex-col border-l border-[#d8dce2] bg-white">
+                <div className="border-b border-[#e8ebf0] px-3 py-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-bold tracking-wide text-[#8b95a5]">TAGS</p>
+                  </div>
+                  <input
+                    type="text"
+                    value={tagSearchTerm}
+                    onChange={(e) => setTagSearchTerm(e.target.value)}
+                    placeholder="Localizar tags"
+                    className={filterFieldClass}
+                  />
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  <button
+                    type="button"
+                    onClick={() => setTagFilter('ALL')}
+                    className={`mb-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm transition ${
+                      tagFilter === 'ALL'
+                        ? 'bg-[#edf3ff] font-semibold text-[#2e5aac]'
+                        : 'text-[#4f5d6f] hover:bg-[#f5f7fa]'
+                    }`}
+                  >
+                    <span>Todas as tags</span>
+                  </button>
+                  {visibleTagOptions.length === 0 ? (
+                    <p className="px-2 py-4 text-center text-xs text-[#8b95a5]">Nenhuma tag encontrada</p>
+                  ) : (
+                    visibleTagOptions.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => setTagFilter((prev) => (prev === tag.id ? 'ALL' : tag.id))}
+                        className={`mb-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm transition ${
+                          tagFilter === tag.id
+                            ? 'bg-[#edf3ff] font-semibold text-[#2e5aac]'
+                            : 'text-[#4f5d6f] hover:bg-[#f5f7fa]'
+                        }`}
+                      >
+                        <span className="truncate">{tag.name}</span>
+                        <span className="ml-2 shrink-0 text-xs text-[#8b95a5]">{tag.count}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </aside>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-[#d8dce2] bg-white px-4 py-3">
+              <p className="text-xs text-[#8b95a5]">
+                {filteredDealsSummary.count} lead{filteredDealsSummary.count === 1 ? '' : 's'} encontrado
+                {filteredDealsSummary.count === 1 ? '' : 's'} — {formatCurrency(filteredDealsSummary.total)}
               </p>
-              <div className="mt-3 flex justify-end">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={resetPipelineFilters}
-                  className="rounded-lg border border-outline-variant bg-surface-container-highest px-3 py-2 text-xs font-semibold text-on-surface-variant transition hover:bg-surface-container"
+                  className="rounded border border-[#d5dbe3] bg-white px-4 py-2 text-sm font-medium text-[#4f5d6f] transition hover:bg-[#f5f7fa]"
                 >
                   Limpar filtros
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFilterModal(false)}
+                  className="rounded bg-[#4c8bf5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#3b7be0]"
+                >
+                  Aplicar
+                </button>
               </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Barra de ações em massa para deals selecionados */}
       {selectedPipeline && selectedDealIds.length > 0 && (
