@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../utils/api';
 import { useConfirm } from '../components/ui/ConfirmProvider';
+import { PageLoadingFallback } from '../components/ui/PageSkeleton';
 
 interface Webhook {
   id: string;
@@ -226,8 +227,8 @@ export default function Integrations() {
     alert('Copiado para a área de transferência!');
   };
 
-  if (loading) {
-    return <div className="p-5 text-on-surface-variant">Carregando...</div>;
+  if (loading && webhooks.length === 0) {
+    return <PageLoadingFallback />;
   }
 
   return (

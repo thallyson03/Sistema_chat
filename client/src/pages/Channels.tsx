@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Socket } from 'socket.io-client';
-import { createAuthenticatedSocket } from '../utils/socket';
+import { useSocket } from '../contexts/SocketProvider';
+import { useSectorsQuery } from '../hooks/queries';
+import { PageLoadingFallback } from '../components/ui/PageSkeleton';
 import api from '../utils/api';
 import { getPublicApiOrigin } from '../config/publicUrl';
 
@@ -91,6 +93,8 @@ function channelMetaLine(channel: Channel): string {
 
 export default function Channels() {
   const metaWebhookUrl = 'https://crm.chat.chatia.qzz.io/api/webhooks/whatsapp';
+  const { socket } = useSocket();
+  const { data: sectors = [] } = useSectorsQuery();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [healthPanel, setHealthPanel] = useState<ChannelHealthPanel | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,7 +103,6 @@ export default function Channels() {
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [checkingConnection, setCheckingConnection] = useState(false);
-  const [sectors, setSectors] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     type: 'WHATSAPP',
@@ -170,7 +173,6 @@ export default function Channels() {
 
   useEffect(() => {
     fetchChannels();
-    fetchSectors();
     fetchHealthPanel();
   }, []);
 
@@ -181,10 +183,10 @@ export default function Channels() {
   }, [successMessage]);
 
   useEffect(() => {
-    const socket: Socket = createAuthenticatedSocket();
+    if (!socket) return;
     socketRef.current = socket;
 
-    socket.on('qrcode_update', (data: { channelId: string; qrcode: string | null }) => {
+    const onQrcodeUpdate = (data: { channelId: string; qrcode: string | null }) => {
       if (!qrFlowRef.current.active || data.channelId !== qrFlowRef.current.channelId) {
         return;
       }
@@ -210,9 +212,9 @@ export default function Channels() {
       }
       setQrCode(data.qrcode);
       setShowQRModal(true);
-    });
+    };
 
-    socket.on('channel_status_update', (data: { channelId: string; status: string }) => {
+    const onChannelStatusUpdate = (data: { channelId: string; status: string }) => {
       if (qrFlowRef.current.active && data.channelId === qrFlowRef.current.channelId) {
         const isConnected =
           data.status === 'ACTIVE' ||
@@ -230,23 +232,18 @@ export default function Channels() {
         fetchChannels();
         fetchHealthPanel();
       }
-    });
+    };
+
+    socket.on('qrcode_update', onQrcodeUpdate);
+    socket.on('channel_status_update', onChannelStatusUpdate);
 
     return () => {
       stopConnectionCheck();
-      socket.disconnect();
+      socket.off('qrcode_update', onQrcodeUpdate);
+      socket.off('channel_status_update', onChannelStatusUpdate);
       socketRef.current = null;
     };
-  }, [closeQrModal, stopConnectionCheck]);
-
-  const fetchSectors = async () => {
-    try {
-      const response = await api.get('/api/sectors');
-      setSectors(response.data || []);
-    } catch (error) {
-      console.error('Erro ao carregar setores:', error);
-    }
-  };
+  }, [socket, closeQrModal, stopConnectionCheck]);
 
   const fetchChannels = async () => {
     try {
@@ -488,12 +485,8 @@ export default function Channels() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center px-8 font-body text-on-surface-variant">
-        <p className="text-sm">Carregando canais...</p>
-      </div>
-    );
+  if (loading && channels.length === 0) {
+    return <PageLoadingFallback />;
   }
 
   return (
@@ -816,7 +809,7 @@ export default function Channels() {
                   className="w-full rounded-lg border border-[rgba(63,73,69,0.35)] bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                 >
                   <option value="">Nenhum setor principal</option>
-                  {sectors.map((sector) => (
+                  {sectors.map((sector: { id: string; name: string; color?: string }) => (
                     <option key={sector.id} value={sector.id}>
                       {sector.name}
                     </option>
@@ -829,7 +822,7 @@ export default function Channels() {
                   Setores secundários (opcional)
                 </label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {sectors.map((sector) => {
+                  {sectors.map((sector: { id: string; name: string; color?: string }) => {
                     const isPrimary = formData.primarySectorId === sector.id;
                     const checked = formData.secondarySectorIds.includes(sector.id);
                     return (

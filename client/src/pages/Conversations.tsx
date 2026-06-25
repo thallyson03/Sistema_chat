@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Socket } from 'socket.io-client';
-import { createAuthenticatedSocket } from '../utils/socket';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import api from '../utils/api';
+import { useAuth } from '../contexts/AuthProvider';
+import { useSocket } from '../contexts/SocketProvider';
+import { useChannelsQuery, useSectorsQuery } from '../hooks/queries';
+import { ConversationsSkeleton } from '../components/ui/PageSkeleton';
 import { getPublicApiOrigin, resolveMessageMediaPreviewUrl, isDirectlyRenderableMediaUrl, resolveMediaMetadataUrl } from '../config/publicUrl';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import QuickRepliesModal from '../components/QuickRepliesModal';
@@ -238,6 +242,7 @@ export default function Conversations() {
   // Base da API (mesma usada pelo axios)
   const apiBase = (api.defaults.baseURL || '').replace(/\/$/, '') || getPublicApiOrigin();
   const confirm = useConfirm();
+  const queryClient = useQueryClient();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkOpenedRef = useRef<string | null>(null);
@@ -276,8 +281,10 @@ export default function Conversations() {
   const [showNewConversationModal, setShowNewConversationModal] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loadingNewConversation, setLoadingNewConversation] = useState(false);
-  const [channels, setChannels] = useState<any[]>([]);
-  const [sectors, setSectors] = useState<any[]>([]);
+  const { user: currentUser } = useAuth();
+  const { socket } = useSocket();
+  const { data: channels = [] } = useChannelsQuery();
+  const { data: sectors = [] } = useSectorsQuery();
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const [audioState, setAudioState] = useState<
     Record<string, { playing: boolean; currentTime: number; duration: number }>
@@ -310,7 +317,6 @@ export default function Conversations() {
   const statusFilterRef = useRef<string>('ALL');
   const fetchConversationsRef = useRef<(filterOverride?: string) => Promise<void>>(async () => {});
   const conversationsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
@@ -447,10 +453,7 @@ export default function Conversations() {
 
   useEffect(() => {
     fetchConversations();
-    fetchChannels();
-    fetchSectors();
 
-    // Listener para selecionar conversa via evento customizado (usado ao clicar em telefone no DealDetail)
     const handleSelectConversation = (event: Event) => {
       const customEvent = event as CustomEvent<{ conversationId: string }>;
       const { conversationId } = customEvent.detail;
@@ -473,24 +476,32 @@ export default function Conversations() {
 
     window.addEventListener('selectConversation', handleSelectConversation);
 
-    // Conectar ao Socket.IO para atualizações em tempo real
-    const socket: Socket = createAuthenticatedSocket();
+    return () => {
+      window.removeEventListener('selectConversation', handleSelectConversation);
+      if (conversationsRefreshTimeoutRef.current) {
+        clearTimeout(conversationsRefreshTimeoutRef.current);
+        conversationsRefreshTimeoutRef.current = null;
+      }
+    };
+  }, [queueConversationsRefresh]);
+
+  useEffect(() => {
+    if (!socket) return;
 
     socketRef.current = socket;
 
-    socket.on('connect', () => {
+    const onConnect = () => {
       console.log('✅ Conectado ao Socket.IO');
       const activeConversationId = currentConversationIdRef.current;
       if (activeConversationId) {
         socket.emit('subscribe_conversation', activeConversationId);
       }
-    });
+    };
 
-    socket.on('new_message', async (data: { conversationId: string; messageId?: string }) => {
+    const onNewMessage = async (data: { conversationId: string; messageId?: string }) => {
       console.log('📨 Nova mensagem recebida via Socket.IO:', data);
       const currentId = currentConversationIdRef.current;
 
-      // Se a mensagem é da conversa atualmente selecionada, anexar só a nova linha (evita recarregar lista e “pulo” de scroll)
       if (currentId && data.conversationId === currentId) {
         try {
           if (data.messageId) {
@@ -513,8 +524,7 @@ export default function Conversations() {
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg].sort(
-                (a, b) =>
-                  new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+                (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
               );
             });
           } else {
@@ -532,115 +542,102 @@ export default function Conversations() {
           await fetchMessages(currentId, { reset: true, silent: true });
           if (away) setNewMessagesBelowCount((n) => n + 1);
         }
-        // Se a conversa está aberta, marcar como lida automaticamente
         try {
           await api.put(`/api/messages/conversation/${currentId}/read`);
-          // Atualizar estado local para não mostrar badge
-          setConversations(prev => 
-            prev.map(conv => 
-              conv.id === currentId 
-                ? { ...conv, unreadCount: 0 }
-                : conv
-            )
+          setConversations((prev) =>
+            prev.map((conv) => (conv.id === currentId ? { ...conv, unreadCount: 0 } : conv)),
           );
         } catch (error: any) {
           console.error('❌ Erro ao marcar conversa como lida:', error);
         }
       }
-      
-      // Atualizar lista de conversas com debounce para evitar tempestade de requests.
-      queueConversationsRefresh(250);
-    });
 
-    socket.on('conversation_updated', async () => {
+      queueConversationsRefresh(250);
+    };
+
+    const onConversationUpdated = () => {
       console.log('🔄 Conversa atualizada via Socket.IO');
       queueConversationsRefresh(250);
-    });
+    };
 
-    socket.on(
-      'message_status',
-      (data: {
-        conversationId: string;
-        messageId: string;
-        status: string;
-        sendError?: NonNullable<Message['metadata']>['sendError'];
-      }) => {
-        const currentId = currentConversationIdRef.current;
-        if (!currentId || data.conversationId !== currentId) return;
+    const onMessageStatus = (data: {
+      conversationId: string;
+      messageId: string;
+      status: string;
+      sendError?: NonNullable<Message['metadata']>['sendError'];
+    }) => {
+      const currentId = currentConversationIdRef.current;
+      if (!currentId || data.conversationId !== currentId) return;
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === data.messageId
+            ? {
+                ...msg,
+                status: data.status,
+                metadata: data.sendError
+                  ? { ...(msg.metadata || {}), sendError: data.sendError }
+                  : msg.metadata,
+              }
+            : msg,
+        ),
+      );
+    };
 
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === data.messageId
-              ? {
-                  ...msg,
-                  status: data.status,
-                  metadata: data.sendError
-                    ? {
-                        ...(msg.metadata || {}),
-                        sendError: data.sendError,
-                      }
-                    : msg.metadata,
-                }
-              : msg,
-          ),
-        );
-      },
-    );
+    const onMessageUpdated = (data: {
+      conversationId: string;
+      messageId: string;
+      content: string;
+    }) => {
+      const currentId = currentConversationIdRef.current;
+      if (!currentId || data.conversationId !== currentId) return;
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === data.messageId ? { ...msg, content: data.content } : msg)),
+      );
+    };
 
-    socket.on(
-      'message_updated',
-      (data: { conversationId: string; messageId: string; content: string }) => {
-        const currentId = currentConversationIdRef.current;
-        if (!currentId || data.conversationId !== currentId) return;
-
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === data.messageId ? { ...msg, content: data.content } : msg,
-          ),
-        );
-      },
-    );
-
-    socket.on(
-      'contact_presence',
-      (data: {
-        conversationId: string;
-        state: 'composing' | 'recording' | 'available' | 'unavailable' | 'paused' | null;
-      }) => {
-        const currentId = currentConversationIdRef.current;
-        if (!currentId || data.conversationId !== currentId) return;
-
-        if (contactPresenceTimeoutRef.current) {
-          clearTimeout(contactPresenceTimeoutRef.current);
-          contactPresenceTimeoutRef.current = null;
-        }
-
-        if (data.state === 'composing' || data.state === 'recording') {
-          setContactPresence(data.state);
-          contactPresenceTimeoutRef.current = setTimeout(() => {
-            setContactPresence(null);
-            contactPresenceTimeoutRef.current = null;
-          }, 25_000);
-        } else {
+    const onContactPresence = (data: {
+      conversationId: string;
+      state: 'composing' | 'recording' | 'available' | 'unavailable' | 'paused' | null;
+    }) => {
+      const currentId = currentConversationIdRef.current;
+      if (!currentId || data.conversationId !== currentId) return;
+      if (contactPresenceTimeoutRef.current) {
+        clearTimeout(contactPresenceTimeoutRef.current);
+        contactPresenceTimeoutRef.current = null;
+      }
+      if (data.state === 'composing' || data.state === 'recording') {
+        setContactPresence(data.state);
+        contactPresenceTimeoutRef.current = setTimeout(() => {
           setContactPresence(null);
-        }
-      },
-    );
-
-    socket.on('disconnect', () => {
-      console.log('❌ Desconectado do Socket.IO');
-    });
-
-    // Limpar conexão ao desmontar componente
-    return () => {
-      socket.disconnect();
-      window.removeEventListener('selectConversation', handleSelectConversation);
-      if (conversationsRefreshTimeoutRef.current) {
-        clearTimeout(conversationsRefreshTimeoutRef.current);
-        conversationsRefreshTimeoutRef.current = null;
+          contactPresenceTimeoutRef.current = null;
+        }, 25_000);
+      } else {
+        setContactPresence(null);
       }
     };
-  }, [queueConversationsRefresh]);
+
+    const onDisconnect = () => {
+      console.log('❌ Desconectado do Socket.IO');
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('new_message', onNewMessage);
+    socket.on('conversation_updated', onConversationUpdated);
+    socket.on('message_status', onMessageStatus);
+    socket.on('message_updated', onMessageUpdated);
+    socket.on('contact_presence', onContactPresence);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('new_message', onNewMessage);
+      socket.off('conversation_updated', onConversationUpdated);
+      socket.off('message_status', onMessageStatus);
+      socket.off('message_updated', onMessageUpdated);
+      socket.off('contact_presence', onContactPresence);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, [socket, queueConversationsRefresh]);
 
   useEffect(() => {
     const socket = socketRef.current;
@@ -681,19 +678,6 @@ export default function Conversations() {
     selectedConversation?.contact?.phone,
     selectedConversation?.channel?.evolutionInstanceId,
   ]);
-
-  // Buscar usuário atual para poder assumir conversas do bot
-  useEffect(() => {
-    const fetchCurrentUser = async () => {
-      try {
-        const response = await api.get('/api/auth/me');
-        setCurrentUser(response.data);
-      } catch (error) {
-        console.error('Erro ao buscar usuário atual:', error);
-      }
-    };
-    fetchCurrentUser();
-  }, []);
 
   useLayoutEffect(() => {
     const pending = pendingScrollAfterMessagesRef.current;
@@ -887,21 +871,11 @@ export default function Conversations() {
   }, [loading, conversations, searchParams, setSearchParams]);
 
   const fetchChannels = async () => {
-    try {
-      const response = await api.get('/api/channels');
-      setChannels(response.data || []);
-    } catch (error) {
-      console.error('Erro ao carregar canais:', error);
-    }
+    await queryClient.invalidateQueries({ queryKey: ['channels'] });
   };
 
   const fetchSectors = async () => {
-    try {
-      const response = await api.get('/api/sectors');
-      setSectors(response.data || []);
-    } catch (error) {
-      console.error('Erro ao carregar setores:', error);
-    }
+    await queryClient.invalidateQueries({ queryKey: ['sectors'] });
   };
 
   const handleStartNewConversation = async () => {
@@ -1622,12 +1596,8 @@ export default function Conversations() {
     recording: voiceRecorder.isRecordingLive,
   });
 
-  if (loading) {
-    return (
-      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background font-body text-on-surface">
-        <p className="text-sm text-on-surface-variant">Carregando conversas...</p>
-      </div>
-    );
+  if (loading && conversations.length === 0) {
+    return <ConversationsSkeleton />;
   }
 
   return (
