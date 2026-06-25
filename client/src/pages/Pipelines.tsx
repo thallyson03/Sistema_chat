@@ -1,13 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import api from '../utils/api';
 import PipelineAutomationModal from '../components/PipelineAutomationModal';
 import { useConfirm, usePrompt } from '../components/ui/ConfirmProvider';
-import { useAuth } from '../contexts/AuthProvider';
-import { usePipelinesListQuery, usePipelineDetailQuery, useUsersQuery } from '../hooks/queries';
-import { queryKeys } from '../lib/queryKeys';
-import { PipelinesSkeleton } from '../components/ui/PageSkeleton';
 
 interface Pipeline {
   id: string;
@@ -209,25 +204,9 @@ const PIPELINE_QUICK_FILTER_IDLE =
 export default function Pipelines() {
   const confirm = useConfirm();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const { data: pipelinesList = [], isLoading: listLoading } = usePipelinesListQuery();
-  const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
-  const {
-    data: pipelineDetail,
-    isLoading: detailLoading,
-    isFetching: detailFetching,
-  } = usePipelineDetailQuery(selectedPipelineId);
-  const { data: usersRaw = [] } = useUsersQuery({ limit: 300 });
-
-  const pipelines = pipelinesList;
-  const selectedPipeline = useMemo(() => {
-    if (pipelineDetail) return pipelineDetail as Pipeline;
-    if (!selectedPipelineId) return null;
-    return (pipelinesList.find((p: Pipeline) => p.id === selectedPipelineId) as Pipeline | undefined) ?? null;
-  }, [pipelineDetail, selectedPipelineId, pipelinesList]);
-
-  const detailsLoading = detailLoading || (detailFetching && !pipelineDetail?.stages?.some((s: PipelineStage) => s.deals?.length));
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null);
+  const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateDealModal, setShowCreateDealModal] = useState(false);
@@ -241,7 +220,7 @@ export default function Pipelines() {
   const [tagSearchTerm, setTagSearchTerm] = useState('');
   const [valueMinFilter, setValueMinFilter] = useState('');
   const [valueMaxFilter, setValueMaxFilter] = useState('');
-  const currentUserId = user?.id ?? null;
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [responsibleFilter, setResponsibleFilter] = useState<'ALL' | 'UNASSIGNED' | string>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | Deal['status']>('OPEN');
   const [stageFilter, setStageFilter] = useState<'ALL' | string>('ALL');
@@ -252,33 +231,30 @@ export default function Pipelines() {
   const [createdByFilter, setCreatedByFilter] = useState<'ALL' | 'UNKNOWN' | string>('ALL');
   const [sourceFilter, setSourceFilter] = useState<'ALL' | string>('ALL');
   const [tagFilter, setTagFilter] = useState<'ALL' | string>('ALL');
+  const [systemUsers, setSystemUsers] = useState<Array<{ id: string; name: string }>>([]);
   const pipelineDropdownRef = useRef<HTMLDivElement>(null);
 
-  const systemUsers = useMemo(
-    () =>
-      (usersRaw as Array<{ id: string; name: string }>)
-        .map((u) => ({ id: u.id, name: u.name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [usersRaw],
-  );
-
   useEffect(() => {
-    if (!selectedPipelineId && pipelinesList.length > 0) {
-      setSelectedPipelineId(pipelinesList[0].id);
-    }
-  }, [pipelinesList, selectedPipelineId]);
-
-  const refreshPipeline = useCallback(
-    async (pipelineId: string) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.pipeline(pipelineId) });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.pipelines });
-    },
-    [queryClient],
-  );
-
-  const refreshPipelinesList = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.pipelines });
-  }, [queryClient]);
+    fetchPipelines();
+    const loadUsers = async () => {
+      try {
+        const [usersRes, meRes] = await Promise.all([
+          api.get('/api/users', { params: { limit: 300 } }),
+          api.get('/api/auth/me'),
+        ]);
+        const users = usersRes.data?.users || usersRes.data || [];
+        setSystemUsers(
+          users
+            .map((user: { id: string; name: string }) => ({ id: user.id, name: user.name }))
+            .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)),
+        );
+        setCurrentUserId(meRes.data?.id || null);
+      } catch (error) {
+        console.error('Erro ao carregar usuários para filtros:', error);
+      }
+    };
+    loadUsers();
+  }, []);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -294,6 +270,34 @@ export default function Pipelines() {
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [showPipelineDropdown]);
+
+  const fetchPipelines = async () => {
+    try {
+      const response = await api.get('/api/pipelines');
+      setPipelines(response.data);
+      if (response.data.length > 0 && !selectedPipeline) {
+        setSelectedPipeline(response.data[0]);
+        await fetchPipelineDetails(response.data[0].id);
+      }
+    } catch (error: any) {
+      console.error('Erro ao carregar pipelines:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPipelineDetails = async (pipelineId: string) => {
+    try {
+      const response = await api.get(`/api/pipelines/${pipelineId}`);
+      const updatedPipeline = response.data;
+      setSelectedPipeline(updatedPipeline);
+      setPipelines((prev) =>
+        prev.map((p) => (p.id === pipelineId ? updatedPipeline : p))
+      );
+    } catch (error: any) {
+      console.error('Erro ao carregar detalhes do pipeline:', error);
+    }
+  };
 
   const resetPipelineFilters = () => {
     setSearchTerm('');
@@ -353,11 +357,12 @@ export default function Pipelines() {
   };
 
   const handlePipelineSelect = async (pipeline: Pipeline) => {
-    setSelectedPipelineId(pipeline.id);
+    setSelectedPipeline(pipeline);
     setSelectedDealIds([]);
     resetPipelineFilters();
     applyQuickFilter('active');
     setShowPipelineDropdown(false);
+    await fetchPipelineDetails(pipeline.id);
   };
 
   const availableResponsibleOptions = useMemo(() => {
@@ -575,7 +580,7 @@ export default function Pipelines() {
 
       // Atualizar pipeline
       if (selectedPipeline) {
-        await refreshPipeline(selectedPipeline.id);
+        await fetchPipelineDetails(selectedPipeline.id);
       }
     } catch (error: any) {
       console.error('Erro ao mover negócio:', error);
@@ -617,15 +622,19 @@ export default function Pipelines() {
       );
 
       setSelectedDealIds([]);
-      await refreshPipeline(selectedPipeline.id);
+      await fetchPipelineDetails(selectedPipeline.id);
     } catch (error: any) {
       console.error('Erro ao excluir negócios selecionados:', error);
       alert(error.response?.data?.error || 'Erro ao excluir negócios selecionados');
     }
   };
 
-  if (listLoading && pipelines.length === 0) {
-    return <PipelinesSkeleton />;
+  if (loading) {
+    return (
+      <div className="flex h-[calc(100vh-60px)] items-center justify-center bg-surface font-body text-on-surface-variant">
+        Carregando pipelines...
+      </div>
+    );
   }
 
   return (
@@ -645,7 +654,7 @@ export default function Pipelines() {
           </button>
           {showPipelineDropdown && (
             <div className="absolute left-0 z-30 mt-2 min-w-[260px] rounded-xl border border-outline-variant bg-surface-container-high p-1 shadow-forest-glow">
-              {pipelines.map((pipeline: Pipeline) => (
+              {pipelines.map((pipeline) => (
                 <button
                   key={pipeline.id}
                   type="button"
@@ -1028,12 +1037,7 @@ export default function Pipelines() {
 
       {/* Visualização do Pipeline (Kanban) */}
       {selectedPipeline && (
-        <div className="relative flex flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4">
-          {detailsLoading && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-surface/60 backdrop-blur-[1px]">
-              <p className="text-sm text-on-surface-variant">Carregando negócios...</p>
-            </div>
-          )}
+        <div className="flex flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4">
           {filteredStages.map((stage) => (
               <div
                 key={stage.id}
@@ -1143,7 +1147,7 @@ export default function Pipelines() {
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
-            refreshPipelinesList();
+            fetchPipelines();
           }}
         />
       )}
@@ -1154,8 +1158,8 @@ export default function Pipelines() {
           pipeline={selectedPipeline}
           onClose={() => setShowEditModal(false)}
           onSuccess={async () => {
-            await refreshPipelinesList();
-            await refreshPipeline(selectedPipeline.id);
+            await fetchPipelines();
+            await fetchPipelineDetails(selectedPipeline.id);
           }}
         />
       )}
@@ -1167,7 +1171,7 @@ export default function Pipelines() {
           onClose={() => setShowCreateDealModal(false)}
           onSuccess={() => {
             setShowCreateDealModal(false);
-            if (selectedPipeline) void refreshPipeline(selectedPipeline.id);
+            fetchPipelineDetails(selectedPipeline.id);
           }}
         />
       )}

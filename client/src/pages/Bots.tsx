@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { useConfirm } from '../components/ui/ConfirmProvider';
-import { useChannelsQuery, useSectorsQuery } from '../hooks/queries';
-import { PageLoadingFallback } from '../components/ui/PageSkeleton';
 
 interface Bot {
   id: string;
@@ -56,8 +54,8 @@ export default function Bots() {
   const navigate = useNavigate();
   const confirmModal = useConfirm();
   const [bots, setBots] = useState<Bot[]>([]);
-  const { data: channels = [] } = useChannelsQuery();
-  const { data: sectors = [] } = useSectorsQuery();
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -87,6 +85,8 @@ export default function Bots() {
 
   useEffect(() => {
     fetchBots();
+    fetchChannels();
+    fetchSectors();
   }, []);
 
   const fetchBots = async () => {
@@ -97,6 +97,32 @@ export default function Bots() {
       console.error('Erro ao carregar bots:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchChannels = async () => {
+    try {
+      const response = await api.get('/api/channels');
+      const channelsData = response.data || [];
+      console.log('Canais carregados:', channelsData);
+      setChannels(channelsData);
+      
+      if (channelsData.length === 0) {
+        console.warn('Nenhum canal encontrado. Crie um canal primeiro na página de Canais.');
+      }
+    } catch (error: any) {
+      console.error('Erro ao carregar canais:', error);
+      console.error('Erro completo:', error.response?.data || error.message);
+      alert('Erro ao carregar canais. Verifique o console para mais detalhes.');
+    }
+  };
+
+  const fetchSectors = async () => {
+    try {
+      const response = await api.get('/api/sectors');
+      setSectors(response.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar setores:', error);
     }
   };
 
@@ -175,8 +201,8 @@ export default function Bots() {
     }
   };
 
-  if (loading && bots.length === 0) {
-    return <PageLoadingFallback />;
+  if (loading) {
+    return <div className="p-5 text-on-surface-variant">Carregando...</div>;
   }
 
   return (
@@ -371,7 +397,7 @@ export default function Bots() {
                   }}
                 >
                   <option value="">Selecione um canal</option>
-                  {channels.map((channel: Channel) => (
+                  {channels.map((channel) => (
                     <option key={channel.id} value={channel.id}>
                       {channel.name} ({channel.type}) {channel.status ? `- ${channel.status}` : ''}
                     </option>
@@ -397,7 +423,7 @@ export default function Bots() {
                   }}
                 >
                   <option value="">Usar fallback do canal</option>
-                  {sectors.map((sector: Sector) => (
+                  {sectors.map((sector) => (
                     <option key={sector.id} value={sector.id}>
                       {sector.name}
                     </option>

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
 import { motion } from 'framer-motion';
-import { useChannelsQuery, useSectorsQuery } from '../hooks/queries';
 
 /** Paleta alinhada ao mock: verde neon sobre fundo grafite */
 const neon = {
@@ -176,8 +175,29 @@ export default function Dashboard() {
   const [globalDays, setGlobalDays] = useState(30);
   const [globalChannelId, setGlobalChannelId] = useState('');
   const [globalSectorId, setGlobalSectorId] = useState('');
-  const { data: channelOptions = [] } = useChannelsQuery();
-  const { data: sectorOptions = [] } = useSectorsQuery(true);
+  const [channelOptions, setChannelOptions] = useState<{ id: string; name: string }[]>([]);
+  const [sectorOptions, setSectorOptions] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [chRes, secRes] = await Promise.all([
+          api.get<{ id: string; name: string }[]>('/api/channels'),
+          api.get<{ id: string; name: string }[]>('/api/sectors?includeInactive=true'),
+        ]);
+        if (!cancelled) {
+          setChannelOptions(Array.isArray(chRes.data) ? chRes.data : []);
+          setSectorOptions(Array.isArray(secRes.data) ? secRes.data : []);
+        }
+      } catch (e) {
+        console.error('[Dashboard] Falha ao carregar canais/setores para filtros:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -298,7 +318,7 @@ export default function Dashboard() {
                 className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
               >
                 <option value="">Todos</option>
-                {channelOptions.map((c: { id: string; name: string }) => (
+                {channelOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -313,7 +333,7 @@ export default function Dashboard() {
                 className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
               >
                 <option value="">Todos</option>
-                {sectorOptions.map((s: { id: string; name: string }) => (
+                {sectorOptions.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>

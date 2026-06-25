@@ -1,41 +1,54 @@
-import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './contexts/AuthProvider';
-import type { UserRole } from './types/auth';
-import Layout from './components/Layout';
+import { useEffect, useState } from 'react';
 import Login from './pages/Login';
-import { AuthBootSkeleton, PageLoadingFallback } from './components/ui/PageSkeleton';
-
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Conversations = lazy(() => import('./pages/Conversations'));
-const ConversationDetail = lazy(() => import('./pages/ConversationDetail'));
-const Tickets = lazy(() => import('./pages/Tickets'));
-const Channels = lazy(() => import('./pages/Channels'));
-const Integrations = lazy(() => import('./pages/Integrations'));
-const Bots = lazy(() => import('./pages/Bots'));
-const BotFlowBuilder = lazy(() => import('./pages/BotFlowBuilder'));
-const BotFlowBuilderVisual = lazy(() => import('./pages/BotFlowBuilderVisual'));
-const QuickReplies = lazy(() => import('./pages/QuickReplies'));
-const Sectors = lazy(() => import('./pages/Sectors'));
-const Users = lazy(() => import('./pages/Users'));
-const Pipelines = lazy(() => import('./pages/Pipelines'));
-const DealDetail = lazy(() => import('./pages/DealDetail'));
-const ContactImport = lazy(() => import('./pages/ContactImport'));
-const Journeys = lazy(() => import('./pages/Journeys'));
-const ContactLists = lazy(() => import('./pages/ContactLists'));
-const Templates = lazy(() => import('./pages/Templates'));
-const Calendario = lazy(() => import('./pages/Calendario'));
-const AuditLogs = lazy(() => import('./pages/AuditLogs'));
-
-function LazyPage({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<PageLoadingFallback />}>{children}</Suspense>;
-}
+import Dashboard from './pages/Dashboard';
+import Conversations from './pages/Conversations';
+import ConversationDetail from './pages/ConversationDetail';
+import Channels from './pages/Channels';
+import Integrations from './pages/Integrations';
+import Bots from './pages/Bots';
+import BotFlowBuilder from './pages/BotFlowBuilder';
+import BotFlowBuilderVisual from './pages/BotFlowBuilderVisual';
+import QuickReplies from './pages/QuickReplies';
+import Sectors from './pages/Sectors';
+import Users from './pages/Users';
+import Pipelines from './pages/Pipelines';
+import DealDetail from './pages/DealDetail';
+import ContactImport from './pages/ContactImport';
+import Journeys from './pages/Journeys';
+import ContactLists from './pages/ContactLists';
+import Templates from './pages/Templates';
+import Calendario from './pages/Calendario';
+import AuditLogs from './pages/AuditLogs';
+import Layout from './components/Layout';
+import Tickets from './pages/Tickets';
+import api from './utils/api';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isLoading, isAuthenticated } = useAuth();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
-  if (isLoading) {
-    return <AuthBootSkeleton />;
+  useEffect(() => {
+    let cancelled = false;
+
+    const verify = async () => {
+      try {
+        await api.get('/api/auth/me');
+        if (!cancelled) setIsAuthenticated(true);
+      } catch {
+        if (!cancelled) {
+          setIsAuthenticated(false);
+        }
+      }
+    };
+
+    verify();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (isAuthenticated === null) {
+    return <div>Carregando...</div>;
   }
 
   if (!isAuthenticated) {
@@ -50,22 +63,29 @@ function RoleRoute({
   roles,
 }: {
   children: React.ReactNode;
-  roles: UserRole[];
+  roles: Array<'ADMIN' | 'SUPERVISOR' | 'AGENT'>;
 }) {
-  const { isLoading, isAuthenticated, hasRole } = useAuth();
+  const [allowed, setAllowed] = useState<boolean | null>(null);
 
-  if (isLoading) {
-    return <PageLoadingFallback />;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/api/auth/me')
+      .then((res) => {
+        if (!cancelled) {
+          setAllowed(roles.includes(res.data?.role));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAllowed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roles]);
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (!hasRole(roles)) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
+  if (allowed === null) return <div>Carregando...</div>;
+  if (!allowed) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -83,69 +103,18 @@ function App() {
           }
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route
-            path="dashboard"
-            element={
-              <LazyPage>
-                <Dashboard />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="conversations"
-            element={
-              <LazyPage>
-                <Conversations />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="conversations/:id"
-            element={
-              <LazyPage>
-                <ConversationDetail />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="tickets"
-            element={
-              <LazyPage>
-                <Tickets />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="channels"
-            element={
-              <LazyPage>
-                <Channels />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="integrations"
-            element={
-              <LazyPage>
-                <Integrations />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="quick-replies"
-            element={
-              <LazyPage>
-                <QuickReplies />
-              </LazyPage>
-            }
-          />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="conversations" element={<Conversations />} />
+          <Route path="conversations/:id" element={<ConversationDetail />} />
+          <Route path="tickets" element={<Tickets />} />
+          <Route path="channels" element={<Channels />} />
+          <Route path="integrations" element={<Integrations />} />
+          <Route path="quick-replies" element={<QuickReplies />} />
           <Route
             path="sectors"
             element={
               <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
-                <LazyPage>
-                  <Sectors />
-                </LazyPage>
+                <Sectors />
               </RoleRoute>
             }
           />
@@ -153,35 +122,17 @@ function App() {
             path="users"
             element={
               <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
-                <LazyPage>
-                  <Users />
-                </LazyPage>
+                <Users />
               </RoleRoute>
             }
           />
-          <Route
-            path="pipelines"
-            element={
-              <LazyPage>
-                <Pipelines />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="pipelines/deals/:id"
-            element={
-              <LazyPage>
-                <DealDetail />
-              </LazyPage>
-            }
-          />
+          <Route path="pipelines" element={<Pipelines />} />
+          <Route path="pipelines/deals/:id" element={<DealDetail />} />
           <Route
             path="contacts/import"
             element={
               <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
-                <LazyPage>
-                  <ContactImport />
-                </LazyPage>
+                <ContactImport />
               </RoleRoute>
             }
           />
@@ -189,9 +140,7 @@ function App() {
             path="contacts/auto-created"
             element={
               <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
-                <LazyPage>
-                  <ContactImport />
-                </LazyPage>
+                <ContactImport />
               </RoleRoute>
             }
           />
@@ -199,70 +148,24 @@ function App() {
             path="journeys"
             element={
               <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
-                <LazyPage>
-                  <Journeys />
-                </LazyPage>
+                <Journeys />
               </RoleRoute>
             }
           />
-          <Route
-            path="contact-lists"
-            element={
-              <LazyPage>
-                <ContactLists />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="templates"
-            element={
-              <LazyPage>
-                <Templates />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="calendario"
-            element={
-              <LazyPage>
-                <Calendario />
-              </LazyPage>
-            }
-          />
+          <Route path="contact-lists" element={<ContactLists />} />
+          <Route path="templates" element={<Templates />} />
+          <Route path="calendario" element={<Calendario />} />
           <Route
             path="audit-logs"
             element={
               <RoleRoute roles={['ADMIN']}>
-                <LazyPage>
-                  <AuditLogs />
-                </LazyPage>
+                <AuditLogs />
               </RoleRoute>
             }
           />
-          <Route
-            path="bots"
-            element={
-              <LazyPage>
-                <Bots />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="bots/:botId/flows"
-            element={
-              <LazyPage>
-                <BotFlowBuilder />
-              </LazyPage>
-            }
-          />
-          <Route
-            path="bots/:botId/flows/visual"
-            element={
-              <LazyPage>
-                <BotFlowBuilderVisual />
-              </LazyPage>
-            }
-          />
+          <Route path="bots" element={<Bots />} />
+          <Route path="bots/:botId/flows" element={<BotFlowBuilder />} />
+          <Route path="bots/:botId/flows/visual" element={<BotFlowBuilderVisual />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

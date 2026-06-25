@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
-import { invalidateAuthSession } from '../contexts/AuthProvider';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -30,7 +29,6 @@ export default function Login() {
         localStorage.removeItem('lastLoginEmail');
       }
 
-      invalidateAuthSession();
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Erro ao fazer login');
