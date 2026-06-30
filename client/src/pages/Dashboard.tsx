@@ -74,6 +74,53 @@ type ConversationDashboardMetrics = {
   };
 };
 
+type PipelineDashboardMetrics = {
+  periodDays: number;
+  periodStart: string;
+  filters: {
+    pipelineId: string | null;
+    assignedToId: string | null;
+  };
+  summary: {
+    openCount: number;
+    openValue: number;
+    forecastValue: number;
+    newInPeriod: number;
+    wonInPeriod: number;
+    lostInPeriod: number;
+    abandonedInPeriod: number;
+    wonValueInPeriod: number;
+    winRatePercent: number | null;
+    avgCycleDays: number | null;
+    unassignedOpen: number;
+    linkedToConversation: number;
+  };
+  stageFunnel: {
+    stageId: string;
+    name: string;
+    order: number;
+    color: string;
+    openCount: number;
+    openValue: number;
+  }[];
+  topAssignees: {
+    userId: string;
+    name: string;
+    wonInPeriod: number;
+    wonValueInPeriod: number;
+    openCount: number;
+  }[];
+  alerts: {
+    overdueTasks: number;
+    staleDeals: number;
+  };
+};
+
+function formatCurrency(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+}
+
 function formatDurationMinutes(minutes: number | null | undefined): string {
   if (minutes == null || Number.isNaN(minutes)) return '—';
   if (minutes < 60) return `${Math.round(minutes)} min`;
@@ -175,20 +222,26 @@ export default function Dashboard() {
   const [globalDays, setGlobalDays] = useState(30);
   const [globalChannelId, setGlobalChannelId] = useState('');
   const [globalSectorId, setGlobalSectorId] = useState('');
+  const [globalPipelineId, setGlobalPipelineId] = useState('');
   const [channelOptions, setChannelOptions] = useState<{ id: string; name: string }[]>([]);
   const [sectorOptions, setSectorOptions] = useState<{ id: string; name: string }[]>([]);
+  const [pipelineOptions, setPipelineOptions] = useState<{ id: string; name: string }[]>([]);
+  const [pipelineMetrics, setPipelineMetrics] = useState<PipelineDashboardMetrics | null>(null);
+  const [pipelineMetricsLoading, setPipelineMetricsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [chRes, secRes] = await Promise.all([
+        const [chRes, secRes, pipeRes] = await Promise.all([
           api.get<{ id: string; name: string }[]>('/api/channels'),
           api.get<{ id: string; name: string }[]>('/api/sectors?includeInactive=true'),
+          api.get<{ id: string; name: string }[]>('/api/pipelines'),
         ]);
         if (!cancelled) {
           setChannelOptions(Array.isArray(chRes.data) ? chRes.data : []);
           setSectorOptions(Array.isArray(secRes.data) ? secRes.data : []);
+          setPipelineOptions(Array.isArray(pipeRes.data) ? pipeRes.data : []);
         }
       } catch (e) {
         console.error('[Dashboard] Falha ao carregar canais/setores para filtros:', e);
@@ -223,6 +276,27 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [globalDays, globalChannelId, globalSectorId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const params: Record<string, string> = { days: String(globalDays) };
+        if (globalPipelineId) params.pipelineId = globalPipelineId;
+        setPipelineMetricsLoading(true);
+        const res = await api.get<PipelineDashboardMetrics>('/api/pipelines/dashboard-metrics', { params });
+        if (!cancelled) setPipelineMetrics(res.data);
+      } catch (e) {
+        console.error('[Dashboard] Falha ao carregar métricas de pipeline:', e);
+        if (!cancelled) setPipelineMetrics(null);
+      } finally {
+        if (!cancelled) setPipelineMetricsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [globalDays, globalPipelineId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -268,6 +342,11 @@ export default function Dashboard() {
     return Math.max(1, ...[1, 2, 3, 4, 5].map((n) => dist[n] ?? 0));
   }, [surveyStats]);
 
+  const maxStageOpen = useMemo(() => {
+    if (!pipelineMetrics?.stageFunnel.length) return 1;
+    return Math.max(1, ...pipelineMetrics.stageFunnel.map((s) => s.openCount));
+  }, [pipelineMetrics]);
+
   const completed = surveyStats?.summary.completedInPeriod ?? 0;
   const avgRounded =
     surveyStats?.summary.averageScore != null ? Math.round(surveyStats.summary.averageScore) : 0;
@@ -294,7 +373,7 @@ export default function Dashboard() {
           <div className="mb-3">
             <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Filtros globais</h2>
             <p className="mt-1 text-xs text-[#8b9490]">
-              Os filtros abaixo valem para conversas, operação, pesquisa e resumo externo.
+              Os filtros abaixo valem para conversas, operação, pipeline, pesquisa e resumo externo.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
@@ -336,6 +415,21 @@ export default function Dashboard() {
                 {sectorOptions.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex min-w-[170px] flex-col gap-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">Pipeline</label>
+              <select
+                value={globalPipelineId}
+                onChange={(e) => setGlobalPipelineId(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
+              >
+                <option value="">Todos</option>
+                {pipelineOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
               </select>
@@ -511,6 +605,220 @@ export default function Dashboard() {
               </div>
             ) : (
               <p className="mt-4 text-sm text-[#6b7280]">Não foi possível carregar as métricas de operação.</p>
+            )}
+          </div>
+        </section>
+
+        {/* Pipeline CRM */}
+        <section className="mt-10 border-t border-[#252b28] pt-10">
+          <div
+            className={`rounded-2xl border p-5 sm:p-6 ${neon.panel}`}
+            style={{ boxShadow: '0 0 0 1px rgba(74, 222, 128, 0.05), 0 16px 40px rgba(0,0,0,0.28)' }}
+          >
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Pipeline (CRM)</h2>
+                <p className="mt-1 text-xs text-[#8b9490]">
+                  Negócios abertos, forecast, ganhos no período e funil por etapa. Respeita o filtro de pipeline acima.
+                </p>
+              </div>
+              <Link
+                to="/pipelines"
+                className={`inline-flex items-center gap-1 rounded-lg px-4 py-2 text-xs font-semibold transition ${neon.btnOutline}`}
+              >
+                Abrir pipelines
+                <ExternalLinkIcon />
+              </Link>
+            </div>
+
+            {pipelineMetricsLoading ? (
+              <div className="grid animate-pulse gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                    <div key={i} className={`h-[100px] rounded-xl border ${neon.card}`} />
+                  ))}
+                </div>
+                <div className={`h-48 rounded-xl border ${neon.card}`} />
+              </div>
+            ) : pipelineMetrics ? (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+                  <RefStatCard
+                    title="ABERTOS"
+                    value={pipelineMetrics.summary.openCount}
+                    icon="📂"
+                    barActive={pipelineMetrics.summary.openCount > 0}
+                  />
+                  <RefStatCard
+                    title="VALOR ABERTO"
+                    value={formatCurrency(pipelineMetrics.summary.openValue)}
+                    icon="💰"
+                    barActive={pipelineMetrics.summary.openValue > 0}
+                  />
+                  <RefStatCard
+                    title="FORECAST"
+                    value={formatCurrency(pipelineMetrics.summary.forecastValue)}
+                    icon="📈"
+                    barActive={pipelineMetrics.summary.forecastValue > 0}
+                  />
+                  <RefStatCard
+                    title="NOVOS"
+                    value={pipelineMetrics.summary.newInPeriod}
+                    icon="✨"
+                    barActive={pipelineMetrics.summary.newInPeriod > 0}
+                  />
+                  <RefStatCard
+                    title="GANHOS"
+                    value={pipelineMetrics.summary.wonInPeriod}
+                    icon="🏆"
+                    barActive={pipelineMetrics.summary.wonInPeriod > 0}
+                  />
+                  <RefStatCard
+                    title="PERDIDOS"
+                    value={pipelineMetrics.summary.lostInPeriod}
+                    icon="📉"
+                    barActive={pipelineMetrics.summary.lostInPeriod > 0}
+                  />
+                  <RefStatCard
+                    title="VALOR GANHO"
+                    value={formatCurrency(pipelineMetrics.summary.wonValueInPeriod)}
+                    icon="💵"
+                    barActive={pipelineMetrics.summary.wonValueInPeriod > 0}
+                  />
+                  <RefStatCard
+                    title="TAXA GANHO"
+                    value={
+                      pipelineMetrics.summary.winRatePercent != null
+                        ? `${pipelineMetrics.summary.winRatePercent}%`
+                        : '—'
+                    }
+                    icon="🎯"
+                    barActive={
+                      pipelineMetrics.summary.winRatePercent != null &&
+                      pipelineMetrics.summary.winRatePercent > 0
+                    }
+                  />
+                </div>
+
+                {(pipelineMetrics.alerts.overdueTasks > 0 || pipelineMetrics.alerts.staleDeals > 0) && (
+                  <div className="flex flex-wrap gap-3">
+                    {pipelineMetrics.alerts.overdueTasks > 0 ? (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+                        {pipelineMetrics.alerts.overdueTasks} tarefa(s) atrasada(s)
+                      </div>
+                    ) : null}
+                    {pipelineMetrics.alerts.staleDeals > 0 ? (
+                      <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-xs text-orange-200">
+                        {pipelineMetrics.alerts.staleDeals} negócio(s) parado(s) há 7+ dias
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div className={`rounded-xl border p-4 sm:p-5 ${neon.card}`}>
+                    <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#8b9490]">
+                      Funil por etapa (abertos)
+                    </h3>
+                    {pipelineMetrics.stageFunnel.length === 0 ? (
+                      <p className="mt-6 text-center text-sm text-[#6b7280]">Nenhum negócio aberto.</p>
+                    ) : (
+                      <div className="mt-4 space-y-3">
+                        {pipelineMetrics.stageFunnel.map((stage) => {
+                          const barPct = Math.round((stage.openCount / maxStageOpen) * 100);
+                          return (
+                            <div key={stage.stageId} className="flex items-center gap-3">
+                              <span
+                                className="w-[6.5rem] shrink-0 truncate text-[11px] font-bold uppercase tracking-wide text-[#b8c4be]"
+                                title={stage.name}
+                              >
+                                {stage.name}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className={`h-2 overflow-hidden rounded-full ${neon.barDim}`}>
+                                  <motion.div
+                                    className="h-full rounded-full"
+                                    style={{ backgroundColor: stage.color }}
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${barPct}%` }}
+                                    transition={{ duration: 0.45, ease: 'easeOut' }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="w-16 shrink-0 text-right text-xs font-bold tabular-nums text-white">
+                                {stage.openCount}
+                              </span>
+                              <span className="hidden w-24 shrink-0 text-right text-[10px] tabular-nums text-[#8b9490] sm:inline">
+                                {formatCurrency(stage.openValue)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={`rounded-xl border p-4 sm:p-5 ${neon.card}`}>
+                    <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#8b9490]">
+                      Ranking por responsável ({pipelineMetrics.periodDays} dias)
+                    </h3>
+                    <div className="mt-3 max-h-[280px] overflow-auto rounded-lg border border-[#2a322c]">
+                      <table className="w-full min-w-[300px] text-left text-xs">
+                        <thead className="sticky top-0 bg-[#1a1f1c] text-[10px] font-bold uppercase tracking-wide text-[#8b9490]">
+                          <tr>
+                            <th className="px-3 py-2">Responsável</th>
+                            <th className="px-3 py-2 text-right">Ganhos</th>
+                            <th className="px-3 py-2 text-right">Valor</th>
+                            <th className="px-3 py-2 text-right">Abertos</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#252b28] text-[#e8ece9]">
+                          {pipelineMetrics.topAssignees.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="px-3 py-8 text-center text-[#6b7280]">
+                                Nenhum ganho no período.
+                              </td>
+                            </tr>
+                          ) : (
+                            pipelineMetrics.topAssignees.map((u, idx) => (
+                              <tr key={u.userId} className="hover:bg-[#141816]/80">
+                                <td className="px-3 py-2.5">
+                                  <span className="mr-2 inline-flex w-5 justify-center font-mono text-[#6b7280]">
+                                    {idx + 1}
+                                  </span>
+                                  <span className="font-medium text-white">{u.name}</span>
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums text-[#86efac]">
+                                  {u.wonInPeriod}
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">
+                                  {formatCurrency(u.wonValueInPeriod)}
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{u.openCount}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      <RefMiniKpi
+                        label="CICLO MÉDIO"
+                        value={
+                          pipelineMetrics.summary.avgCycleDays != null
+                            ? `${pipelineMetrics.summary.avgCycleDays}d`
+                            : '—'
+                        }
+                        accent
+                      />
+                      <RefMiniKpi label="SEM RESP." value={pipelineMetrics.summary.unassignedOpen} />
+                      <RefMiniKpi label="COM CONVERSA" value={pipelineMetrics.summary.linkedToConversation} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-[#6b7280]">Não foi possível carregar as métricas de pipeline.</p>
             )}
           </div>
         </section>
@@ -738,7 +1046,7 @@ function RefStatCard({
   barActive,
 }: {
   title: string;
-  value: number;
+  value: number | string;
   trend?: string;
   icon: string;
   barActive: boolean;
@@ -754,7 +1062,7 @@ function RefStatCard({
           <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#8b9490]">
                 {title}
               </h3>
-          <p className="mt-2 font-headline text-3xl font-bold tabular-nums text-white">{value}</p>
+          <p className="mt-2 font-headline text-2xl font-bold tabular-nums text-white sm:text-3xl">{value}</p>
           {trend ? (
             <p className={`mt-1 text-[11px] font-semibold ${neon.text}`}>{trend}</p>
           ) : null}

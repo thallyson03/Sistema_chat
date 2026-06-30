@@ -16,6 +16,11 @@ const adminOrSupervisor = authorizeRoles('ADMIN', 'SUPERVISOR');
 router.use(authenticateToken);
 
 // ============================================
+// DASHBOARD METRICS (antes de rotas /:id)
+// ============================================
+router.get('/dashboard-metrics', dealController.getPipelineDashboardMetrics.bind(dealController));
+
+// ============================================
 // DEALS
 // ============================================
 router.post('/deals', dealController.createDeal.bind(dealController));

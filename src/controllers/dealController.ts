@@ -4,7 +4,10 @@ import { AuthRequest } from '../middleware/auth';
 import { canAccessPipeline, getUserPipelineIds } from '../utils/accessControl';
 import prisma from '../config/database';
 
+import { PipelineDashboardService } from '../services/pipelineDashboardService';
+
 const dealService = new DealService();
+const pipelineDashboardService = new PipelineDashboardService();
 
 export class DealController {
   private async ensureDealAccess(req: AuthRequest, res: Response, dealId: string) {
@@ -244,6 +247,28 @@ export class DealController {
       const stats = await dealService.getPipelineStats(pipelineId);
       res.json(stats);
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async getPipelineDashboardMetrics(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Não autenticado' });
+
+      const days = req.query.days ? Number(req.query.days) : 30;
+      const pipelineId = (req.query.pipelineId as string) || undefined;
+      const assignedToId = (req.query.assignedToId as string) || undefined;
+
+      const metrics = await pipelineDashboardService.getDashboardMetrics(req.user, {
+        days,
+        pipelineId,
+        assignedToId,
+      });
+      res.json(metrics);
+    } catch (error: any) {
+      if (error.message?.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   }
