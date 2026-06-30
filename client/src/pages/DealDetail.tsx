@@ -61,6 +61,14 @@ interface Deal {
     id: string;
     name: string;
     color: string;
+    stages?: Array<{
+      id: string;
+      name: string;
+      order: number;
+      color: string;
+      probability: number;
+      isActive?: boolean;
+    }>;
   };
   activities?: Array<{
     id: string;
@@ -72,6 +80,39 @@ interface Deal {
       name: string;
     };
   }>;
+}
+
+interface PipelineOption {
+  id: string;
+  name: string;
+  stages: Array<{
+    id: string;
+    name: string;
+    order: number;
+    color: string;
+    probability: number;
+    isActive?: boolean;
+  }>;
+}
+
+interface DealStatistics {
+  activeDays: number;
+  source: {
+    label: string;
+    createdAt: string;
+  };
+  calls: {
+    received: number;
+    made: number;
+  };
+  emails: number;
+  tasks: {
+    completed: number;
+    overdue: number;
+  };
+  notes: number;
+  customerChat: number;
+  internalChat: number;
 }
 
 interface Message {
@@ -153,6 +194,14 @@ export default function DealDetail() {
   const [loadingTransferUsers, setLoadingTransferUsers] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [savingTag, setSavingTag] = useState(false);
+  const [pipelineOptions, setPipelineOptions] = useState<PipelineOption[]>([]);
+  const [showPipelinePicker, setShowPipelinePicker] = useState(false);
+  const [pickerPipelineId, setPickerPipelineId] = useState('');
+  const [pickerStageId, setPickerStageId] = useState('');
+  const [movingDeal, setMovingDeal] = useState(false);
+  const pipelinePickerRef = useRef<HTMLDivElement>(null);
+  const [dealStatistics, setDealStatistics] = useState<DealStatistics | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
   
   // Campos comerciais fixos
   const fixedCommercialFields = [
@@ -167,8 +216,26 @@ export default function DealDetail() {
       fetchDeal();
       fetchUsers();
       fetchSectors();
+      fetchPipelineOptions();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (!showPipelinePicker) return;
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (pipelinePickerRef.current && !pipelinePickerRef.current.contains(event.target as Node)) {
+        setShowPipelinePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showPipelinePicker]);
+
+  useEffect(() => {
+    if (activeTab === 'estatisticas' && id) {
+      fetchDealStatistics();
+    }
+  }, [activeTab, id]);
 
   useEffect(() => {
     if (!showTransferModal) {
@@ -342,6 +409,67 @@ export default function DealDetail() {
       };
     }
   }, [conversation]);
+
+  const fetchPipelineOptions = async () => {
+    try {
+      const response = await api.get<PipelineOption[]>('/api/pipelines');
+      setPipelineOptions(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error('Erro ao carregar pipelines:', error);
+    }
+  };
+
+  const fetchDealStatistics = async () => {
+    if (!id) return;
+    try {
+      setStatsLoading(true);
+      const response = await api.get<DealStatistics>(`/api/pipelines/deals/${id}/statistics`);
+      setDealStatistics(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas:', error);
+      setDealStatistics(null);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  const handleMoveDeal = async () => {
+    if (!deal || !pickerStageId) return;
+    if (pickerPipelineId === deal.pipeline.id && pickerStageId === deal.stage.id) {
+      setShowPipelinePicker(false);
+      return;
+    }
+
+    try {
+      setMovingDeal(true);
+      const payload: { stageId: string; pipelineId?: string } = { stageId: pickerStageId };
+      if (pickerPipelineId && pickerPipelineId !== deal.pipeline.id) {
+        payload.pipelineId = pickerPipelineId;
+      }
+      const response = await api.put(`/api/pipelines/deals/${deal.id}/move`, payload);
+      setDeal((prev) => (prev ? { ...prev, ...response.data } : response.data));
+      setShowPipelinePicker(false);
+      if (response.data?.pipeline?.id) {
+        await fetchPipelineCustomFields(response.data.pipeline.id);
+      }
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Erro ao mover negócio');
+    } finally {
+      setMovingDeal(false);
+    }
+  };
+
+  const openPipelinePicker = () => {
+    if (!deal) return;
+    setPickerPipelineId(deal.pipeline.id);
+    setPickerStageId(deal.stage.id);
+    setShowPipelinePicker((prev) => !prev);
+  };
+
+  const pickerStages = pipelineOptions
+    .find((p) => p.id === pickerPipelineId)
+    ?.stages?.filter((s) => s.isActive !== false)
+    .sort((a, b) => a.order - b.order) || [];
 
   const fetchDeal = async () => {
     try {
@@ -1303,17 +1431,133 @@ export default function DealDetail() {
             <span style={{ fontSize: '12px', opacity: 0.8 }}>#{deal.id.slice(-8)}</span>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-            <span
+          <div ref={pipelinePickerRef} style={{ position: 'relative', marginBottom: '12px' }}>
+            <button
+              type="button"
+              onClick={openPipelinePicker}
               style={{
-                padding: '4px 8px',
-                borderRadius: '4px',
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                fontSize: '11px',
+                width: '100%',
+                textAlign: 'left',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.06)',
+                color: 'white',
+                cursor: 'pointer',
               }}
             >
-              {deal.stage.name}
-            </span>
+              <div style={{ fontSize: '11px', opacity: 0.75, marginBottom: '4px' }}>{deal.pipeline.name}</div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                }}
+              >
+                <span>{deal.stage.name}</span>
+                <span style={{ fontSize: '12px', opacity: 0.8 }}>▼</span>
+              </div>
+            </button>
+
+            {showPipelinePicker && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  marginTop: '6px',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: '#242824',
+                  boxShadow: '0 12px 28px rgba(0,0,0,0.35)',
+                  zIndex: 30,
+                }}
+              >
+                <label style={{ fontSize: '11px', opacity: 0.8, display: 'block', marginBottom: '4px' }}>
+                  Pipeline
+                </label>
+                <select
+                  value={pickerPipelineId}
+                  onChange={(e) => {
+                    const nextPipelineId = e.target.value;
+                    setPickerPipelineId(nextPipelineId);
+                    const nextPipeline = pipelineOptions.find((p) => p.id === nextPipelineId);
+                    const firstStage = (nextPipeline?.stages || [])
+                      .filter((s) => s.isActive !== false)
+                      .sort((a, b) => a.order - b.order)[0];
+                    setPickerStageId(firstStage?.id || '');
+                  }}
+                  style={{
+                    width: '100%',
+                    marginBottom: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(255,255,255,0.08)',
+                    color: 'white',
+                    fontSize: '13px',
+                  }}
+                >
+                  {pipelineOptions.map((pipeline) => (
+                    <option key={pipeline.id} value={pipeline.id} style={{ color: '#111' }}>
+                      {pipeline.name}
+                    </option>
+                  ))}
+                </select>
+
+                <label style={{ fontSize: '11px', opacity: 0.8, display: 'block', marginBottom: '4px' }}>
+                  Etapa (coluna)
+                </label>
+                <select
+                  value={pickerStageId}
+                  onChange={(e) => setPickerStageId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    marginBottom: '12px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(255,255,255,0.08)',
+                    color: 'white',
+                    fontSize: '13px',
+                  }}
+                >
+                  {pickerStages.map((stage) => (
+                    <option key={stage.id} value={stage.id} style={{ color: '#111' }}>
+                      {stage.name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleMoveDeal}
+                  disabled={movingDeal || !pickerStageId}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: '#22c55e',
+                    color: '#052e16',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: movingDeal || !pickerStageId ? 'not-allowed' : 'pointer',
+                    opacity: movingDeal || !pickerStageId ? 0.6 : 1,
+                  }}
+                >
+                  {movingDeal ? 'Movendo...' : 'Mover negócio'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
             <span
               style={{
                 padding: '4px 8px',
@@ -1335,7 +1579,7 @@ export default function DealDetail() {
 
         {/* Abas */}
         <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '0 20px' }}>
-          {['principal', 'configuracao', 'forecast'].map((tab) => (
+          {['principal', 'estatisticas', 'configuracao'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1351,7 +1595,7 @@ export default function DealDetail() {
                 fontWeight: activeTab === tab ? '600' : '400',
               }}
             >
-              {tab === 'principal' ? 'Principal' : tab === 'configuracao' ? 'Configuração' : 'Forecast'}
+              {tab === 'principal' ? 'Principal' : tab === 'estatisticas' ? 'Estatísticas' : 'Configuração'}
             </button>
           ))}
         </div>
@@ -1762,6 +2006,81 @@ export default function DealDetail() {
             </div>
           )}
 
+          {activeTab === 'estatisticas' && (
+            <div
+              style={{
+                margin: '-20px',
+                padding: '20px',
+                minHeight: '100%',
+                backgroundColor: '#f4f6f8',
+                color: '#1f2937',
+              }}
+            >
+              {statsLoading ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>Carregando estatísticas...</div>
+              ) : dealStatistics ? (
+                <>
+                  <div style={{ marginBottom: '20px', fontSize: '13px', color: '#4b5563' }}>
+                    <strong>Fonte:</strong>{' '}
+                    {dealStatistics.source.label} /{' '}
+                    {new Date(dealStatistics.source.createdAt).toLocaleDateString('pt-BR')}
+                  </div>
+
+                  <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+                    <div style={{ fontSize: '56px', fontWeight: 700, color: '#2563eb', lineHeight: 1 }}>
+                      {dealStatistics.activeDays}
+                    </div>
+                    <div style={{ marginTop: '6px', fontSize: '14px', color: '#6b7280' }}>Dias ativos</div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {[
+                      {
+                        label: 'Chamadas recebidas / realizadas',
+                        value: `${dealStatistics.calls.received}/${dealStatistics.calls.made}`,
+                      },
+                      { label: 'E-mails', value: String(dealStatistics.emails) },
+                      {
+                        label: 'Tarefas finalizadas / vencidas',
+                        value: (
+                          <span>
+                            {dealStatistics.tasks.completed}/
+                            <span style={{ color: dealStatistics.tasks.overdue > 0 ? '#ef4444' : '#1f2937' }}>
+                              {dealStatistics.tasks.overdue}
+                            </span>
+                          </span>
+                        ),
+                      },
+                      { label: 'Notas', value: String(dealStatistics.notes) },
+                      { label: 'Bate-papo com o cliente', value: String(dealStatistics.customerChat) },
+                      { label: 'Bate-papo interno', value: String(dealStatistics.internalChat) },
+                    ].map((row) => (
+                      <div
+                        key={row.label}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '12px',
+                          fontSize: '14px',
+                          borderBottom: '1px solid #e5e7eb',
+                          paddingBottom: '10px',
+                        }}
+                      >
+                        <span style={{ color: '#374151' }}>{row.label}</span>
+                        <span style={{ fontWeight: 600, color: '#111827' }}>{row.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
+                  Não foi possível carregar as estatísticas.
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'configuracao' && deal?.pipeline?.id && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {/* Campos comerciais fixos */}
@@ -1885,8 +2204,6 @@ export default function DealDetail() {
               </div>
             </div>
           )}
-
-          {activeTab === 'forecast' && <div style={{ opacity: 0.8 }}>Previsão de fechamento</div>}
         </div>
       </div>
 

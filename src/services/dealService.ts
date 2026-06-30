@@ -429,11 +429,12 @@ export class DealService {
     return updatedDeal;
   }
 
-  async moveDealToStage(dealId: string, newStageId: string) {
+  async moveDealToStage(dealId: string, newStageId: string, pipelineId?: string) {
     const deal = await prisma.deal.findUnique({
       where: { id: dealId },
       include: {
         stage: true,
+        pipeline: true,
       },
     });
 
@@ -449,22 +450,57 @@ export class DealService {
       throw new Error('Etapa não encontrada');
     }
 
-    // Verificar se a nova stage pertence ao mesmo pipeline
-    if (newStage.pipelineId !== deal.pipelineId) {
-      throw new Error('A nova etapa deve pertencer ao mesmo pipeline');
+    const targetPipelineId = pipelineId || newStage.pipelineId;
+
+    if (newStage.pipelineId !== targetPipelineId) {
+      throw new Error('A etapa selecionada não pertence ao pipeline informado');
     }
 
-    // Atualizar deal
+    const pipelineChanged = targetPipelineId !== deal.pipelineId;
+    const stageChanged = newStageId !== deal.stageId;
+
+    if (!pipelineChanged && !stageChanged) {
+      return this.getDealById(dealId);
+    }
+
+    if (pipelineChanged) {
+      const existingOpen = await prisma.deal.findFirst({
+        where: {
+          contactId: deal.contactId,
+          pipelineId: targetPipelineId,
+          status: DealStatus.OPEN,
+          NOT: { id: dealId },
+        },
+      });
+
+      if (existingOpen) {
+        throw new Error('Já existe um negócio aberto para este contato no pipeline de destino');
+      }
+    }
+
+    const targetPipeline = pipelineChanged
+      ? await prisma.pipeline.findUnique({ where: { id: targetPipelineId } })
+      : deal.pipeline;
+
     const updatedDeal = await prisma.deal.update({
       where: { id: dealId },
       data: {
+        pipelineId: targetPipelineId,
         stageId: newStageId,
         probability: newStage.probability,
       },
       include: {
         pipeline: true,
         stage: true,
-        contact: true,
+        contact: {
+          include: {
+            channelIdentities: {
+              include: {
+                channel: { select: { name: true, type: true } },
+              },
+            },
+          },
+        },
         assignedTo: {
           select: {
             id: true,
@@ -472,29 +508,143 @@ export class DealService {
             email: true,
           },
         },
+        conversation: {
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
+          },
+        },
       },
     });
 
-    // Criar atividade
+    let description = `De "${deal.stage.name}" para "${newStage.name}"`;
+    if (pipelineChanged) {
+      description = `Pipeline: "${deal.pipeline.name}" → "${targetPipeline?.name || 'N/A'}". Etapa: "${deal.stage.name}" → "${newStage.name}"`;
+    }
+
     await prisma.dealActivity.create({
       data: {
-        dealId: dealId,
+        dealId,
         type: 'STAGE_CHANGE',
-        title: 'Mudança de etapa',
-        description: `De "${deal.stage.name}" para "${newStage.name}"`,
+        title: pipelineChanged ? 'Mudança de pipeline e etapa' : 'Mudança de etapa',
+        description,
       },
     });
 
-    // Disparar automações para a nova etapa
     try {
       const { pipelineAutomationService } = await import('./pipelineAutomationService');
       await pipelineAutomationService.handleStageEnter(dealId, newStageId, false);
     } catch (err: any) {
       console.error('[DealService] Erro ao executar automações:', err.message);
-      // Não falhar a movimentação do deal se as automações derem erro
     }
 
     return updatedDeal;
+  }
+
+  async getDealStatistics(dealId: string) {
+    const deal = await prisma.deal.findUnique({
+      where: { id: dealId },
+      select: {
+        id: true,
+        createdAt: true,
+        customFields: true,
+        conversationId: true,
+        contact: {
+          select: {
+            channelIdentities: {
+              take: 1,
+              include: {
+                channel: { select: { name: true, type: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!deal) {
+      throw new Error('Negócio não encontrado');
+    }
+
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfCreated = new Date(deal.createdAt);
+    startOfCreated.setHours(0, 0, 0, 0);
+    const activeDays = Math.max(
+      1,
+      Math.floor((startOfToday.getTime() - startOfCreated.getTime()) / (1000 * 60 * 60 * 24)) + 1,
+    );
+
+    const [activities, taskStats, customerMessages] = await Promise.all([
+      prisma.dealActivity.groupBy({
+        by: ['type'],
+        where: { dealId },
+        _count: { _all: true },
+      }),
+      prisma.pipelineTask.groupBy({
+        by: ['status'],
+        where: { dealId },
+        _count: { _all: true },
+      }),
+      deal.conversationId
+        ? prisma.message.count({ where: { conversationId: deal.conversationId } })
+        : Promise.resolve(0),
+    ]);
+
+    const activityCount = (type: string) =>
+      activities.find((a) => a.type === type)?._count._all ?? 0;
+
+    const taskCount = (status: string) =>
+      taskStats.find((t) => t.status === status)?._count._all ?? 0;
+
+    const overdueTasks = await prisma.pipelineTask.count({
+      where: {
+        dealId,
+        status: 'PENDING',
+        dueDate: { lt: now },
+      },
+    });
+
+    const customFields = (deal.customFields || {}) as Record<string, unknown>;
+    const sourceFromField =
+      customFields.fonte ||
+      customFields.Fonte ||
+      customFields.source ||
+      customFields.origem ||
+      null;
+
+    const channelName =
+      deal.contact.channelIdentities[0]?.channel?.name || null;
+
+    const sourceLabel = sourceFromField
+      ? String(sourceFromField)
+      : channelName
+        ? `Canal ${channelName}`
+        : 'Manual';
+
+    return {
+      activeDays,
+      source: {
+        label: sourceLabel,
+        createdAt: deal.createdAt.toISOString(),
+      },
+      calls: {
+        received: 0,
+        made: activityCount('CALL'),
+      },
+      emails: activityCount('EMAIL'),
+      tasks: {
+        completed: taskCount('DONE'),
+        overdue: overdueTasks,
+      },
+      notes: activityCount('NOTE'),
+      customerChat: customerMessages,
+      internalChat: activityCount('MEETING'),
+    };
   }
 
   async deleteDeal(id: string) {

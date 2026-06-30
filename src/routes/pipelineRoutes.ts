@@ -25,6 +25,7 @@ router.get('/dashboard-metrics', dealController.getPipelineDashboardMetrics.bind
 // ============================================
 router.post('/deals', dealController.createDeal.bind(dealController));
 router.get('/deals', dealController.getDeals.bind(dealController));
+router.get('/deals/:id/statistics', dealController.getDealStatistics.bind(dealController));
 router.get('/deals/:id', dealController.getDealById.bind(dealController));
 router.get('/tasks/calendar', dealController.getCalendarTasks.bind(dealController));
 router.put('/deals/:id', dealController.updateDeal.bind(dealController));

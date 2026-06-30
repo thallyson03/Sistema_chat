@@ -117,15 +117,36 @@ export class DealController {
       const access = await this.ensureDealAccess(req, res, id);
       if (!access) return;
 
-      const { stageId } = req.body;
+      const { stageId, pipelineId } = req.body;
       if (!stageId) {
         return res.status(400).json({ error: 'stageId é obrigatório' });
       }
 
-      const deal = await dealService.moveDealToStage(id, stageId);
+      if (pipelineId && pipelineId !== access.pipelineId) {
+        if (!req.user) return res.status(401).json({ error: 'Não autenticado' });
+        const allowed = await canAccessPipeline(req.user, pipelineId);
+        if (!allowed) {
+          return res.status(403).json({ error: 'Acesso negado para o pipeline de destino' });
+        }
+      }
+
+      const deal = await dealService.moveDealToStage(id, stageId, pipelineId);
       res.json(deal);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  }
+
+  async getDealStatistics(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const access = await this.ensureDealAccess(req, res, id);
+      if (!access) return;
+
+      const stats = await dealService.getDealStatistics(id);
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   }
 
