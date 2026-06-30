@@ -551,7 +551,7 @@ export class DealService {
         id: true,
         createdAt: true,
         customFields: true,
-        conversationId: true,
+        contactId: true,
         contact: {
           select: {
             channelIdentities: {
@@ -579,7 +579,7 @@ export class DealService {
       Math.floor((startOfToday.getTime() - startOfCreated.getTime()) / (1000 * 60 * 60 * 24)) + 1,
     );
 
-    const [activities, taskStats, customerMessages] = await Promise.all([
+    const [activities, taskStats, activeConversations] = await Promise.all([
       prisma.dealActivity.groupBy({
         by: ['type'],
         where: { dealId },
@@ -590,9 +590,12 @@ export class DealService {
         where: { dealId },
         _count: { _all: true },
       }),
-      deal.conversationId
-        ? prisma.message.count({ where: { conversationId: deal.conversationId } })
-        : Promise.resolve(0),
+      prisma.conversation.count({
+        where: {
+          contactId: deal.contactId,
+          status: { in: ['OPEN', 'WAITING'] },
+        },
+      }),
     ]);
 
     const activityCount = (type: string) =>
@@ -632,18 +635,12 @@ export class DealService {
         label: sourceLabel,
         createdAt: deal.createdAt.toISOString(),
       },
-      calls: {
-        received: 0,
-        made: activityCount('CALL'),
-      },
-      emails: activityCount('EMAIL'),
       tasks: {
         completed: taskCount('DONE'),
         overdue: overdueTasks,
       },
       notes: activityCount('NOTE'),
-      customerChat: customerMessages,
-      internalChat: activityCount('MEETING'),
+      activeConversations,
     };
   }
 

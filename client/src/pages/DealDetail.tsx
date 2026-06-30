@@ -101,19 +101,21 @@ interface DealStatistics {
     label: string;
     createdAt: string;
   };
-  calls: {
-    received: number;
-    made: number;
-  };
-  emails: number;
   tasks: {
     completed: number;
     overdue: number;
   };
   notes: number;
-  customerChat: number;
-  internalChat: number;
+  activeConversations: number;
 }
+
+/** Paleta alinhada ao design system (dashboard / pipelines) */
+const dealNeon = {
+  text: 'text-[#4ade80]',
+  textMuted: 'text-[#86efac]',
+  panel: 'bg-[#141816] border-[#252b28]',
+  card: 'bg-[#1a1f1c] border-[#2a322c]',
+};
 
 interface Message {
   id: string;
@@ -1431,34 +1433,55 @@ export default function DealDetail() {
             <span style={{ fontSize: '12px', opacity: 0.8 }}>#{deal.id.slice(-8)}</span>
           </div>
 
-          <div ref={pipelinePickerRef} style={{ position: 'relative', marginBottom: '12px' }}>
+          <div ref={pipelinePickerRef} style={{ position: 'relative', marginBottom: '8px' }}>
             <button
               type="button"
               onClick={openPipelinePicker}
               style={{
                 width: '100%',
                 textAlign: 'left',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.15)',
-                background: 'rgba(255,255,255,0.06)',
+                padding: '6px 10px',
+                borderRadius: '6px',
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(255,255,255,0.04)',
                 color: 'white',
                 cursor: 'pointer',
               }}
             >
-              <div style={{ fontSize: '11px', opacity: 0.75, marginBottom: '4px' }}>{deal.pipeline.name}</div>
               <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: '8px',
-                  fontSize: '16px',
-                  fontWeight: 600,
                 }}
               >
-                <span>{deal.stage.name}</span>
-                <span style={{ fontSize: '12px', opacity: 0.8 }}>▼</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      fontSize: '10px',
+                      opacity: 0.65,
+                      marginBottom: '1px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {deal.pipeline.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {deal.stage.name}
+                  </div>
+                </div>
+                <span style={{ fontSize: '10px', opacity: 0.7, flexShrink: 0 }}>▼</span>
               </div>
             </button>
 
@@ -2007,74 +2030,94 @@ export default function DealDetail() {
           )}
 
           {activeTab === 'estatisticas' && (
-            <div
-              style={{
-                margin: '-20px',
-                padding: '20px',
-                minHeight: '100%',
-                backgroundColor: '#f4f6f8',
-                color: '#1f2937',
-              }}
-            >
+            <div className="flex flex-col gap-4">
               {statsLoading ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>Carregando estatísticas...</div>
+                <div className={`animate-pulse rounded-xl border p-6 ${dealNeon.card}`}>
+                  <div className="mx-auto h-16 w-24 rounded-lg bg-[#252b28]" />
+                  <div className="mt-4 space-y-3">
+                    <div className="h-10 rounded-lg bg-[#252b28]" />
+                    <div className="h-10 rounded-lg bg-[#252b28]" />
+                    <div className="h-10 rounded-lg bg-[#252b28]" />
+                  </div>
+                </div>
               ) : dealStatistics ? (
                 <>
-                  <div style={{ marginBottom: '20px', fontSize: '13px', color: '#4b5563' }}>
-                    <strong>Fonte:</strong>{' '}
-                    {dealStatistics.source.label} /{' '}
-                    {new Date(dealStatistics.source.createdAt).toLocaleDateString('pt-BR')}
+                  <div className={`rounded-xl border px-4 py-3 text-xs text-[#9ca3a0] ${dealNeon.card}`}>
+                    <span className="font-semibold uppercase tracking-wide text-[#8b9490]">Fonte</span>
+                    <p className="mt-1 text-[#e8ece9]">
+                      {dealStatistics.source.label}
+                      <span className="text-[#6b7280]">
+                        {' '}
+                        / {new Date(dealStatistics.source.createdAt).toLocaleDateString('pt-BR')}
+                      </span>
+                    </p>
                   </div>
 
-                  <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-                    <div style={{ fontSize: '56px', fontWeight: 700, color: '#2563eb', lineHeight: 1 }}>
+                  <div
+                    className={`rounded-xl border px-4 py-6 text-center ${dealNeon.card}`}
+                    style={{ background: 'linear-gradient(180deg, #1e2420 0%, #161916 100%)' }}
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#8b9490]">
+                      Dias ativos
+                    </p>
+                    <p className={`mt-2 font-headline text-5xl font-bold tabular-nums ${dealNeon.text}`}>
                       {dealStatistics.activeDays}
-                    </div>
-                    <div style={{ marginTop: '6px', fontSize: '14px', color: '#6b7280' }}>Dias ativos</div>
+                    </p>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div className="flex flex-col gap-2">
                     {[
-                      {
-                        label: 'Chamadas recebidas / realizadas',
-                        value: `${dealStatistics.calls.received}/${dealStatistics.calls.made}`,
-                      },
-                      { label: 'E-mails', value: String(dealStatistics.emails) },
                       {
                         label: 'Tarefas finalizadas / vencidas',
                         value: (
-                          <span>
-                            {dealStatistics.tasks.completed}/
-                            <span style={{ color: dealStatistics.tasks.overdue > 0 ? '#ef4444' : '#1f2937' }}>
+                          <span className="tabular-nums">
+                            <span className={dealNeon.textMuted}>{dealStatistics.tasks.completed}</span>
+                            <span className="text-[#6b7280]">/</span>
+                            <span
+                              className={
+                                dealStatistics.tasks.overdue > 0 ? 'text-red-400' : 'text-[#e8ece9]'
+                              }
+                            >
                               {dealStatistics.tasks.overdue}
                             </span>
                           </span>
                         ),
                       },
-                      { label: 'Notas', value: String(dealStatistics.notes) },
-                      { label: 'Bate-papo com o cliente', value: String(dealStatistics.customerChat) },
-                      { label: 'Bate-papo interno', value: String(dealStatistics.internalChat) },
+                      {
+                        label: 'Notas',
+                        value: (
+                          <span className="font-semibold tabular-nums text-white">
+                            {dealStatistics.notes}
+                          </span>
+                        ),
+                      },
+                      {
+                        label: 'Bate-papo com o cliente',
+                        value: (
+                          <span className={`font-semibold tabular-nums ${dealNeon.text}`}>
+                            {dealStatistics.activeConversations}
+                          </span>
+                        ),
+                        hint: 'Conversas abertas ou em fila (canais/números distintos)',
+                      },
                     ].map((row) => (
                       <div
                         key={row.label}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: '12px',
-                          fontSize: '14px',
-                          borderBottom: '1px solid #e5e7eb',
-                          paddingBottom: '10px',
-                        }}
+                        className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-3 ${dealNeon.card}`}
                       >
-                        <span style={{ color: '#374151' }}>{row.label}</span>
-                        <span style={{ fontWeight: 600, color: '#111827' }}>{row.value}</span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-[#b8c4be]">{row.label}</p>
+                          {'hint' in row && row.hint ? (
+                            <p className="mt-0.5 text-[10px] text-[#6b7280]">{row.hint}</p>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-sm">{row.value}</div>
                       </div>
                     ))}
                   </div>
                 </>
               ) : (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
+                <div className={`rounded-xl border px-4 py-8 text-center text-sm text-[#6b7280] ${dealNeon.card}`}>
                   Não foi possível carregar as estatísticas.
                 </div>
               )}
