@@ -25,6 +25,23 @@ interface Props {
   onClose: () => void;
 }
 
+const PIPELINE_MODAL_LABEL =
+  'mb-1.5 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant';
+const PIPELINE_MODAL_INPUT =
+  'w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/55 outline-none transition focus:border-primary/45 focus:ring-1 focus:ring-primary/25';
+const PIPELINE_MODAL_SELECT = `${PIPELINE_MODAL_INPUT} cursor-pointer`;
+const AUTOMATION_SECTION_TITLE =
+  'mb-3 text-xs font-bold uppercase tracking-[0.16em] text-on-surface-variant';
+const AUTOMATION_HINT = 'mt-1.5 text-xs leading-relaxed text-on-surface-variant';
+const TRIGGER_OPTION_SELECTED =
+  'flex items-center gap-2 rounded-lg border border-primary/45 bg-primary/10 p-3 cursor-pointer';
+const TRIGGER_OPTION_IDLE =
+  'flex items-center gap-2 rounded-lg border border-transparent p-3 cursor-pointer transition hover:border-outline-variant hover:bg-surface-container';
+const TRIGGER_CARD_SELECTED =
+  'rounded-lg border border-primary/45 bg-primary/10 p-3';
+const TRIGGER_CARD_IDLE =
+  'rounded-lg border border-outline-variant bg-surface-container p-3';
+
 function getBlockName(type: string): string {
   switch (type) {
     case 'sales_bot':
@@ -496,43 +513,26 @@ function TriggerOption({ value, selected, delayMinutes, triggerType, onChange }:
   };
 
   return (
-    <div
-      onClick={handleClick}
-      style={{
-        padding: '10px 12px',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        backgroundColor: selected ? '#e0f2fe' : 'transparent',
-        border: selected ? '1px solid #0ea5e9' : '1px solid transparent',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-      }}
-    >
-      {selected && (
-        <span style={{ color: '#10b981', fontSize: '16px' }}>✓</span>
-      )}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '14px', color: '#1f2937' }}>
-          Depois de
-        </span>
+    <div onClick={handleClick} className={selected ? TRIGGER_OPTION_SELECTED : TRIGGER_OPTION_IDLE}>
+      {selected && <span className="text-base text-primary">✓</span>}
+      <div className="flex flex-1 flex-wrap items-center gap-2">
+        <span className="text-sm text-on-surface">Depois de</span>
         <input
           type="number"
           value={delay}
           onChange={handleDelayChange}
           onClick={(e) => e.stopPropagation()}
           min="0"
-          style={{
-            width: '60px',
-            padding: '4px 6px',
-            border: '1px solid #e5e7eb',
-            borderRadius: '4px',
-            fontSize: '14px',
-            textAlign: 'center',
-          }}
+          className="w-16 rounded-md border border-outline-variant bg-surface-container-highest px-2 py-1 text-center text-sm text-on-surface outline-none focus:border-primary/45"
         />
-        <span style={{ fontSize: '14px', color: '#1f2937' }}>
-          minutos quando {triggerType === 'created' ? 'criado' : triggerType === 'moved' ? 'movido para' : 'movido para ou criado'} nesta etapa
+        <span className="text-sm text-on-surface">
+          minutos quando{' '}
+          {triggerType === 'created'
+            ? 'criado'
+            : triggerType === 'moved'
+              ? 'movido para'
+              : 'movido para ou criado'}{' '}
+          nesta etapa
         </span>
       </div>
     </div>
@@ -569,15 +569,7 @@ function TaskUserSelector({ config, onChange }: TaskUserSelectorProps) {
     <select
       value={config.assignedUserId || ''}
       onChange={(e) => onChange({ ...config, assignedUserId: e.target.value })}
-      style={{
-        width: '100%',
-        marginTop: '8px',
-        padding: '8px 12px',
-        border: '1px solid #e5e7eb',
-        borderRadius: '6px',
-        fontSize: '14px',
-        backgroundColor: 'white',
-      }}
+      className={`${PIPELINE_MODAL_SELECT} mt-2`}
     >
       <option value="">Selecione um usuário</option>
       {loading ? (
@@ -627,133 +619,86 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2000,
-      }}
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]"
       onClick={onClose}
+      role="presentation"
     >
       <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          padding: '24px',
-          width: '90%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
-          overflow: 'auto',
-        }}
+        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-highest p-6 text-on-surface shadow-2xl sm:p-7"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="automation-config-title"
       >
-        <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '24px', color: '#1f2937' }}>
-          Configurar {getBlockName(block.type)}
-        </h2>
+        <div className="mb-6 border-b border-outline-variant pb-4">
+          <h2 id="automation-config-title" className="font-headline text-xl font-bold tracking-tight">
+            Configurar {getBlockName(block.type)}
+          </h2>
+          <p className="mt-1.5 text-sm text-on-surface-variant">
+            Defina quando e como esta automação será executada na etapa.
+          </p>
+        </div>
 
+        <div className="space-y-5">
         {block.type === 'sales_bot' && (
           <>
-            {/* Seção de Condições */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Para todos os leads com:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Para todos os leads com:</label>
               <input
                 type="text"
                 placeholder="Adicionar uma condição"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                }}
+                className={PIPELINE_MODAL_INPUT}
               />
             </div>
 
-            {/* Gatilho de Execução */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Executar:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Executar:</label>
               <select
                 value={config.trigger || 'when_moved_to_stage'}
                 onChange={(e) => onChange({ ...config, trigger: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="when_created_in_stage">Imediatamente quando criado nesta etapa</option>
                 <option value="when_moved_to_stage">Imediatamente quando movido para esta etapa</option>
                 <option value="when_moved_or_created">Imediatamente quando movido para ou criado nesta etapa</option>
                 <option value="when_user_changed">Quando o usuário responsável é alterado em lead</option>
               </select>
-              <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px', margin: 0 }}>
-                A mensagem será enviada aos contatos que se comunicaram com você nos aplicativos de mensagens que você integrou
+              <p className={AUTOMATION_HINT}>
+                A mensagem será enviada aos contatos que se comunicaram com você nos aplicativos de mensagens integrados.
               </p>
             </div>
 
-            {/* Status Ativo */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Ativo:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Ativo:</label>
               <select
                 value={config.active || 'always'}
                 onChange={(e) => onChange({ ...config, active: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="always">sempre</option>
                 <option value="scheduled">agendado</option>
               </select>
             </div>
 
-            {/* Deixar mensagem sem resposta */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <div>
+              <label className="flex cursor-pointer items-start gap-2.5">
                 <input
                   type="checkbox"
                   checked={config.leaveUnanswered || false}
                   onChange={(e) => onChange({ ...config, leaveUnanswered: e.target.checked })}
-                  style={{
-                    width: '18px',
-                    height: '18px',
-                    cursor: 'pointer',
-                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-outline-variant accent-primary"
                 />
-                <span style={{ fontSize: '14px', color: '#1f2937' }}>Deixar mensagem sem resposta</span>
+                <span className="text-sm text-on-surface">Deixar mensagem sem resposta</span>
               </label>
-              <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px', marginLeft: '26px', margin: '4px 0 0 26px' }}>
-                As mensagens às quais o Salesbot responde serão marcadas como não respondidas
+              <p className={`${AUTOMATION_HINT} ml-6`}>
+                As mensagens às quais o robô responde serão marcadas como não respondidas.
               </p>
             </div>
 
-            {/* Seção Salesbot */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#1f2937' }}>
-                Salesbot
-              </h3>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <div>
+              <h3 className={AUTOMATION_SECTION_TITLE}>Robô de vendas</h3>
+              <div className="flex flex-col gap-2 sm:flex-row">
                 {loadingBots ? (
-                  <div style={{ width: '100%', padding: '8px', textAlign: 'center', color: '#6b7280' }}>
+                  <div className="w-full rounded-lg border border-outline-variant bg-surface-container py-3 text-center text-sm text-on-surface-variant">
                     Carregando bots...
                   </div>
                 ) : (
@@ -761,14 +706,7 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
                     <select
                       value={config.botId || ''}
                       onChange={(e) => onChange({ ...config, botId: e.target.value })}
-                      style={{
-                        flex: 1,
-                        padding: '8px 12px',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                        backgroundColor: 'white',
-                      }}
+                      className={`${PIPELINE_MODAL_SELECT} flex-1`}
                     >
                       <option value="">Nenhum robô selecionado</option>
                       {bots.map((bot) => (
@@ -779,47 +717,27 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
                     </select>
                     <button
                       type="button"
-                      onClick={() => {
-                        // Navegar para página de criação de bot
-                        window.open('/bots', '_blank');
-                      }}
-                      style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        fontWeight: '500',
-                        whiteSpace: 'nowrap',
-                      }}
+                      onClick={() => window.open('/bots', '_blank')}
+                      className="shrink-0 rounded-lg border border-primary/35 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary-fixed-dim transition hover:bg-primary/15"
                     >
-                      + Criar um novo robô
+                      + Criar robô
                     </button>
                   </>
                 )}
               </div>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
-                Crie um novo robô ou selecionar um existente
-              </p>
+              <p className={AUTOMATION_HINT}>Crie um novo robô ou selecione um existente.</p>
             </div>
 
-            {/* Aplicar gatilho retroativamente */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <div>
+              <label className="flex cursor-pointer items-start gap-2.5">
                 <input
                   type="checkbox"
                   checked={config.applyToExisting || false}
                   onChange={(e) => onChange({ ...config, applyToExisting: e.target.checked })}
-                  style={{
-                    width: '18px',
-                    height: '18px',
-                    cursor: 'pointer',
-                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-outline-variant accent-primary"
                 />
-                <span style={{ fontSize: '14px', color: '#1f2937' }}>
-                  Aplicar o gatilho à todos os leads já nesta etapa
+                <span className="text-sm text-on-surface">
+                  Aplicar o gatilho a todos os leads já nesta etapa
                 </span>
               </label>
             </div>
@@ -828,31 +746,14 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
 
         {block.type === 'change_stage' && (
           <>
-            {/* Seção de Condições */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Para todos os leads com:
-              </label>
-              <input
-                type="text"
-                placeholder="Adicionar uma condição"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                }}
-              />
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Para todos os leads com:</label>
+              <input type="text" placeholder="Adicionar uma condição" className={PIPELINE_MODAL_INPUT} />
             </div>
 
-            {/* Seção de Gatilhos do Pipeline */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#1f2937' }}>
-                GATILHOS DO PIPELINE
-              </h3>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div>
+              <h3 className={AUTOMATION_SECTION_TITLE}>Gatilhos do pipeline</h3>
+              <div className="flex flex-col gap-2">
                 <TriggerOption
                   value="after_5min_created"
                   selected={config.trigger === 'after_5min_created'}
@@ -876,112 +777,76 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
                 />
                 <div
                   onClick={() => onChange({ ...config, trigger: 'when_user_changed' })}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    backgroundColor: config.trigger === 'when_user_changed' ? '#e0f2fe' : 'transparent',
-                    border: config.trigger === 'when_user_changed' ? '1px solid #0ea5e9' : '1px solid transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                  }}
+                  className={
+                    config.trigger === 'when_user_changed' ? TRIGGER_OPTION_SELECTED : TRIGGER_OPTION_IDLE
+                  }
                 >
                   {config.trigger === 'when_user_changed' && (
-                    <span style={{ color: '#10b981', fontSize: '16px' }}>✓</span>
+                    <span className="text-base text-primary">✓</span>
                   )}
-                  <span style={{ fontSize: '14px', color: '#1f2937' }}>
+                  <span className="text-sm text-on-surface">
                     Quando o usuário responsável é alterado em lead
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Seção de Gatilhos Programados */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#1f2937' }}>
-                GATILHOS PROGRAMADOS
-              </h3>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {/* Tempo Exato */}
+            <div>
+              <h3 className={AUTOMATION_SECTION_TITLE}>Gatilhos programados</h3>
+              <div className="flex flex-col gap-3">
                 <div
-                  style={{
-                    padding: '12px',
-                    border: config.trigger === 'exact_time' ? '1px solid #0ea5e9' : '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    backgroundColor: config.trigger === 'exact_time' ? '#e0f2fe' : 'white',
-                  }}
+                  className={
+                    config.trigger === 'exact_time' ? TRIGGER_CARD_SELECTED : TRIGGER_CARD_IDLE
+                  }
                 >
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}>
+                  <label className="mb-2 flex cursor-pointer items-center gap-2">
                     <input
                       type="radio"
                       checked={config.trigger === 'exact_time'}
                       onChange={() => onChange({ ...config, trigger: 'exact_time' })}
-                      style={{ cursor: 'pointer' }}
+                      className="accent-primary"
                     />
-                    <span style={{ fontSize: '14px', color: '#1f2937', fontWeight: '500' }}>Tempo exato</span>
+                    <span className="text-sm font-medium text-on-surface">Tempo exato</span>
                   </label>
                   {config.trigger === 'exact_time' && (
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <input
                         type="date"
                         value={config.scheduledDate || ''}
                         onChange={(e) => onChange({ ...config, scheduledDate: e.target.value })}
-                        style={{
-                          padding: '6px 8px',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '4px',
-                          fontSize: '14px',
-                        }}
+                        className="rounded-md border border-outline-variant bg-surface-container-highest px-2 py-1.5 text-sm text-on-surface outline-none focus:border-primary/45"
                       />
-                      <span style={{ fontSize: '14px', color: '#6b7280' }}>às</span>
+                      <span className="text-sm text-on-surface-variant">às</span>
                       <input
                         type="time"
                         value={config.scheduledTime || ''}
                         onChange={(e) => onChange({ ...config, scheduledTime: e.target.value })}
-                        style={{
-                          padding: '6px 8px',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '4px',
-                          fontSize: '14px',
-                        }}
+                        className="rounded-md border border-outline-variant bg-surface-container-highest px-2 py-1.5 text-sm text-on-surface outline-none focus:border-primary/45"
                       />
                     </div>
                   )}
                 </div>
 
-                {/* Diariamente */}
                 <div
-                  style={{
-                    padding: '12px',
-                    border: config.trigger === 'daily' ? '1px solid #0ea5e9' : '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    backgroundColor: config.trigger === 'daily' ? '#e0f2fe' : 'white',
-                  }}
+                  className={config.trigger === 'daily' ? TRIGGER_CARD_SELECTED : TRIGGER_CARD_IDLE}
                 >
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}>
+                  <label className="mb-2 flex cursor-pointer items-center gap-2">
                     <input
                       type="radio"
                       checked={config.trigger === 'daily'}
                       onChange={() => onChange({ ...config, trigger: 'daily' })}
-                      style={{ cursor: 'pointer' }}
+                      className="accent-primary"
                     />
-                    <span style={{ fontSize: '14px', color: '#1f2937', fontWeight: '500' }}>Diariamente</span>
+                    <span className="text-sm font-medium text-on-surface">Diariamente</span>
                   </label>
                   {config.trigger === 'daily' && (
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
-                      <span style={{ fontSize: '14px', color: '#6b7280' }}>às</span>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-sm text-on-surface-variant">às</span>
                       <input
                         type="time"
                         value={config.dailyTime || ''}
                         onChange={(e) => onChange({ ...config, dailyTime: e.target.value })}
-                        style={{
-                          padding: '6px 8px',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '4px',
-                          fontSize: '14px',
-                        }}
+                        className="rounded-md border border-outline-variant bg-surface-container-highest px-2 py-1.5 text-sm text-on-surface outline-none focus:border-primary/45"
                       />
                     </div>
                   )}
@@ -989,42 +854,22 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
               </div>
             </div>
 
-            {/* Seção de Gatilhos Baseados em Ações */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#1f2937' }}>
-                GATILHOS BASEADOS EM AÇÕES
-              </h3>
-              <p style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
-                Em desenvolvimento...
-              </p>
+            <div>
+              <h3 className={AUTOMATION_SECTION_TITLE}>Gatilhos baseados em ações</h3>
+              <p className="text-xs italic text-on-surface-variant">Em desenvolvimento...</p>
             </div>
 
-            {/* Seção de Gatilhos de Conversação */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#1f2937' }}>
-                GATILHOS DE CONVERSAÇÃO
-              </h3>
-              <p style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
-                Em desenvolvimento...
-              </p>
+            <div>
+              <h3 className={AUTOMATION_SECTION_TITLE}>Gatilhos de conversação</h3>
+              <p className="text-xs italic text-on-surface-variant">Em desenvolvimento...</p>
             </div>
 
-            {/* Etapa de Destino */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Etapa de Destino *
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Etapa de destino *</label>
               <select
                 value={config.targetStageId || ''}
                 onChange={(e) => onChange({ ...config, targetStageId: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="">Selecione uma etapa</option>
                 {pipeline.stages
@@ -1041,40 +886,17 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
 
         {block.type === 'add_task' && (
           <>
-            {/* Seção de Condições */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Para todos os leads com:
-              </label>
-              <input
-                type="text"
-                placeholder="Adicionar uma condição"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                }}
-              />
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Para todos os leads com:</label>
+              <input type="text" placeholder="Adicionar uma condição" className={PIPELINE_MODAL_INPUT} />
             </div>
 
-            {/* Gatilho de Execução */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Executar:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Executar:</label>
               <select
                 value={config.trigger || 'when_moved_to_stage'}
                 onChange={(e) => onChange({ ...config, trigger: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="when_created_in_stage">Imediatamente quando criado nesta etapa</option>
                 <option value="when_moved_to_stage">Imediatamente quando movido para esta etapa</option>
@@ -1083,22 +905,12 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
               </select>
             </div>
 
-            {/* Prazo da Tarefa */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Prazo da tarefa:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Prazo da tarefa:</label>
               <select
                 value={config.deadline || 'immediately'}
                 onChange={(e) => onChange({ ...config, deadline: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="immediately">Imediatamente</option>
                 <option value="1_day">1 dia</option>
@@ -1115,63 +927,40 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
                   onChange={(e) => onChange({ ...config, customDeadlineDays: parseInt(e.target.value) || 0 })}
                   placeholder="Número de dias"
                   min="0"
-                  style={{
-                    width: '100%',
-                    marginTop: '8px',
-                    padding: '8px 12px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
+                  className={`${PIPELINE_MODAL_INPUT} mt-2`}
                 />
               )}
             </div>
 
-            {/* Para (Usuário responsável) */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Para:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Para:</label>
               <select
                 value={config.assignTo || 'current_user'}
-                onChange={(e) => onChange({ ...config, assignTo: e.target.value, assignedUserId: e.target.value === 'specific_user' ? config.assignedUserId : undefined })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    assignTo: e.target.value,
+                    assignedUserId:
+                      e.target.value === 'specific_user' ? config.assignedUserId : undefined,
+                  })
+                }
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="current_user">Usuário responsável atual</option>
                 <option value="specific_user">Usuário específico</option>
                 <option value="no_assignment">Sem atribuição</option>
               </select>
               {config.assignTo === 'specific_user' && (
-                <TaskUserSelector
-                  config={config}
-                  onChange={onChange}
-                />
+                <TaskUserSelector config={config} onChange={onChange} />
               )}
             </div>
 
-            {/* Tipo de Ação/Tarefa */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Tipo de tarefa:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Tipo de tarefa:</label>
               <select
                 value={config.taskType || 'follow_up'}
                 onChange={(e) => onChange({ ...config, taskType: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="follow_up">Acompanhar</option>
                 <option value="meeting">Reunião</option>
@@ -1183,44 +972,25 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
               </select>
             </div>
 
-            {/* Título da Tarefa (baseado no tipo) */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-                Título da Tarefa *
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Título da tarefa *</label>
               <input
                 type="text"
                 value={config.taskTitle || getDefaultTaskTitle(config.taskType)}
                 onChange={(e) => onChange({ ...config, taskTitle: e.target.value })}
                 placeholder={getDefaultTaskTitle(config.taskType)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                }}
+                className={PIPELINE_MODAL_INPUT}
               />
             </div>
 
-            {/* Descrição (opcional) */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-                Descrição (opcional)
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Descrição (opcional)</label>
               <textarea
                 value={config.taskDescription || ''}
                 onChange={(e) => onChange({ ...config, taskDescription: e.target.value })}
                 placeholder="Descrição da tarefa..."
                 rows={3}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  resize: 'vertical',
-                  fontSize: '14px',
-                }}
+                className={`${PIPELINE_MODAL_INPUT} min-h-[88px] resize-y`}
               />
             </div>
           </>
@@ -1228,40 +998,17 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
 
         {block.type === 'change_user' && (
           <>
-            {/* Seção de Condições */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Para todos os leads com:
-              </label>
-              <input
-                type="text"
-                placeholder="Adicionar uma condição"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                }}
-              />
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Para todos os leads com:</label>
+              <input type="text" placeholder="Adicionar uma condição" className={PIPELINE_MODAL_INPUT} />
             </div>
 
-            {/* Gatilho de Execução */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Executar:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Executar:</label>
               <select
                 value={config.trigger || 'when_moved_to_stage'}
                 onChange={(e) => onChange({ ...config, trigger: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="when_created_in_stage">Imediatamente quando criado nesta etapa</option>
                 <option value="when_moved_to_stage">Imediatamente quando movido para esta etapa</option>
@@ -1270,94 +1017,57 @@ function ConfigModal({ block, config, pipeline, onClose, onSave, onChange }: Con
               </select>
             </div>
 
-            {/* Para (Usuário responsável) */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#1f2937' }}>
-                Novo responsável:
-              </label>
+            <div>
+              <label className={PIPELINE_MODAL_LABEL}>Novo responsável:</label>
               <select
                 value={config.assignTo || 'current_user'}
                 onChange={(e) =>
                   onChange({
                     ...config,
                     assignTo: e.target.value,
-                    assignedUserId: e.target.value === 'specific_user' ? config.assignedUserId : undefined,
+                    assignedUserId:
+                      e.target.value === 'specific_user' ? config.assignedUserId : undefined,
                   })
                 }
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                }}
+                className={PIPELINE_MODAL_SELECT}
               >
                 <option value="current_user">Manter usuário responsável atual</option>
                 <option value="specific_user">Definir usuário específico</option>
                 <option value="no_assignment">Sem atribuição</option>
               </select>
               {config.assignTo === 'specific_user' && (
-                <TaskUserSelector
-                  config={config}
-                  onChange={onChange}
-                />
+                <TaskUserSelector config={config} onChange={onChange} />
               )}
             </div>
           </>
         )}
 
-        {/* Delay comum a todos os tipos (apenas para outros tipos, não sales_bot) */}
         {block.type !== 'sales_bot' && (
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-              Atraso antes de executar (segundos)
-            </label>
+          <div>
+            <label className={PIPELINE_MODAL_LABEL}>Atraso antes de executar (segundos)</label>
             <input
               type="number"
               value={config.delaySeconds || 0}
               onChange={(e) => onChange({ ...config, delaySeconds: parseInt(e.target.value) || 0 })}
               min="0"
-              style={{
-                width: '100%',
-                padding: '8px',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-              }}
+              className={PIPELINE_MODAL_INPUT}
             />
           </div>
         )}
+        </div>
 
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
+        <div className="mt-6 flex flex-col-reverse gap-2 border-t border-outline-variant pt-5 sm:flex-row sm:justify-end sm:gap-3">
           <button
             type="button"
             onClick={onClose}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#f3f4f6',
-              color: '#1f2937',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-            }}
+            className="rounded-lg border border-outline-variant bg-surface-container px-5 py-2.5 text-sm font-semibold text-on-surface transition hover:bg-surface-variant"
           >
             Cancelar
           </button>
           <button
             type="button"
             onClick={onSave}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600',
-            }}
+            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-on-primary shadow-emerald-send transition hover:brightness-110"
           >
             Finalizado
           </button>
