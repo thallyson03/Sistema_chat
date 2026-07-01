@@ -52,6 +52,7 @@ export class DealController {
       const deal = await dealService.createDeal({
         ...req.body,
         createdById: req.user?.id,
+        creationSource: 'MANUAL',
       });
       res.status(201).json(deal);
     } catch (error: any) {
@@ -316,7 +317,10 @@ export class DealController {
 
   async createDealPublic(req: Request, res: Response) {
     try {
-      const deal = await dealService.createDeal(req.body);
+      const deal = await dealService.createDeal({
+        ...req.body,
+        creationSource: req.body?.creationSource || 'API',
+      });
       res.status(201).json(deal);
     } catch (error: any) {
       res.status(400).json({ error: error.message });

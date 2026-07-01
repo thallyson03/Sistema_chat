@@ -9,12 +9,51 @@ export interface CreateDealData {
   conversationId?: string;
   assignedToId?: string;
   createdById?: string;
+  creationSource?: string;
   name: string; // Nome do lead/negócio
   value?: number; // Valor opcional
   currency?: string;
   customFields?: Record<string, any>; // Campos personalizados
   probability?: number;
   expectedCloseDate?: Date;
+}
+
+const CREATION_SOURCE_LABELS: Record<string, string> = {
+  MANUAL: 'Manual',
+  API: 'API de integração',
+  BOT: 'Bot',
+  JOURNEY: 'Jornada',
+  AUTOMATION: 'Automação',
+  WEBHOOK: 'Webhook',
+};
+
+function normalizeCreationSource(raw: unknown): string | null {
+  if (raw == null) return null;
+  const code = String(raw).trim().toUpperCase();
+  return code || null;
+}
+
+function resolveCreationSourceLabel(code: string): string {
+  return CREATION_SOURCE_LABELS[code] || code;
+}
+
+async function resolveDealCreationSource(dealId: string): Promise<string> {
+  const creationActivity = await prisma.dealActivity.findFirst({
+    where: { dealId, title: 'Negócio criado' },
+    orderBy: { createdAt: 'asc' },
+    select: { metadata: true, userId: true },
+  });
+
+  if (creationActivity?.metadata && typeof creationActivity.metadata === 'object') {
+    const meta = creationActivity.metadata as Record<string, unknown>;
+    const fromMeta = normalizeCreationSource(meta.source ?? meta.creationSource);
+    if (fromMeta) return resolveCreationSourceLabel(fromMeta);
+  }
+
+  if (creationActivity?.userId) return resolveCreationSourceLabel('MANUAL');
+  if (creationActivity) return resolveCreationSourceLabel('API');
+
+  return resolveCreationSourceLabel('MANUAL');
 }
 
 export interface UpdateDealData {
@@ -144,6 +183,10 @@ export class DealService {
     });
 
     // Criar atividade de criação
+    const creationSource =
+      normalizeCreationSource(data.creationSource) ||
+      (data.createdById ? 'MANUAL' : 'API');
+
     await prisma.dealActivity.create({
       data: {
         dealId: deal.id,
@@ -151,6 +194,7 @@ export class DealService {
         type: 'STAGE_CHANGE',
         title: 'Negócio criado',
         description: `Negócio criado na etapa "${stage?.name || 'N/A'}"`,
+        metadata: { source: creationSource },
       },
     });
 
@@ -550,18 +594,7 @@ export class DealService {
       select: {
         id: true,
         createdAt: true,
-        customFields: true,
         contactId: true,
-        contact: {
-          select: {
-            channelIdentities: {
-              take: 1,
-              include: {
-                channel: { select: { name: true, type: true } },
-              },
-            },
-          },
-        },
       },
     });
 
@@ -612,22 +645,7 @@ export class DealService {
       },
     });
 
-    const customFields = (deal.customFields || {}) as Record<string, unknown>;
-    const sourceFromField =
-      customFields.fonte ||
-      customFields.Fonte ||
-      customFields.source ||
-      customFields.origem ||
-      null;
-
-    const channelName =
-      deal.contact.channelIdentities[0]?.channel?.name || null;
-
-    const sourceLabel = sourceFromField
-      ? String(sourceFromField)
-      : channelName
-        ? `Canal ${channelName}`
-        : 'Manual';
+    const sourceLabel = await resolveDealCreationSource(dealId);
 
     return {
       activeDays,

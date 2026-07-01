@@ -721,7 +721,7 @@ export class JourneyExecutionService {
     }
 
     const conversation = await this.getLatestConversationForContact(contact.id);
-    await prisma.deal.create({
+    const createdDeal = await prisma.deal.create({
       data: {
         contactId: contact.id,
         conversationId: conversation?.id || null,
@@ -732,6 +732,16 @@ export class JourneyExecutionService {
         value: null,
         currency: 'BRL',
         probability: 0,
+      },
+    });
+
+    await prisma.dealActivity.create({
+      data: {
+        dealId: createdDeal.id,
+        type: 'STAGE_CHANGE',
+        title: 'Negócio criado',
+        description: 'Negócio criado via jornada',
+        metadata: { source: 'JOURNEY' },
       },
     });
   }
