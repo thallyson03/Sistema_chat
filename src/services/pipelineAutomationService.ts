@@ -13,9 +13,18 @@ interface AutomationConfig {
   delaySeconds?: number;
   // Configurações do Salesbot
   trigger?: string; // 'when_created_in_stage' | 'when_moved_to_stage' | 'when_moved_or_created' | 'when_user_changed'
-  active?: string; // 'always' | 'scheduled'
+  active?: string; // 'always' | 'personalized' | 'scheduled' (legado)
   leaveUnanswered?: boolean;
   applyToExisting?: boolean;
+  conditions?: AutomationLeadCondition[];
+  executeTiming?: 'immediate' | 'custom';
+  executeDelayMinutes?: number;
+  executeAtTime?: string;
+  activeSchedule?: {
+    days?: number[];
+    startTime?: string;
+    endTime?: string;
+  };
   // Configurações de gatilhos com delay
   delayMinutes?: number; // Delay em minutos para gatilhos do pipeline
   // Configurações de gatilhos programados
@@ -25,11 +34,20 @@ interface AutomationConfig {
   // Configurações de tarefa
   deadline?: string;
   customDeadlineDays?: number;
+  customDeadlineHours?: number;
+  customDeadlineMinutes?: number;
+  customDeadlineSeconds?: number;
   assignTo?: string;
   assignedUserId?: string;
   taskType?: string;
   notifyInChat?: boolean;
   [key: string]: any;
+}
+
+interface AutomationLeadCondition {
+  type: string;
+  operator?: string;
+  value?: string;
 }
 
 export class PipelineAutomationService {
@@ -49,6 +67,126 @@ export class PipelineAutomationService {
       return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
     }
     return false;
+  }
+
+  private isRuleActiveNow(config: AutomationConfig): boolean {
+    const active = String(config.active || 'always').toLowerCase();
+    if (active === 'always' || active === 'sempre') return true;
+    if (active !== 'personalized' && active !== 'scheduled' && active !== 'custom') return true;
+
+    const schedule = config.activeSchedule;
+    if (!schedule) return true;
+
+    const now = new Date();
+    const day = now.getDay();
+    if (schedule.days?.length && !schedule.days.includes(day)) {
+      return false;
+    }
+
+    if (schedule.startTime && schedule.endTime) {
+      const toMinutes = (time: string) => {
+        const [h, m] = time.split(':').map((part) => Number(part));
+        return (h || 0) * 60 + (m || 0);
+      };
+      const current = now.getHours() * 60 + now.getMinutes();
+      const start = toMinutes(schedule.startTime);
+      const end = toMinutes(schedule.endTime);
+      if (current < start || current > end) return false;
+    }
+
+    return true;
+  }
+
+  private calculateExecutionDelayMs(config: AutomationConfig): number {
+    const timing = config.executeTiming || 'immediate';
+    let delayMs = (config.delaySeconds || 0) * 1000;
+
+    if (timing !== 'custom') {
+      return delayMs;
+    }
+
+    delayMs += (config.executeDelayMinutes || 0) * 60 * 1000;
+
+    if (config.executeAtTime) {
+      const [hours, minutes] = config.executeAtTime.split(':').map((part) => Number(part));
+      const now = new Date();
+      const target = new Date(now);
+      target.setHours(hours || 0, minutes || 0, 0, 0);
+      if (target.getTime() > now.getTime()) {
+        delayMs += target.getTime() - now.getTime();
+      }
+    }
+
+    return delayMs;
+  }
+
+  private async matchesLeadConditions(deal: any, conditions?: AutomationLeadCondition[]): Promise<boolean> {
+    if (!conditions?.length) return true;
+
+    let conversationTags: Array<{ tag?: { name?: string } }> = [];
+    if (deal.conversationId) {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: deal.conversationId },
+        include: { tags: { include: { tag: true } } },
+      });
+      conversationTags = conversation?.tags || [];
+    }
+
+    for (const condition of conditions) {
+      const type = String(condition.type || '').toLowerCase();
+      const value = String(condition.value || '').trim();
+
+      switch (type) {
+        case 'tag': {
+          const tagNames = conversationTags
+            .map((item) => item.tag?.name?.toLowerCase())
+            .filter(Boolean) as string[];
+          if (!value) return false;
+          if (!tagNames.includes(value.toLowerCase())) return false;
+          break;
+        }
+        case 'assigned_user':
+          if (value === '__none__') {
+            if (deal.assignedToId) return false;
+          } else if (value && deal.assignedToId !== value) {
+            return false;
+          }
+          break;
+        case 'whatsapp': {
+          const hasWhatsApp = deal.contact?.channelIdentities?.some((identity: any) => {
+            const channelType = String(identity.channel?.type || '').toLowerCase();
+            const provider = String(identity.provider || '').toLowerCase();
+            return channelType.includes('whatsapp') || provider.includes('whatsapp');
+          });
+          if (!hasWhatsApp && !deal.contact?.phone) return false;
+          break;
+        }
+        case 'email':
+          if (!deal.contact?.email) return false;
+          break;
+        case 'phone':
+          if (!deal.contact?.phone) return false;
+          break;
+        case 'channel': {
+          if (!value) return false;
+          const hasChannel = deal.contact?.channelIdentities?.some(
+            (identity: any) => identity.channelId === value,
+          );
+          if (!hasChannel && deal.conversation?.channelId !== value) return false;
+          break;
+        }
+        case 'has_conversation':
+          if (!deal.conversationId) return false;
+          break;
+        case 'no_conversation':
+          if (deal.conversationId) return false;
+          break;
+        default:
+          break;
+      }
+    }
+
+    return true;
   }
 
   /**
@@ -211,9 +349,21 @@ export class PipelineAutomationService {
           console.log(`[PipelineAutomation] Regra ${rule.id} não corresponde ao trigger ${ruleTrigger}`);
           continue;
         }
+
+        if (!this.isRuleActiveNow(config)) {
+          console.log(`[PipelineAutomation] Regra ${rule.id} fora da janela de ativação`);
+          continue;
+        }
+
+        const matchesConditions = await this.matchesLeadConditions(deal, config.conditions);
+        if (!matchesConditions) {
+          console.log(`[PipelineAutomation] Regra ${rule.id} não atende às condições do lead`);
+          continue;
+        }
         
         // Aplicar delay se configurado
-        const delaySeconds = delayToApply || config.delaySeconds || 0;
+        const configuredDelayMs = this.calculateExecutionDelayMs(config);
+        const delaySeconds = delayToApply || Math.ceil(configuredDelayMs / 1000);
         if (delaySeconds > 0) {
           console.log(`[PipelineAutomation] Aguardando ${delaySeconds} segundos antes de executar regra ${rule.id}`);
           await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
@@ -536,26 +686,29 @@ export class PipelineAutomationService {
         case '7_days':
           daysToAdd = 7;
           break;
-        case 'custom':
-          daysToAdd = config.customDeadlineDays || 0;
+        case 'custom': {
+          const hours = config.customDeadlineHours || 0;
+          const minutes = config.customDeadlineMinutes || 0;
+          const seconds = config.customDeadlineSeconds || 0;
+          if (hours > 0 || minutes > 0 || seconds > 0) {
+            dueDate = new Date();
+            dueDate.setHours(dueDate.getHours() + hours);
+            dueDate.setMinutes(dueDate.getMinutes() + minutes);
+            dueDate.setSeconds(dueDate.getSeconds() + seconds);
+          } else {
+            daysToAdd = config.customDeadlineDays || 0;
+          }
           break;
+        }
       }
-      
-      if (daysToAdd > 0) {
+
+      if (!dueDate && daysToAdd > 0) {
         dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + daysToAdd);
       }
     }
 
-    // Determinar usuário responsável
-    let assignedUserId: string | null = null;
-    const assignTo = config.assignTo || 'current_user';
-    
-    if (assignTo === 'current_user' && deal.assignedToId) {
-      assignedUserId = deal.assignedToId;
-    } else if (assignTo === 'specific_user' && config.assignedUserId) {
-      assignedUserId = config.assignedUserId;
-    }
+    const assignedUserId: string | null = deal.assignedToId || null;
 
     // Criar tarefa
     const task = await prisma.pipelineTask.create({
