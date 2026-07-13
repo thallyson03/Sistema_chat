@@ -64,6 +64,8 @@ export function encryptConfigSecrets(config: unknown): unknown {
     'metaAppSecret',
     'whatsappAppSecret',
     'accessToken',
+    'authToken',
+    'apiKeySecret',
   ]);
   const cloned = { ...(config as Record<string, unknown>) };
   for (const key of Object.keys(cloned)) {
@@ -85,6 +87,8 @@ export function decryptConfigSecrets(config: unknown): unknown {
     'metaAppSecret',
     'whatsappAppSecret',
     'accessToken',
+    'authToken',
+    'apiKeySecret',
   ]);
   const cloned = { ...(config as Record<string, unknown>) };
   for (const key of Object.keys(cloned)) {

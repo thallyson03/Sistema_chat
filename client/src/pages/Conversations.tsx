@@ -28,6 +28,7 @@ import MessageSendErrorBadge from '../components/chat/MessageSendErrorBadge';
 import { formatMetaSendErrorDisplay } from '../utils/metaSendError';
 import { useEvolutionOutboundPresence } from '../hooks/useEvolutionOutboundPresence';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import CallContactButton from '../components/CallContactButton';
 
 // Função para gerar avatar com iniciais
 const getAvatarUrl = (name: string, size: number = 40): string => {
@@ -1976,6 +1977,14 @@ export default function Conversations() {
                 </div>
               </div>
               <div className="ml-2 flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {selectedConversation?.contact?.phone ? (
+                  <CallContactButton
+                    compact
+                    phone={selectedConversation.contact.phone}
+                    contactId={selectedConversation.contact.id}
+                    conversationId={selectedConversation.id}
+                  />
+                ) : null}
                 {/* Ícone de bot/integração vs humano */}
                 {selectedConversation && (
                   <button

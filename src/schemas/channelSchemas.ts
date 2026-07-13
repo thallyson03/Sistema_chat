@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const channelTypeSchema = z.enum(['WHATSAPP', 'TELEGRAM', 'EMAIL', 'WEBCHAT']);
+const channelTypeSchema = z.enum(['WHATSAPP', 'TELEGRAM', 'EMAIL', 'WEBCHAT', 'VOICE']);
 
 const channelBaseFields = {
   name: z.string().trim().min(1, 'Nome é obrigatório').max(255),

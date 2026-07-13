@@ -38,8 +38,10 @@ import whatsappTemplateRoutes from './routes/whatsappTemplateRoutes';
 import contactListRoutes from './routes/contactListRoutes';
 import opsRoutes from './routes/opsRoutes';
 import auditRoutes from './routes/auditRoutes';
+import voiceWebhookRoutes, { voiceApiRoutes } from './routes/voiceRoutes';
 import { setSocketIO as setMessageSocketIO } from './controllers/messageController';
 import { setMessageServiceSocketIO } from './services/messageService';
+import { setVoiceServiceSocketIO } from './services/voiceService';
 import { logger } from './utils/logger';
 import { distributedLockService } from './services/distributedLockService';
 import { internalApiLimiter, internalHeavyReadLimiter } from './middleware/internalRateLimit';
@@ -337,6 +339,7 @@ io.on('connection', (socket) => {
 setSocketIO(io);
 setMessageSocketIO(io);
 setMessageServiceSocketIO(io);
+setVoiceServiceSocketIO(io);
 webhookIngestQueue.registerHandlers({
   processWhatsAppOfficial: processWhatsAppOfficialWebhookPayload,
   processEvolution: processEvolutionWebhookPayload,
@@ -372,9 +375,12 @@ app.use('/api/journeys', internalApiLimiter, internalHeavyReadLimiter, journeyRo
 app.use('/api/whatsapp/templates', internalApiLimiter, internalHeavyReadLimiter, whatsappTemplateRoutes); // Gestão de templates WhatsApp Official
 app.use('/api/ops', internalApiLimiter, internalHeavyReadLimiter, opsRoutes);
 app.use('/api/audit-logs', internalApiLimiter, auditRoutes);
+app.use('/api/voice', internalApiLimiter, voiceApiRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/webhooks', voiceWebhookRoutes);
 // Rota alternativa para compatibilidade com webhooks antigos
 app.use('/webhooks', webhookRoutes);
+app.use('/webhooks', voiceWebhookRoutes);
 app.use('/api/whatsapp', webhookRoutes);
 // Rotas para n8n e bots
 app.use('/api/webhooks/n8n', internalApiLimiter, internalHeavyReadLimiter, n8nWebhookRoutes);

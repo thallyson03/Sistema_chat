@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.12.2",
+    "@twilio/voice-sdk": "^2.18.3",
     "axios": "^1.6.2",
     "emoji-picker-react": "^4.16.1",
     "framer-motion": "^10.16.16",

@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documentação Técnica — Sistema Chat (Ceape)</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a222d;
+      --surface-high: #232d3b;
+      --border: #2d3a4d;
+      --text: #e8edf4;
+      --muted: #8b9cb3;
+      --primary: #22c55e;
+      --primary-dim: #16a34a;
+      --accent: #38bdf8;
+      --code-bg: #0d1117;
+      --warn: #fbbf24;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .layout { display: flex; min-height: 100vh; }
+    nav.sidebar {
+      width: 280px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 1rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    nav.sidebar h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin: 1.25rem 0 0.5rem;
+    }
+    nav.sidebar h2:first-child { margin-top: 0; }
+    nav.sidebar ul { list-style: none; }
+    nav.sidebar li a {
+      display: block;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+    nav.sidebar li a:hover { background: var(--surface-high); color: var(--text); text-decoration: none; }
+    main {
+      flex: 1;
+      max-width: 960px;
+      padding: 2.5rem 3rem 4rem;
+    }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; color: var(--primary); }
+    .subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 1.05rem; }
+    h2 {
+      font-size: 1.5rem;
+      margin: 2.5rem 0 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--primary);
+      color: var(--text);
+    }
+    h3 { font-size: 1.15rem; margin: 1.75rem 0 0.75rem; color: var(--primary-dim); }
+    h4 { font-size: 1rem; margin: 1.25rem 0 0.5rem; color: var(--muted); }
+    p { margin-bottom: 0.85rem; }
+    ul, ol { margin: 0 0 1rem 1.5rem; }
+    li { margin-bottom: 0.35rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.5rem;
+      font-size: 0.875rem;
+      background: var(--surface);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 0.6rem 0.85rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th { background: var(--surface-high); color: var(--primary); font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(34, 197, 94, 0.04); }
+    code {
+      background: var(--code-bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85em;
+      color: #7dd3fc;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 1rem 0 1.5rem;
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-get { background: #166534; color: #bbf7d0; }
+    .badge-post { background: #1e40af; color: #bfdbfe; }
+    .badge-put { background: #92400e; color: #fde68a; }
+    .badge-delete { background: #991b1b; color: #fecaca; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin: 1rem 0;
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 900px) {
+      .layout { flex-direction: column; }
+      nav.sidebar { width: 100%; height: auto; position: static; }
+      main { padding: 1.5rem; }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+    .toc-note { background: var(--surface); border-left: 3px solid var(--primary); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <h2>Visão Geral</h2>
+    <ul>
+      <li><a href="#intro">Introdução</a></li>
+      <li><a href="#arquitetura">Arquitetura</a></li>
+      <li><a href="#stack">Stack Tecnológica</a></li>
+    </ul>
+    <h2>Backend</h2>
+    <ul>
+      <li><a href="#auth">Autenticação</a></li>
+      <li><a href="#middleware">Middleware</a></li>
+      <li><a href="#filas">Filas e Jobs</a></li>
+      <li><a href="#websocket">WebSocket</a></li>
+      <li><a href="#banco">Banco de Dados</a></li>
+    </ul>
+    <h2>APIs</h2>
+    <ul>
+      <li><a href="#api-auth">Auth</a></li>
+      <li><a href="#api-channels">Canais</a></li>
+      <li><a href="#api-conversations">Conversas</a></li>
+      <li><a href="#api-messages">Mensagens</a></li>
+      <li><a href="#api-media">Mídia</a></li>
+      <li><a href="#api-contacts">Contatos</a></li>
+      <li><a href="#api-tickets">Tickets</a></li>
+      <li><a href="#api-pipelines">Pipelines / CRM</a></li>
+      <li><a href="#api-bots">Bots</a></li>
+      <li><a href="#api-journeys">Jornadas</a></li>
+      <li><a href="#api-campaigns">Campanhas</a></li>
+      <li><a href="#api-webhooks">Webhooks</a></li>
+      <li><a href="#api-outros">Outros endpoints</a></li>
+    </ul>
+    <h2>Frontend</h2>
+    <ul>
+      <li><a href="#frontend">Páginas e Rotas</a></li>
+      <li><a href="#frontend-api">Cliente HTTP</a></li>
+    </ul>
+    <h2>Infra</h2>
+    <ul>
+      <li><a href="#integracoes">Integrações</a></li>
+      <li><a href="#env">Variáveis de Ambiente</a></li>
+      <li><a href="#deploy">Deploy e Docker</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <h1>Documentação Técnica</h1>
+    <p class="subtitle">Sistema de Atendimento Multicanal — Ceape Chat</p>
+    <p class="meta">Versão do documento: Junho 2026 &nbsp;|&nbsp; Repositório: Sistema_chat &nbsp;|&nbsp; Porta produção: 3007</p>
+
+    <section id="intro">
+      <h2>1. Introdução</h2>
+      <p>O <strong>Sistema Chat (Ceape)</strong> é uma plataforma CRM multicanal de atendimento ao cliente. Integra WhatsApp (Official, Evolution API e Evolution GO), chatbots, pipelines de vendas, tickets, jornadas de automação, campanhas broadcast e webhooks n8n.</p>
+      <div class="card">
+        <h4>Principais capacidades</h4>
+        <ul>
+          <li>Inbox unificado de conversas com atribuição por setor e agente</li>
+          <li>CRM com pipelines, negócios (deals), tarefas e automações por etapa</li>
+          <li>Chatbots com fluxos visuais, intents e variáveis de sessão</li>
+          <li>Jornadas de automação em grafo (React Flow)</li>
+          <li>Tickets com protocolo de 4 dígitos e pesquisa de satisfação</li>
+          <li>API pública de pipelines para integrações externas</li>
+          <li>Tempo real via Socket.IO (mensagens, presença, status de canal)</li>
+        </ul>
+      </div>
+      <p>Monorepo: backend <code>Express + TypeScript</code> na raiz e SPA <code>React + Vite</code> em <code>client/</code>.</p>
+    </section>
+
+    <section id="arquitetura">
+      <h2>2. Arquitetura</h2>
+      <pre>┌─────────────┐     HTTP/WS      ┌──────────────────────────────────────────┐
+│  React SPA  │ ◄──────────────► │  Express (porta 3007)                    │
+│  (Vite)     │   cookies+CSRF   │  Routes → Controllers → Services         │
+└─────────────┘                  │         ↓                    ↓           │
+                                 │    Prisma ORM          BullMQ / Redis      │
+                                 │         ↓                    ↓           │
+                                 │   PostgreSQL          Jobs assíncronos    │
+                                 └──────────────────────────────────────────┘
+                                           ↕ webhooks
+                    ┌──────────────────────┼──────────────────────┐
+                    │ WhatsApp Official    │ Evolution API/GO     │ n8n
+                    └──────────────────────┴──────────────────────┘</pre>
+      <h3>Camadas do backend</h3>
+      <table>
+        <tr><th>Camada</th><th>Diretório</th><th>Responsabilidade</th></tr>
+        <tr><td>Rotas</td><td><code>src/routes/</code></td><td>Definição de endpoints HTTP, middlewares por rota</td></tr>
+        <tr><td>Controllers</td><td><code>src/controllers/</code></td><td>Validação de entrada, resposta HTTP</td></tr>
+        <tr><td>Services</td><td><code>src/services/</code></td><td>Regras de negócio, orquestração</td></tr>
+        <tr><td>Schemas</td><td><code>src/schemas/</code></td><td>Validação Zod de payloads</td></tr>
+        <tr><td>Middleware</td><td><code>src/middleware/</code></td><td>Auth, CSRF, rate limit, audit</td></tr>
+        <tr><td>Queues</td><td><code>src/queues/</code></td><td>Filas BullMQ (webhook, mensagem, bot, jornada, pipeline)</td></tr>
+        <tr><td>Prisma</td><td><code>prisma/schema.prisma</code></td><td>Modelos e migrations PostgreSQL</td></tr>
+      </table>
+    </section>
+
+    <section id="stack">
+      <h2>3. Stack Tecnológica</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h4>Backend</h4>
+          <ul>
+            <li><strong>Node.js</strong> + <strong>TypeScript</strong></li>
+            <li><strong>Express 4</strong> — servidor HTTP</li>
+            <li><strong>Prisma</strong> — ORM PostgreSQL</li>
+            <li><strong>Socket.IO 4</strong> — tempo real</li>
+            <li><strong>BullMQ</strong> + <strong>ioredis</strong> — filas</li>
+            <li><strong>jsonwebtoken</strong> + <strong>bcryptjs</strong> — auth</li>
+            <li><strong>Zod</strong> — validação</li>
+            <li><strong>Helmet</strong>, <strong>CORS</strong>, <strong>express-rate-limit</strong></li>
+            <li><strong>AWS SDK S3</strong> — object storage (MinIO compatível)</li>
+            <li><strong>fluent-ffmpeg</strong> — conversão de áudio</li>
+            <li><strong>prom-client</strong> — métricas Prometheus</li>
+            <li><strong>exceljs</strong>, <strong>csv-parse</strong> — importação</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Frontend</h4>
+          <ul>
+            <li><strong>React 18</strong> + <strong>TypeScript</strong></li>
+            <li><strong>Vite 5</strong> — build e dev server (porta 3000)</li>
+            <li><strong>Tailwind CSS 3</strong> — design system dark/neon</li>
+            <li><strong>React Router 6</strong> — SPA routing</li>
+            <li><strong>Axios</strong> — cliente HTTP com cookies</li>
+            <li><strong>socket.io-client</strong> — WebSocket</li>
+            <li><strong>React Flow</strong> — jornadas e fluxos de bot</li>
+            <li><strong>Framer Motion</strong> — animações</li>
+          </ul>
+        </div>
+      </div>
+      <h3>Scripts principais (raiz)</h3>
+      <table>
+        <tr><th>Script</th><th>Comando</th><th>Descrição</th></tr>
+        <tr><td><code>npm run dev</code></td><td>concurrently</td><td>Backend (3007) + frontend (3000)</td></tr>
+        <tr><td><code>npm run build</code></td><td>tsc + vite build</td><td>Compila backend e frontend</td></tr>
+        <tr><td><code>npm start</code></td><td>node dist/server.js</td><td>Produção — API + SPA estático</td></tr>
+        <tr><td><code>npm run prisma:migrate</code></td><td>prisma migrate</td><td>Aplicar migrations</td></tr>
+        <tr><td><code>npm run seed</code></td><td>ts-node seed</td><td>Dados iniciais + admin</td></tr>
+      </table>
+    </section>
+
+    <section id="auth">
+      <h2>4. Autenticação e Autorização</h2>
+      <h3>Fluxo de sessão</h3>
+      <ol>
+        <li><strong>Login</strong> (<code>POST /api/auth/login</code>) — retorna cookies <code>httpOnly</code>: <code>accessToken</code> (JWT ~15min) e <code>refreshToken</code> (~7 dias)</li>
+        <li><strong>CSRF</strong> — cookie <code>csrfToken</code> (legível pelo JS) + header <code>x-csrf-token</code> em POST/PUT/PATCH/DELETE</li>
+        <li><strong>Refresh</strong> (<code>POST /api/auth/refresh</code>) — renova access token com rotação do refresh (hash SHA-256 em <code>RefreshToken</code>)</li>
+        <li><strong>Logout</strong> — revoga refresh token e limpa cookies</li>
+        <li><strong>Heartbeat</strong> (<code>POST /api/auth/heartbeat</code>) — mantém presença online (frontend a cada 90s)</li>
+      </ol>
+      <h3>Papéis (RBAC)</h3>
+      <table>
+        <tr><th>Role</th><th>Escopo</th></tr>
+        <tr><td><code>ADMIN</code></td><td>Acesso total: usuários, canais, pipelines, audit logs, exclusões</td></tr>
+        <tr><td><code>SUPERVISOR</code></td><td>Gestão operacional; sem algumas exclusões de ADMIN</td></tr>
+        <tr><td><code>AGENT</code></td><td>Atendimento; filtrado por setor, canal e pipeline</td></tr>
+      </table>
+      <h3>Autorização granular</h3>
+      <ul>
+        <li><strong>Setores</strong> — <code>UserSector</code>: agentes veem conversas/contatos do setor</li>
+        <li><strong>Canais</strong> — <code>UserChannelAccess</code> + setor principal/secundário do canal</li>
+        <li><strong>Pipelines</strong> — <code>UserPipelineAccess</code>: deals restritos por pipeline</li>
+        <li><strong>Socket.IO</strong> — mesmo JWT no handshake; subscribe validado por ownership da conversa</li>
+      </ul>
+      <p>Invalidação global de sessões via <code>AUTH_SESSION_EPOCH</code> no payload JWT (<code>sv</code>). Bloqueio após <code>AUTH_MAX_FAILED_ATTEMPTS</code> tentativas por <code>AUTH_LOCKOUT_MINUTES</code>.</p>
+    </section>
+
+    <section id="middleware">
+      <h2>5. Middleware</h2>
+      <table>
+        <tr><th>Middleware</th><th>Arquivo</th><th>Função</th></tr>
+        <tr><td><code>authenticateToken</code></td><td>auth.ts</td><td>Valida JWT (cookie ou Bearer)</td></tr>
+        <tr><td><code>authorizeRoles</code></td><td>auth.ts</td><td>Restringe por ADMIN/SUPERVISOR/AGENT</td></tr>
+        <tr><td><code>csrfProtection</code></td><td>csrf.ts</td><td>Double-submit cookie CSRF</td></tr>
+        <tr><td><code>validateBody</code></td><td>validateBody.ts</td><td>Validação Zod de request body</td></tr>
+        <tr><td><code>rateLimiter</code></td><td>rateLimiter.ts</td><td>Rate limit global (Redis opcional)</td></tr>
+        <tr><td><code>internalApiLimiter</code></td><td>internalRateLimit.ts</td><td>Limites em rotas internas</td></tr>
+        <tr><td><code>validateEvolutionWebhook</code></td><td>evolutionWebhookAuth.ts</td><td>Secret Evolution nos webhooks</td></tr>
+        <tr><td><code>mediaAccess</code></td><td>mediaAccess.ts</td><td>Controle de acesso a arquivos/mídia</td></tr>
+        <tr><td><code>auditMiddleware</code></td><td>auditMiddleware.ts</td><td>Registro de ações sensíveis</td></tr>
+      </table>
+    </section>
+
+    <section id="filas">
+      <h2>6. Filas e Jobs em Background</h2>
+      <h3>Filas BullMQ (<code>src/queues/</code>)</h3>
+      <table>
+        <tr><th>Fila</th><th>Propósito</th></tr>
+        <tr><td><code>webhookIngest</code></td><td>Processamento assíncrono de webhooks WhatsApp/Evolution</td></tr>
+        <tr><td><code>messageSend</code></td><td>Envio de mensagens</td></tr>
+        <tr><td><code>botProcess</code></td><td>Processamento de mensagens pelo chatbot</td></tr>
+        <tr><td><code>journeyProcess</code></td><td>Execução de nós de jornada</td></tr>
+        <tr><td><code>pipelineAutomation</code></td><td>Automações de pipeline (bot, mudar etapa, tarefa)</td></tr>
+      </table>
+      <p>Ativadas via flags em <code>phase1Flags</code>: <code>USE_BULLMQ</code>, <code>WEBHOOK_QUEUE_ENABLED</code>, <code>MESSAGE_QUEUE_ENABLED</code>, etc.</p>
+      <h3>Jobs periódicos (server.ts)</h3>
+      <ul>
+        <li>Encerramento automático de bots e webhooks n8n por inatividade (60s)</li>
+        <li>Persistência de mídia remota em object storage</li>
+        <li>Conversão OGG → MP3 assíncrona</li>
+        <li>Redistribuição de fila <code>WAITING</code> (30s default)</li>
+        <li>Retenção de mídia (S3) e LGPD (contatos, conversas, audit) — opcionais</li>
+        <li>Tarefas de pipeline com vencimento (<code>pipelineAutomationService.processDueTasks</code>)</li>
+      </ul>
+      <p>Locks distribuídos via PostgreSQL advisory locks (<code>distributedLockService</code>).</p>
+    </section>
+
+    <section id="websocket">
+      <h2>7. WebSocket (Socket.IO)</h2>
+      <p><strong>Auth:</strong> JWT no handshake via cookie <code>accessToken</code>, header <code>Authorization</code> ou <code>auth.token</code>.</p>
+      <h3>Rooms</h3>
+      <ul>
+        <li><code>user_{id}</code> — notificações do usuário</li>
+        <li><code>conversation_{id}</code> — mensagens da conversa</li>
+        <li><code>channel_{id}</code> — status e QR code do canal</li>
+      </ul>
+      <h3>Eventos cliente → servidor</h3>
+      <table>
+        <tr><th>Evento</th><th>Descrição</th></tr>
+        <tr><td><code>subscribe_conversation</code></td><td>Inscrever em conversa</td></tr>
+        <tr><td><code>unsubscribe_conversation</code></td><td>Cancelar inscrição</td></tr>
+        <tr><td><code>subscribe_channel</code></td><td>Inscrever em canal</td></tr>
+        <tr><td><code>unsubscribe_channel</code></td><td>Cancelar inscrição</td></tr>
+      </table>
+      <h3>Eventos servidor → cliente</h3>
+      <table>
+        <tr><th>Evento</th><th>Descrição</th></tr>
+        <tr><td><code>new_message</code></td><td>Nova mensagem na conversa</td></tr>
+        <tr><td><code>conversation_updated</code></td><td>Status, atribuição ou metadados alterados</td></tr>
+        <tr><td><code>message_status</code></td><td>Status de entrega/leitura</td></tr>
+        <tr><td><code>message_updated</code></td><td>Mensagem editada ou metadados</td></tr>
+        <tr><td><code>contact_presence</code></td><td>Digitando / gravando áudio</td></tr>
+        <tr><td><code>channel_status_update</code></td><td>Conexão do canal WhatsApp</td></tr>
+        <tr><td><code>qrcode_update</code></td><td>QR code Evolution atualizado</td></tr>
+      </table>
+    </section>
+
+    <section id="banco">
+      <h2>8. Banco de Dados (PostgreSQL + Prisma)</h2>
+      <p>Schema em <code>prisma/schema.prisma</code>. Provider: PostgreSQL via <code>DATABASE_URL</code>.</p>
+      <h3>Enums principais</h3>
+      <p><code>UserRole</code> (ADMIN, SUPERVISOR, AGENT), <code>ChannelType</code>, <code>ChannelProvider</code>, <code>ConversationStatus</code>, <code>MessageType</code>, <code>MessageStatus</code>, <code>TicketStatus</code>, <code>DealStatus</code>, <code>PipelineAutomationType</code>, <code>JourneyNodeType</code>, <code>CampaignStatus</code>, <code>Priority</code>.</p>
+      <h3>Modelos</h3>
+      <table>
+        <tr><th>Modelo</th><th>Descrição</th><th>Relacionamentos chave</th></tr>
+        <tr><td><strong>User</strong></td><td>Usuários do sistema</td><td>setores, conversas, deals, canais, pipelines</td></tr>
+        <tr><td><strong>RefreshToken</strong></td><td>Sessões refresh (hash)</td><td>→ User</td></tr>
+        <tr><td><strong>AuditLog</strong></td><td>Logs de auditoria</td><td>→ User?</td></tr>
+        <tr><td><strong>Sector</strong></td><td>Setores de atendimento</td><td>usuários, canais, conversas</td></tr>
+        <tr><td><strong>Channel</strong></td><td>Canais WhatsApp (config JSON)</td><td>setor, conversas, bots, webhooks</td></tr>
+        <tr><td><strong>Contact</strong></td><td>Contatos (phone unique)</td><td>identidades, conversas, deals, consentimentos</td></tr>
+        <tr><td><strong>ContactChannelIdentity</strong></td><td>ID externo por canal</td><td>→ Contact, Channel</td></tr>
+        <tr><td><strong>ContactConsent</strong></td><td>Consentimento LGPD</td><td>→ Contact</td></tr>
+        <tr><td><strong>Conversation</strong></td><td>Conversas (status, unread)</td><td>→ Channel, Contact, User, Messages, Deal</td></tr>
+        <tr><td><strong>Message</strong></td><td>Mensagens (tipo, status, metadata)</td><td>→ Conversation</td></tr>
+        <tr><td><strong>Tag</strong> / <strong>ConversationTag</strong></td><td>Tags em conversas</td><td>many-to-many</td></tr>
+        <tr><td><strong>Ticket</strong></td><td>Tickets (protocolo 4 dígitos)</td><td>→ Conversation?, Contact?, Sector</td></tr>
+        <tr><td><strong>Pipeline</strong></td><td>Funil de vendas</td><td>stages, deals, automations</td></tr>
+        <tr><td><strong>PipelineStage</strong></td><td>Etapas do funil</td><td>→ Pipeline, Deals</td></tr>
+        <tr><td><strong>Deal</strong></td><td>Negócios/leads (customFields JSON)</td><td>→ Pipeline, Stage, Contact, Conversation?, User</td></tr>
+        <tr><td><strong>PipelineCustomField</strong></td><td>Campos customizados do funil</td><td>→ Pipeline</td></tr>
+        <tr><td><strong>DealActivity</strong></td><td>Histórico (nota, ligação, etc.)</td><td>→ Deal</td></tr>
+        <tr><td><strong>PipelineTask</strong></td><td>Tarefas do deal (dueDate)</td><td>→ Deal</td></tr>
+        <tr><td><strong>PipelineAutomationRule</strong></td><td>Regras por etapa (config JSON)</td><td>SALES_BOT, CHANGE_STAGE, ADD_TASK, CHANGE_USER</td></tr>
+        <tr><td><strong>Bot</strong></td><td>Chatbots</td><td>→ Channel, Flows, Intents</td></tr>
+        <tr><td><strong>Flow</strong> / <strong>FlowStep</strong></td><td>Fluxos conversacionais</td><td>MESSAGE, HTTP_REQUEST, HANDOFF, etc.</td></tr>
+        <tr><td><strong>BotSession</strong></td><td>Sessão ativa do bot (context JSON)</td><td>→ Bot, Conversation</td></tr>
+        <tr><td><strong>Journey</strong> / <strong>JourneyNode</strong></td><td>Jornadas de automação</td><td>grafo TRIGGER/ACTION/CONDITION</td></tr>
+        <tr><td><strong>JourneyExecution</strong></td><td>Execução de jornada</td><td>→ Journey, Contact</td></tr>
+        <tr><td><strong>Campaign</strong></td><td>Campanhas broadcast</td><td>→ Channel, destinatários</td></tr>
+        <tr><td><strong>ContactList</strong></td><td>Listas de segmentação</td><td>many-to-many com Contact</td></tr>
+        <tr><td><strong>WebhookConfig</strong></td><td>Webhooks outbound (n8n)</td><td>eventos, secret, auto-close</td></tr>
+        <tr><td><strong>QuickReply</strong></td><td>Respostas rápidas</td><td>global ou por usuário</td></tr>
+        <tr><td><strong>UserChannelAccess</strong></td><td>Permissão por canal</td><td>RBAC granular</td></tr>
+        <tr><td><strong>UserPipelineAccess</strong></td><td>Permissão por pipeline</td><td>RBAC granular</td></tr>
+      </table>
+    </section>
+
+    <section id="api-auth">
+      <h2>9. API — Autenticação</h2>
+      <p>Prefixo: <code>/api/auth</code></p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Auth</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/register</code></td><td>ADMIN</td><td>Criar usuário</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/login</code></td><td>Público</td><td>Login — cookies JWT + refresh + CSRF</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/refresh</code></td><td>Público</td><td>Renovar access token</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/clear-session</code></td><td>Público</td><td>Limpar cookies de sessão</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/logout</code></td><td>JWT</td><td>Logout e revogação</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/heartbeat</code></td><td>JWT</td><td>Atualizar presença online</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/me</code></td><td>JWT</td><td>Usuário atual + setores</td></tr>
+      </table>
+    </section>
+
+    <section id="api-channels">
+      <h2>10. API — Canais</h2>
+      <p>Prefixo: <code>/api/channels</code></p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Auth</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>JWT</td><td>Listar canais</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/health/panel</code></td><td>JWT</td><td>Painel de saúde dos canais</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/check/whatsapp-official</code></td><td>JWT</td><td>Verificar config WhatsApp Official</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>JWT</td><td>Canal por ID</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/qrcode</code></td><td>JWT</td><td>QR Code (Evolution)</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/status</code></td><td>JWT</td><td>Status de conexão</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>ADMIN/SUPERVISOR</td><td>Criar canal</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/webhook</code></td><td>ADMIN/SUPERVISOR</td><td>Configurar webhook Evolution</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/cancel-pairing</code></td><td>ADMIN/SUPERVISOR</td><td>Cancelar pareamento</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>ADMIN/SUPERVISOR</td><td>Atualizar canal</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>ADMIN</td><td>Excluir canal</td></tr>
+      </table>
+    </section>
+
+    <section id="api-conversations">
+      <h2>11. API — Conversas</h2>
+      <p>Prefixo: <code>/api/conversations</code></p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>Listar conversas (filtros por papel, setor, canal)</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Criar conversa</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/stats</code></td><td>Estatísticas gerais</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/dashboard-conversation-metrics</code></td><td>Métricas do dashboard</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/satisfaction-survey-stats</code></td><td>Stats pesquisa satisfação (NPS 1–5)</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/dashboard-performance</code></td><td>Performance de atendentes</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/unread-count</code></td><td>Contagem de não lidas</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>Conversa por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>Atualizar conversa</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/assign</code></td><td>Atribuir a agente</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/activate-bot</code></td><td>Ativar bot na conversa</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/transfer-sector</code></td><td>Transferir para setor</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/satisfaction-survey</code></td><td>Enviar pesquisa de satisfação</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/presence-subscribe</code></td><td>Inscrever presença do contato</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/presence</code></td><td>Enviar presença (digitando/gravando)</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>Excluir conversa</td></tr>
+      </table>
+    </section>
+
+    <section id="api-messages">
+      <h2>12. API — Mensagens</h2>
+      <p>Prefixo: <code>/api/messages</code></p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Enviar mensagem (texto, mídia, nota interna)</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/conversation/:conversationId</code></td><td>Listar mensagens da conversa</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/conversation/:conversationId/read</code></td><td>Marcar como lidas</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:messageId</code></td><td>Mensagem por ID</td></tr>
+      </table>
+    </section>
+
+    <section id="api-media">
+      <h2>13. API — Mídia</h2>
+      <p>Prefixo: <code>/api/media</code></p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/upload</code></td><td>Upload (multer, ClamAV opcional, S3)</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/file/:filename</code></td><td>Servir arquivo local ou redirect S3</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/download/:messageId</code></td><td>Download de áudio em MP3</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:messageId</code></td><td>Proxy/descriptografia mídia WhatsApp</td></tr>
+      </table>
+    </section>
+
+    <section id="api-contacts">
+      <h2>14. API — Contatos e Listas</h2>
+      <h3>Contatos — <code>/api/contacts</code></h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Auth</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>ADMIN/SUPERVISOR</td><td>Criar contato</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/import</code></td><td>ADMIN/SUPERVISOR</td><td>Importar CSV</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>JWT</td><td>Listar (visibilidade por setor/canal)</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/template</code></td><td>ADMIN/SUPERVISOR</td><td>Download template Excel</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>JWT</td><td>Contato por ID</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/conversations</code></td><td>JWT</td><td>Conversas do contato</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/export</code></td><td>ADMIN/SUPERVISOR</td><td>Export LGPD</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/consent</code></td><td>ADMIN/SUPERVISOR</td><td>Registrar consentimento</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/anonymize</code></td><td>ADMIN/SUPERVISOR</td><td>Anonimizar contato</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>ADMIN</td><td>Excluir (LGPD)</td></tr>
+      </table>
+      <h3>Listas — <code>/api/contact-lists</code> (ADMIN/SUPERVISOR)</h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Criar lista</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>Listar</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>Por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>Atualizar</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>Excluir</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/contacts</code></td><td>Adicionar contatos</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id/contacts</code></td><td>Remover contatos</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/contacts</code></td><td>Listar membros</td></tr>
+      </table>
+    </section>
+
+    <section id="api-tickets">
+      <h2>15. API — Tickets</h2>
+      <p>Prefixo: <code>/api/tickets</code></p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/stats</code></td><td>Estatísticas</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/by-conversation/:conversationId</code></td><td>Ticket da conversa</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>Listar tickets</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Criar ticket (protocolo 4 dígitos)</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>Por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>Atualizar</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/assign</code></td><td>Atribuir</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/close</code></td><td>Fechar com nota</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/notes</code></td><td>Nota de encerramento</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/reopen</code></td><td>Reabrir</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>Excluir</td></tr>
+      </table>
+    </section>
+
+    <section id="api-pipelines">
+      <h2>16. API — Pipelines / CRM</h2>
+      <p>Prefixo: <code>/api/pipelines</code></p>
+      <h3>Deals (negócios)</h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/dashboard-metrics</code></td><td>Métricas globais do funil</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/deals</code></td><td>Criar deal</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/deals</code></td><td>Listar deals</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/deals/:id</code></td><td>Deal por ID</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/deals/:id/statistics</code></td><td>Estatísticas do deal</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/deals/:id</code></td><td>Atualizar deal</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/deals/:id/move</code></td><td>Mover para etapa</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/deals/:id/tags</code></td><td>Adicionar tag</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/deals/:id/tags/:tagId</code></td><td>Remover tag</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/deals/:id</code></td><td>Excluir deal (ADMIN/SUPERVISOR)</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/deals/:dealId/activities</code></td><td>Criar atividade</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/deals/:dealId/activities</code></td><td>Listar atividades</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/tasks/:taskId</code></td><td>Atualizar tarefa</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/tasks/calendar</code></td><td>Tarefas no calendário</td></tr>
+      </table>
+      <h3>Pipelines e etapas</h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Criar pipeline</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>Listar pipelines</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>Pipeline por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>Atualizar pipeline</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>Excluir pipeline</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:pipelineId/stages</code></td><td>Criar etapa</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/stages/:id</code></td><td>Atualizar etapa</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/stages/:id</code></td><td>Excluir etapa</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:pipelineId/stages/reorder</code></td><td>Reordenar etapas</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:pipelineId/stats</code></td><td>Estatísticas do pipeline</td></tr>
+      </table>
+      <h3>Campos customizados e automações</h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:pipelineId/custom-fields</code></td><td>Criar campo customizado</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:pipelineId/custom-fields</code></td><td>Listar campos</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/custom-fields/:id</code></td><td>Atualizar campo</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/custom-fields/:id</code></td><td>Excluir campo</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/automations</code></td><td>Regras de automação da etapa</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id/automations</code></td><td>Salvar automações</td></tr>
+      </table>
+      <h3>Automações de pipeline (tipos)</h3>
+      <ul>
+        <li><code>SALES_BOT</code> — Inicia robô de vendas com condições, timing e janela de ativação</li>
+        <li><code>CHANGE_STAGE</code> — Move deal para outra etapa</li>
+        <li><code>ADD_TASK</code> — Cria tarefa com prazo configurável</li>
+        <li><code>CHANGE_USER</code> — Altera usuário responsável do lead</li>
+      </ul>
+      <h3>API pública — <code>/api/public/pipelines</code></h3>
+      <p>Auth: header <code>X-Api-Key</code> ou assinatura HMAC + timestamp. Rate limit dedicado.</p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:pipelineId</code></td><td>Consultar pipeline</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:pipelineId/deals</code></td><td>Criar deal via API externa</td></tr>
+      </table>
+    </section>
+
+    <section id="api-bots">
+      <h2>17. API — Bots</h2>
+      <p>Prefixo: <code>/api/bots</code> — JWT; escrita restrita a ADMIN/SUPERVISOR.</p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Criar bot</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>Listar bots</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>Bot por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>Atualizar bot</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>Excluir bot</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/test</code></td><td>Testar bot</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:botId/intents</code></td><td>Criar intent (NLU)</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:botId/intents</code></td><td>Listar intents</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/responses</code></td><td>Criar resposta</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:botId/flows</code></td><td>Criar fluxo</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:botId/flows</code></td><td>Listar fluxos</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:botId/draft-flow</code></td><td>Garantir rascunho</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:botId/publish-draft</code></td><td>Publicar fluxo</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/flows/:flowId</code></td><td>Fluxo por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/flows/:flowId</code></td><td>Atualizar fluxo</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/flows/:flowId/steps</code></td><td>Criar step</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/steps/:stepId</code></td><td>Atualizar step</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/steps/:stepId/conditions</code></td><td>Criar condição</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:botId/variables</code></td><td>Criar variável</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/http-test</code></td><td>Testar HTTP request do fluxo</td></tr>
+      </table>
+      <p>Tipos de step: MESSAGE, HTTP_REQUEST, HANDOFF, CONDITION, DELAY, etc.</p>
+    </section>
+
+    <section id="api-journeys">
+      <h2>18. API — Jornadas</h2>
+      <p>Prefixo: <code>/api/journeys</code></p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Auth</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>ADMIN/SUPERVISOR</td><td>Criar jornada</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>JWT</td><td>Listar jornadas</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>JWT</td><td>Jornada por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>ADMIN/SUPERVISOR</td><td>Atualizar</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>ADMIN/SUPERVISOR</td><td>Excluir</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id/graph</code></td><td>ADMIN/SUPERVISOR</td><td>Atualizar grafo (nós/arestas)</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/execute</code></td><td>ADMIN/SUPERVISOR</td><td>Executar jornada</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/stats</code></td><td>JWT</td><td>Estatísticas de execução</td></tr>
+      </table>
+    </section>
+
+    <section id="api-campaigns">
+      <h2>19. API — Campanhas</h2>
+      <p>Prefixo: <code>/api/campaigns</code> — ADMIN/SUPERVISOR.</p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Criar campanha broadcast</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>Listar campanhas</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>Por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>Atualizar</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>Excluir</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/recipients</code></td><td>Adicionar destinatários</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/execute</code></td><td>Executar envio</td></tr>
+      </table>
+    </section>
+
+    <section id="api-webhooks">
+      <h2>20. API — Webhooks</h2>
+      <h3>WhatsApp / Evolution — <code>/api/webhooks</code></h3>
+      <p>Também disponível em <code>/webhooks/*</code> e <code>/api/whatsapp/*</code>.</p>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Auth</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/whatsapp</code></td><td>Verify token Meta</td><td>Handshake WhatsApp Official</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/whatsapp</code></td><td>X-Hub-Signature-256</td><td>Eventos WhatsApp Official</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/evolution</code></td><td>Evolution secret</td><td>Webhook Evolution API Node</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/evolution-go</code></td><td>Evolution secret</td><td>Webhook Evolution GO</td></tr>
+      </table>
+      <h3>n8n — <code>/api/webhooks/n8n</code></h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Auth</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/register</code></td><td>ADMIN</td><td>Registrar webhook outbound (CRM → n8n)</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>ADMIN</td><td>Listar webhooks</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>ADMIN</td><td>Atualizar</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>ADMIN</td><td>Excluir</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/executions</code></td><td>ADMIN</td><td>Histórico de execuções</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/receive</code></td><td>X-Webhook-Id + Secret</td><td>Comandos inbound n8n → CRM</td></tr>
+      </table>
+      <h3>Templates WhatsApp — <code>/api/whatsapp/templates</code></h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>Listar templates WABA</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/send</code></td><td>Enviar template (fora janela 24h)</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Criar template na WABA</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:name</code></td><td>Remover template</td></tr>
+      </table>
+    </section>
+
+    <section id="api-outros">
+      <h2>21. Outros Endpoints</h2>
+      <h3>Usuários — <code>/api/users</code></h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/</code></td><td>Criar usuário</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/</code></td><td>Listar usuários</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id</code></td><td>Usuário por ID</td></tr>
+        <tr><td><span class="badge badge-put">PUT</span></td><td><code>/:id</code></td><td>Atualizar</td></tr>
+        <tr><td><span class="badge badge-delete">DELETE</span></td><td><code>/:id</code></td><td>Excluir</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/sectors</code></td><td>Setores do usuário</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/sectors</code></td><td>Vincular setor</td></tr>
+        <tr><td><span class="badge badge-post">POST</span></td><td><code>/:id/pause</code></td><td>Pausar atendimento</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/:id/pause</code></td><td>Status de pausa</td></tr>
+      </table>
+      <h3>Setores — <code>/api/sectors</code></h3>
+      <p>CRUD completo + <code>GET /:id/users</code> para listar usuários do setor.</p>
+      <h3>Respostas rápidas — <code>/api/quick-replies</code></h3>
+      <p>CRUD + <code>GET /categories</code> e <code>GET /:id/preview</code>.</p>
+      <h3>Auditoria — <code>/api/audit-logs</code> (ADMIN)</h3>
+      <p><code>GET /</code> — logs com filtros por action e userId.</p>
+      <h3>Operações — <code>/api/ops</code></h3>
+      <p><code>GET /queues/metrics</code> — métricas das filas BullMQ (ADMIN/SUPERVISOR).</p>
+      <h3>Sistema</h3>
+      <table>
+        <tr><th>Método</th><th>Endpoint</th><th>Descrição</th></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/health</code></td><td>Health check</td></tr>
+        <tr><td><span class="badge badge-get">GET</span></td><td><code>/metrics</code></td><td>Métricas Prometheus (token em produção)</td></tr>
+      </table>
+    </section>
+
+    <section id="frontend">
+      <h2>22. Frontend — Páginas e Rotas</h2>
+      <p>SPA React em <code>client/src/</code>. Roteamento em <code>App.tsx</code>. Proteção: <code>ProtectedRoute</code> (auth) e <code>RoleRoute</code> (RBAC).</p>
+      <table>
+        <tr><th>Rota</th><th>Componente</th><th>Descrição</th><th>Role</th></tr>
+        <tr><td><code>/login</code></td><td>Login.tsx</td><td>Autenticação</td><td>Público</td></tr>
+        <tr><td><code>/dashboard</code></td><td>Dashboard.tsx</td><td>KPIs, funil, performance, satisfação</td><td>Todos</td></tr>
+        <tr><td><code>/conversations</code></td><td>Conversations.tsx</td><td>Inbox principal (chat + lista)</td><td>Todos</td></tr>
+        <tr><td><code>/conversations/:id</code></td><td>ConversationDetail.tsx</td><td>Conversa em rota dedicada</td><td>Todos</td></tr>
+        <tr><td><code>/tickets</code></td><td>Tickets.tsx</td><td>Gestão de tickets</td><td>Todos</td></tr>
+        <tr><td><code>/contacts/import</code></td><td>ContactImport.tsx</td><td>Importação de contatos</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/contact-lists</code></td><td>ContactLists.tsx</td><td>Listas de segmentação</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/channels</code></td><td>Channels.tsx</td><td>Canais WhatsApp, QR, status</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/journeys</code></td><td>Journeys.tsx</td><td>Editor de jornadas (React Flow)</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/calendario</code></td><td>Calendario.tsx</td><td>Calendário de tarefas de deals</td><td>Todos</td></tr>
+        <tr><td><code>/templates</code></td><td>Templates.tsx</td><td>Templates WhatsApp Official</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/users</code></td><td>Users.tsx</td><td>Usuários, roles, permissões</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/sectors</code></td><td>Sectors.tsx</td><td>Setores de atendimento</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/audit-logs</code></td><td>AuditLogs.tsx</td><td>Logs de auditoria</td><td>ADMIN</td></tr>
+        <tr><td><code>/pipelines</code></td><td>Pipelines.tsx</td><td>Kanban CRM + automações</td><td>Todos</td></tr>
+        <tr><td><code>/pipelines/deals/:id</code></td><td>DealDetail.tsx</td><td>Detalhe do negócio</td><td>Todos</td></tr>
+        <tr><td><code>/quick-replies</code></td><td>QuickReplies.tsx</td><td>Respostas rápidas</td><td>Todos</td></tr>
+        <tr><td><code>/integrations</code></td><td>Integrations.tsx</td><td>Webhooks outbound (n8n)</td><td>ADMIN</td></tr>
+        <tr><td><code>/bots</code></td><td>Bots.tsx</td><td>Gestão de chatbots</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/bots/:botId/flows</code></td><td>BotFlowBuilder.tsx</td><td>Editor de fluxo (lista)</td><td>ADMIN/SUPERVISOR</td></tr>
+        <tr><td><code>/bots/:botId/flows/visual</code></td><td>BotFlowBuilderVisual.tsx</td><td>Editor visual (React Flow)</td><td>ADMIN/SUPERVISOR</td></tr>
+      </table>
+      <h3>Estrutura de componentes</h3>
+      <ul>
+        <li><code>Layout.tsx</code> — shell com sidebar, navegação, pausa, logout</li>
+        <li><code>PipelineAutomationModal.tsx</code> — configuração de automações por etapa</li>
+        <li><code>components/ui/</code> — design system (Button, Card, Input, ConfirmProvider)</li>
+        <li><code>components/chat/</code> — badges de erro, notificações de tarefa/nota</li>
+        <li><code>hooks/</code> — useVoiceRecorder, useEvolutionOutboundPresence</li>
+      </ul>
+    </section>
+
+    <section id="frontend-api">
+      <h2>23. Cliente HTTP (Frontend)</h2>
+      <p>Arquivo: <code>client/src/utils/api.ts</code></p>
+      <ul>
+        <li><strong>baseURL:</strong> <code>VITE_API_BASE_URL</code> ou <code>window.location.origin</code></li>
+        <li><strong>withCredentials:</strong> true — cookies httpOnly</li>
+        <li><strong>CSRF:</strong> header <code>x-csrf-token</code> em métodos mutantes</li>
+        <li><strong>401:</strong> tenta <code>POST /api/auth/refresh</code> e retry; senão redirect <code>/login?relogin=1</code></li>
+      </ul>
+      <p>Socket.IO: <code>client/src/utils/socket.ts</code> — conexão por página, não há provider global.</p>
+      <h3>Build (Vite)</h3>
+      <ul>
+        <li>Dev: porta <strong>3000</strong>, proxy <code>/api</code> e <code>/webhooks</code> → <strong>3007</strong></li>
+        <li>Produção: <code>client/dist/</code> servido pelo Express</li>
+        <li>Tailwind dark mode com tokens <code>primary</code>, <code>surface</code>, <code>on-surface</code></li>
+      </ul>
+    </section>
+
+    <section id="integracoes">
+      <h2>24. Integrações Externas</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h4>WhatsApp Official (Meta Cloud API)</h4>
+          <ul>
+            <li>Webhook GET/POST em <code>/api/webhooks/whatsapp</code></li>
+            <li>Validação <code>X-Hub-Signature-256</code></li>
+            <li>Templates WABA via API dedicada</li>
+            <li>Download de mídia via Graph API</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Evolution API (Node / Baileys)</h4>
+          <ul>
+            <li>Webhook <code>/api/webhooks/evolution</code></li>
+            <li>QR code, conexão, mensagens, presença</li>
+            <li>Gerenciado por <code>channelService</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Evolution GO</h4>
+          <ul>
+            <li>Webhook <code>/api/webhooks/evolution-go</code></li>
+            <li>Mesma auth; timeouts configuráveis</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>n8n (bidirecional)</h4>
+          <ul>
+            <li><strong>Outbound:</strong> eventos CRM → n8n (<code>WebhookService.emitEvent</code>)</li>
+            <li><strong>Inbound:</strong> comandos n8n → CRM via <code>/receive</code></li>
+            <li>Auto-close por inatividade configurável</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Object Storage (MinIO/S3)</h4>
+          <ul>
+            <li>Upload com presigned URLs</li>
+            <li>Retenção e fallback local opcional</li>
+            <li>ClamAV opcional para scan de uploads</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Observabilidade</h4>
+          <ul>
+            <li>Prometheus em <code>/metrics</code></li>
+            <li>Stack Grafana em <code>observability/</code></li>
+            <li>Redis para rate limit + BullMQ</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="env">
+      <h2>25. Variáveis de Ambiente</h2>
+      <p>Referência completa em <code>.env.example</code>. Principais grupos:</p>
+      <table>
+        <tr><th>Grupo</th><th>Variáveis</th><th>Descrição</th></tr>
+        <tr><td>Servidor</td><td><code>PORT</code>, <code>NODE_ENV</code>, <code>DATABASE_URL</code></td><td>Porta 3007, ambiente, PostgreSQL</td></tr>
+        <tr><td>Auth</td><td><code>JWT_SECRET</code>, <code>JWT_ACCESS_EXPIRES_IN</code>, <code>JWT_REFRESH_EXPIRES_IN</code>, <code>AUTH_SESSION_EPOCH</code></td><td>Tokens e invalidação global</td></tr>
+        <tr><td>Segurança</td><td><code>METRICS_AUTH_TOKEN</code>, <code>EVOLUTION_WEBHOOK_SECRET</code>, <code>CHANNEL_SECRETS_ENCRYPTION_KEY</code></td><td>Segredos de produção</td></tr>
+        <tr><td>Redis</td><td><code>REDIS_URL</code>, <code>RATE_LIMIT_REDIS_PREFIX</code></td><td>Rate limit distribuído + filas</td></tr>
+        <tr><td>URLs</td><td><code>CORS_ORIGIN</code>, <code>APP_URL</code>, <code>API_BASE_URL</code>, <code>PUBLIC_APP_URL</code></td><td>Domínios públicos</td></tr>
+        <tr><td>WhatsApp</td><td><code>WHATSAPP_*</code>, <code>EVOLUTION_API_*</code>, <code>EVOLUTION_GO_*</code></td><td>Providers e credenciais</td></tr>
+        <tr><td>Storage</td><td><code>STORAGE_PROVIDER</code>, <code>MINIO_*</code>, <code>MEDIA_*</code></td><td>Object storage e mídia</td></tr>
+        <tr><td>LGPD</td><td><code>DATA_RETENTION_*</code></td><td>Retenção de contatos, conversas, audit</td></tr>
+        <tr><td>API pública</td><td><code>PUBLIC_PIPELINE_API_KEY</code>, <code>PUBLIC_PIPELINE_SIGNATURE_SECRET</code></td><td>Integrações externas de pipeline</td></tr>
+        <tr><td>Filas</td><td><code>USE_BULLMQ</code>, <code>WEBHOOK_QUEUE_ENABLED</code>, etc.</td><td>Flags em phase1Flags</td></tr>
+      </table>
+    </section>
+
+    <section id="deploy">
+      <h2>26. Deploy e Docker</h2>
+      <h3>Dockerfile (multi-stage)</h3>
+      <table>
+        <tr><th>Stage</th><th>Ação</th></tr>
+        <tr><td>client-builder</td><td><code>npm ci</code> + <code>vite build</code></td></tr>
+        <tr><td>server-builder</td><td><code>prisma generate</code> + <code>tsc</code></td></tr>
+        <tr><td>runner</td><td>Produção: migrate + <code>node dist/server.js</code>, porta <strong>3007</strong></td></tr>
+      </table>
+      <h3>docker-compose.yml</h3>
+      <ul>
+        <li><strong>db:</strong> PostgreSQL 15</li>
+        <li><strong>app:</strong> build do Dockerfile, volume <code>/app/uploads</code></li>
+      </ul>
+      <h3>Portas</h3>
+      <table>
+        <tr><th>Serviço</th><th>Porta</th></tr>
+        <tr><td>Frontend (dev Vite)</td><td>3000</td></tr>
+        <tr><td>Backend (produção)</td><td>3007</td></tr>
+        <tr><td>PostgreSQL</td><td>5432</td></tr>
+        <tr><td>Prometheus</td><td>9090</td></tr>
+        <tr><td>Grafana</td><td>3001</td></tr>
+      </table>
+      <h3>Coolify</h3>
+      <p>Deploy recomendado: Dockerfile na raiz, porta 3007, PostgreSQL gerenciado, volume em <code>/app/uploads</code>, <code>APP_URL</code> com URL completa HTTPS.</p>
+      <div class="toc-note">
+        <strong>Documentação adicional no repositório:</strong>
+        README.md, SETUP.md, INICIAR_SISTEMA.md, REQUISITOS_SERVIDOR.md,
+        docs/coolify-grafana-prometheus.md, docs/coolify-evolution-go.md,
+        WHATSAPP_OFFICIAL_SETUP.md, IMPORTACAO_CONTATOS.md, API_EXAMPLES.md
+      </div>
+    </section>
+
+    <footer style="margin-top:3rem;padding-top:1.5rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.85rem;">
+      <p>Documentação gerada para o projeto Sistema Chat (Ceape). Para atualizações, consulte o código-fonte em <code>src/</code> e <code>client/src/</code>.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

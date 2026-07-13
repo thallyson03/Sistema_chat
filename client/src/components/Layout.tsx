@@ -10,6 +10,7 @@ import { getPublicApiOrigin } from '../config/publicUrl';
 import { SidebarLink } from './ui/SidebarLink';
 import { SidebarDropdownLink } from './ui/SidebarDropdownLink';
 import { Button } from './ui/Button';
+import SoftphoneRegistrar from './SoftphoneRegistrar';
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -242,6 +243,9 @@ export default function Layout() {
             />
             <SidebarLink to="/channels" icon="📡">Canais</SidebarLink>
             {isSupervisorOrAdmin && (
+              <SidebarLink to="/voice" icon="📞">Telefonia</SidebarLink>
+            )}
+            {isSupervisorOrAdmin && (
               <SidebarLink to="/journeys" icon="🧩">Jornadas</SidebarLink>
             )}
             <SidebarLink to="/calendario" icon="🗓️">Calendario</SidebarLink>
@@ -445,6 +449,7 @@ export default function Layout() {
             className="flex min-h-0 min-w-0 flex-1 flex-col"
           >
             <Outlet />
+            <SoftphoneRegistrar />
           </motion.div>
         </div>
       </main>

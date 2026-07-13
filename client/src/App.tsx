@@ -20,6 +20,7 @@ import ContactLists from './pages/ContactLists';
 import Templates from './pages/Templates';
 import Calendario from './pages/Calendario';
 import AuditLogs from './pages/AuditLogs';
+import Voice from './pages/Voice';
 import Layout from './components/Layout';
 import Tickets from './pages/Tickets';
 import api from './utils/api';
@@ -108,6 +109,14 @@ function App() {
           <Route path="conversations/:id" element={<ConversationDetail />} />
           <Route path="tickets" element={<Tickets />} />
           <Route path="channels" element={<Channels />} />
+          <Route
+            path="voice"
+            element={
+              <RoleRoute roles={['ADMIN', 'SUPERVISOR']}>
+                <Voice />
+              </RoleRoute>
+            }
+          />
           <Route path="integrations" element={<Integrations />} />
           <Route path="quick-replies" element={<QuickReplies />} />
           <Route

@@ -16,6 +16,7 @@ import NoteNotificationCard, {
   NoteNotificationData,
 } from '../components/chat/NoteNotificationCard';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import CallContactButton from '../components/CallContactButton';
 
 interface Deal {
   id: string;
@@ -1760,18 +1761,27 @@ export default function DealDetail() {
                   Telefone
                 </label>
                 {deal.contact.phone ? (
-                  <div 
-                    onClick={() => handleStartConversationFromPhone(deal.contact.phone!)}
-                    style={{ 
-                      fontSize: '14px',
-                      color: '#3b82f6',
-                      textDecoration: 'underline',
-                      cursor: 'pointer',
-                      display: 'inline-block',
-                    }}
-                    title="Clique para iniciar conversa"
-                  >
-                    {deal.contact.phone}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <div
+                      onClick={() => handleStartConversationFromPhone(deal.contact.phone!)}
+                      style={{
+                        fontSize: '14px',
+                        color: '#3b82f6',
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                        display: 'inline-block',
+                      }}
+                      title="Clique para iniciar conversa WhatsApp"
+                    >
+                      {deal.contact.phone}
+                    </div>
+                    <CallContactButton
+                      compact
+                      phone={deal.contact.phone}
+                      contactId={deal.contact.id}
+                      dealId={deal.id}
+                      conversationId={deal.conversation?.id}
+                    />
                   </div>
                 ) : (
                   <div style={{ fontSize: '14px' }}>N/A</div>
