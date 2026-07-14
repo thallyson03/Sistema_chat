@@ -23,6 +23,11 @@ voiceApiRoutes.post(
   authorizeRoles('ADMIN', 'SUPERVISOR'),
   controller.createAccountChannel.bind(controller),
 );
+voiceApiRoutes.put(
+  '/channels/:channelId',
+  authorizeRoles('ADMIN', 'SUPERVISOR'),
+  controller.updateAccountChannel.bind(controller),
+);
 voiceApiRoutes.get(
   '/channels/:channelId/numbers/search',
   authorizeRoles('ADMIN', 'SUPERVISOR'),

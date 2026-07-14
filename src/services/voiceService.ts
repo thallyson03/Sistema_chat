@@ -106,16 +106,86 @@ export class VoiceService {
       ...channel,
       config: {
         provider: config.provider || 'twilio',
-        accountSid: config.accountSid ? String(config.accountSid).slice(0, 8) + '…' : undefined,
+        accountSid: config.accountSid ? String(config.accountSid) : undefined,
         phoneNumber: config.phoneNumber || null,
         phoneNumberSid: config.phoneNumberSid || null,
-        twimlAppSid: config.twimlAppSid || null,
-        apiKeySid: config.apiKeySid ? '••••' : null,
+        twimlAppSid: config.twimlAppSid ? String(config.twimlAppSid) : null,
+        apiKeySid: config.apiKeySid ? String(config.apiKeySid) : null,
         recordingEnabled: Boolean(config.recordingEnabled),
         hasAuthToken: Boolean(config.authToken),
         hasApiKeySecret: Boolean(config.apiKeySecret),
       },
     };
+  }
+
+  async updateAccountChannel(
+    channelId: string,
+    input: {
+      name?: string;
+      accountSid?: string;
+      authToken?: string;
+      apiKeySid?: string;
+      apiKeySecret?: string;
+      twimlAppSid?: string;
+      recordingEnabled?: boolean;
+      sectorId?: string | null;
+      userId: string;
+    },
+  ) {
+    const channel = await this.getVoiceChannelOrThrow(channelId);
+    const current = (decryptConfigSecrets(channel.config) || {}) as Record<string, unknown>;
+
+    const nextConfig = encryptConfigSecrets({
+      ...current,
+      provider: 'twilio',
+      accountSid: input.accountSid?.trim() || current.accountSid,
+      authToken:
+        input.authToken && input.authToken.trim() ? input.authToken.trim() : current.authToken,
+      apiKeySid:
+        input.apiKeySid !== undefined
+          ? input.apiKeySid.trim() || null
+          : current.apiKeySid,
+      apiKeySecret:
+        input.apiKeySecret && input.apiKeySecret.trim()
+          ? input.apiKeySecret.trim()
+          : current.apiKeySecret,
+      twimlAppSid:
+        input.twimlAppSid !== undefined
+          ? input.twimlAppSid.trim() || null
+          : current.twimlAppSid,
+      recordingEnabled:
+        input.recordingEnabled !== undefined
+          ? Boolean(input.recordingEnabled)
+          : Boolean(current.recordingEnabled),
+      phoneNumber: current.phoneNumber,
+      phoneNumberSid: current.phoneNumberSid,
+    });
+
+    const updated = await prisma.channel.update({
+      where: { id: channelId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.sectorId !== undefined
+          ? { sectorId: input.sectorId && String(input.sectorId).trim() ? input.sectorId : null }
+          : {}),
+        config: nextConfig as object,
+      },
+      include: { sector: { select: { id: true, name: true } } },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: input.userId,
+        action: 'VOICE_CHANNEL_UPDATED',
+        resource: 'Channel',
+        resourceId: channelId,
+        metadata: {
+          updatedFields: Object.keys(input).filter((k) => k !== 'userId'),
+        },
+      },
+    });
+
+    return this.sanitizeChannel(updated);
   }
 
   async getVoiceChannelOrThrow(channelId: string) {

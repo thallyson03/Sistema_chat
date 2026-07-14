@@ -13,6 +13,7 @@ type VoiceChannel = {
     accountSid?: string;
     hasAuthToken?: boolean;
     hasApiKeySecret?: boolean;
+    apiKeySid?: string | null;
     twimlAppSid?: string | null;
     recordingEnabled?: boolean;
   };
@@ -28,24 +29,45 @@ type AvailableNumber = {
 
 type Sector = { id: string; name: string };
 
+type ChannelForm = {
+  name: string;
+  accountSid: string;
+  authToken: string;
+  apiKeySid: string;
+  apiKeySecret: string;
+  twimlAppSid: string;
+  recordingEnabled: boolean;
+  sectorId: string;
+};
+
+const emptyForm = (): ChannelForm => ({
+  name: '',
+  accountSid: '',
+  authToken: '',
+  apiKeySid: '',
+  apiKeySecret: '',
+  twimlAppSid: '',
+  recordingEnabled: false,
+  sectorId: '',
+});
+
+function softphoneReady(channel: VoiceChannel): boolean {
+  return Boolean(
+    channel.config.twimlAppSid && channel.config.apiKeySid && channel.config.hasApiKeySecret,
+  );
+}
+
 export default function Voice() {
   const [channels, setChannels] = useState<VoiceChannel[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    name: '',
-    accountSid: '',
-    authToken: '',
-    apiKeySid: '',
-    apiKeySecret: '',
-    twimlAppSid: '',
-    recordingEnabled: false,
-    sectorId: '',
-  });
+  const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<ChannelForm>(emptyForm);
 
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [searchForm, setSearchForm] = useState({
@@ -78,30 +100,68 @@ export default function Voice() {
     load();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(emptyForm());
+    setModalMode('create');
+  };
+
+  const openEdit = (channel: VoiceChannel) => {
+    setEditingId(channel.id);
+    setForm({
+      name: channel.name || '',
+      accountSid: channel.config.accountSid || '',
+      authToken: '',
+      apiKeySid: channel.config.apiKeySid || '',
+      apiKeySecret: '',
+      twimlAppSid: channel.config.twimlAppSid || '',
+      recordingEnabled: Boolean(channel.config.recordingEnabled),
+      sectorId: channel.sector?.id || '',
+    });
+    setModalMode('edit');
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    setEditingId(null);
+    setForm(emptyForm());
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setSaving(true);
     try {
-      await api.post('/api/voice/channels', {
-        ...createForm,
-        sectorId: createForm.sectorId || undefined,
-      });
-      setShowCreate(false);
-      setCreateForm({
-        name: '',
-        accountSid: '',
-        authToken: '',
-        apiKeySid: '',
-        apiKeySecret: '',
-        twimlAppSid: '',
-        recordingEnabled: false,
-        sectorId: '',
-      });
-      setSuccess('Conta Twilio vinculada. Agora busque e compre um número.');
+      if (modalMode === 'create') {
+        if (!form.authToken.trim()) {
+          setError('Auth Token é obrigatório na criação');
+          return;
+        }
+        await api.post('/api/voice/channels', {
+          ...form,
+          sectorId: form.sectorId || undefined,
+        });
+        setSuccess('Conta Twilio vinculada. Agora busque e compre um número.');
+      } else if (modalMode === 'edit' && editingId) {
+        await api.put(`/api/voice/channels/${editingId}`, {
+          name: form.name,
+          accountSid: form.accountSid,
+          authToken: form.authToken || undefined,
+          apiKeySid: form.apiKeySid,
+          apiKeySecret: form.apiKeySecret || undefined,
+          twimlAppSid: form.twimlAppSid,
+          recordingEnabled: form.recordingEnabled,
+          sectorId: form.sectorId || null,
+        });
+        setSuccess('Canal de voz atualizado.');
+      }
+      closeModal();
       await load();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Erro ao criar canal');
+      setError(err.response?.data?.error || 'Erro ao salvar canal');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -161,6 +221,9 @@ export default function Voice() {
     }
   };
 
+  const inputClass =
+    'w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary/45';
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -175,7 +238,7 @@ export default function Voice() {
         </div>
         <button
           type="button"
-          onClick={() => setShowCreate(true)}
+          onClick={openCreate}
           className="rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-on-primary shadow-emerald-send transition hover:brightness-110"
         >
           + Conta Twilio
@@ -220,12 +283,17 @@ export default function Voice() {
                   </p>
                   <p className="mt-1 text-[11px] text-on-surface-variant/80">
                     Conta {channel.config.accountSid || '—'} · Softphone{' '}
-                    {channel.config.twimlAppSid && channel.config.hasApiKeySecret
-                      ? 'configurado'
-                      : 'pendente (API Key + TwiML App)'}
+                    {softphoneReady(channel) ? 'configurado' : 'pendente (API Key + TwiML App)'}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(channel)}
+                    className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-xs font-semibold text-on-surface transition hover:bg-surface-variant"
+                  >
+                    Editar
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleSearch(channel.id)}
@@ -252,25 +320,25 @@ export default function Voice() {
                 <div className="mt-4 space-y-3 border-t border-outline-variant pt-4">
                   <div className="grid gap-2 sm:grid-cols-4">
                     <input
-                      className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-sm"
+                      className={inputClass}
                       value={searchForm.country}
                       onChange={(e) => setSearchForm({ ...searchForm, country: e.target.value })}
                       placeholder="País (BR)"
                     />
                     <input
-                      className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-sm"
+                      className={inputClass}
                       value={searchForm.areaCode}
                       onChange={(e) => setSearchForm({ ...searchForm, areaCode: e.target.value })}
                       placeholder="DDD / Area code"
                     />
                     <input
-                      className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-sm"
+                      className={inputClass}
                       value={searchForm.contains}
                       onChange={(e) => setSearchForm({ ...searchForm, contains: e.target.value })}
                       placeholder="Contém dígitos"
                     />
                     <select
-                      className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-sm"
+                      className={inputClass}
                       value={searchForm.type}
                       onChange={(e) =>
                         setSearchForm({
@@ -324,68 +392,80 @@ export default function Voice() {
         </div>
       )}
 
-      {showCreate ? (
+      {modalMode ? (
         <div
           className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]"
-          onClick={() => setShowCreate(false)}
+          onClick={closeModal}
           role="presentation"
         >
           <form
             className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-highest p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
-            onSubmit={handleCreate}
+            onSubmit={handleSubmit}
           >
-            <h2 className="mb-1 text-lg font-bold">Vincular conta Twilio</h2>
+            <h2 className="mb-1 text-lg font-bold">
+              {modalMode === 'create' ? 'Vincular conta Twilio' : 'Editar canal de voz'}
+            </h2>
             <p className="mb-4 text-xs text-on-surface-variant">
-              As credenciais ficam no CRM criptografadas. A compra do número é feita na sua conta
-              Twilio.
+              {modalMode === 'edit'
+                ? 'Deixe Auth Token e API Key Secret em branco para manter os valores atuais.'
+                : 'As credenciais ficam no CRM criptografadas. A compra do número é feita na sua conta Twilio.'}
             </p>
             <div className="space-y-3">
               <input
                 required
                 placeholder="Nome do canal"
-                className="w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm"
-                value={createForm.name}
-                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                className={inputClass}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
               <input
                 required
                 placeholder="Account SID"
-                className="w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm"
-                value={createForm.accountSid}
-                onChange={(e) => setCreateForm({ ...createForm, accountSid: e.target.value })}
+                className={inputClass}
+                value={form.accountSid}
+                onChange={(e) => setForm({ ...form, accountSid: e.target.value })}
               />
               <input
-                required
+                required={modalMode === 'create'}
                 type="password"
-                placeholder="Auth Token"
-                className="w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm"
-                value={createForm.authToken}
-                onChange={(e) => setCreateForm({ ...createForm, authToken: e.target.value })}
+                placeholder={
+                  modalMode === 'edit' && channels.find((c) => c.id === editingId)?.config.hasAuthToken
+                    ? 'Auth Token (deixe em branco para manter)'
+                    : 'Auth Token'
+                }
+                className={inputClass}
+                value={form.authToken}
+                onChange={(e) => setForm({ ...form, authToken: e.target.value })}
               />
               <input
                 placeholder="API Key SID (softphone)"
-                className="w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm"
-                value={createForm.apiKeySid}
-                onChange={(e) => setCreateForm({ ...createForm, apiKeySid: e.target.value })}
+                className={inputClass}
+                value={form.apiKeySid}
+                onChange={(e) => setForm({ ...form, apiKeySid: e.target.value })}
               />
               <input
                 type="password"
-                placeholder="API Key Secret (softphone)"
-                className="w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm"
-                value={createForm.apiKeySecret}
-                onChange={(e) => setCreateForm({ ...createForm, apiKeySecret: e.target.value })}
+                placeholder={
+                  modalMode === 'edit' &&
+                  channels.find((c) => c.id === editingId)?.config.hasApiKeySecret
+                    ? 'API Key Secret (deixe em branco para manter)'
+                    : 'API Key Secret (softphone)'
+                }
+                className={inputClass}
+                value={form.apiKeySecret}
+                onChange={(e) => setForm({ ...form, apiKeySecret: e.target.value })}
               />
               <input
                 placeholder="TwiML App SID (softphone)"
-                className="w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm"
-                value={createForm.twimlAppSid}
-                onChange={(e) => setCreateForm({ ...createForm, twimlAppSid: e.target.value })}
+                className={inputClass}
+                value={form.twimlAppSid}
+                onChange={(e) => setForm({ ...form, twimlAppSid: e.target.value })}
               />
               <select
-                className="w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2.5 text-sm"
-                value={createForm.sectorId}
-                onChange={(e) => setCreateForm({ ...createForm, sectorId: e.target.value })}
+                className={inputClass}
+                value={form.sectorId}
+                onChange={(e) => setForm({ ...form, sectorId: e.target.value })}
               >
                 <option value="">Setor (opcional)</option>
                 {sectors.map((s) => (
@@ -397,10 +477,8 @@ export default function Voice() {
               <label className="flex items-center gap-2 text-sm text-on-surface">
                 <input
                   type="checkbox"
-                  checked={createForm.recordingEnabled}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, recordingEnabled: e.target.checked })
-                  }
+                  checked={form.recordingEnabled}
+                  onChange={(e) => setForm({ ...form, recordingEnabled: e.target.checked })}
                 />
                 Gravar chamadas por padrão
               </label>
@@ -408,16 +486,17 @@ export default function Voice() {
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowCreate(false)}
+                onClick={closeModal}
                 className="rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-on-primary"
+                disabled={saving}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-on-primary disabled:opacity-50"
               >
-                Salvar
+                {saving ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
           </form>

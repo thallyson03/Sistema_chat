@@ -51,6 +51,38 @@ export class VoiceController {
     }
   }
 
+  async updateAccountChannel(req: AuthRequest, res: Response) {
+    try {
+      const {
+        name,
+        accountSid,
+        authToken,
+        apiKeySid,
+        apiKeySecret,
+        twimlAppSid,
+        recordingEnabled,
+        sectorId,
+      } = req.body || {};
+
+      const channel = await voiceService.updateAccountChannel(req.params.channelId, {
+        name: name !== undefined ? String(name) : undefined,
+        accountSid: accountSid !== undefined ? String(accountSid) : undefined,
+        authToken: authToken !== undefined ? String(authToken) : undefined,
+        apiKeySid: apiKeySid !== undefined ? String(apiKeySid) : undefined,
+        apiKeySecret: apiKeySecret !== undefined ? String(apiKeySecret) : undefined,
+        twimlAppSid: twimlAppSid !== undefined ? String(twimlAppSid) : undefined,
+        recordingEnabled:
+          recordingEnabled !== undefined ? Boolean(recordingEnabled) : undefined,
+        sectorId: sectorId !== undefined ? sectorId || null : undefined,
+        userId: req.user!.id,
+      });
+
+      res.json(channel);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || 'Erro ao atualizar canal de voz' });
+    }
+  }
+
   async searchNumbers(req: AuthRequest, res: Response) {
     try {
       const { channelId } = req.params;
