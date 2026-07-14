@@ -64,6 +64,8 @@ export class VoiceService {
     apiKeySid?: string;
     apiKeySecret?: string;
     twimlAppSid?: string;
+    addressSid?: string;
+    bundleSid?: string;
     recordingEnabled?: boolean;
     sectorId?: string;
     userId: string;
@@ -81,6 +83,8 @@ export class VoiceService {
           apiKeySid: input.apiKeySid,
           apiKeySecret: input.apiKeySecret,
           twimlAppSid: input.twimlAppSid,
+          addressSid: input.addressSid,
+          bundleSid: input.bundleSid,
           recordingEnabled: Boolean(input.recordingEnabled),
         }) as object,
       },
@@ -111,6 +115,8 @@ export class VoiceService {
         phoneNumberSid: config.phoneNumberSid || null,
         twimlAppSid: config.twimlAppSid ? String(config.twimlAppSid) : null,
         apiKeySid: config.apiKeySid ? String(config.apiKeySid) : null,
+        addressSid: config.addressSid ? String(config.addressSid) : null,
+        bundleSid: config.bundleSid ? String(config.bundleSid) : null,
         recordingEnabled: Boolean(config.recordingEnabled),
         hasAuthToken: Boolean(config.authToken),
         hasApiKeySecret: Boolean(config.apiKeySecret),
@@ -127,6 +133,8 @@ export class VoiceService {
       apiKeySid?: string;
       apiKeySecret?: string;
       twimlAppSid?: string;
+      addressSid?: string;
+      bundleSid?: string;
       recordingEnabled?: boolean;
       sectorId?: string | null;
       userId: string;
@@ -153,6 +161,14 @@ export class VoiceService {
         input.twimlAppSid !== undefined
           ? input.twimlAppSid.trim() || null
           : current.twimlAppSid,
+      addressSid:
+        input.addressSid !== undefined
+          ? input.addressSid.trim() || null
+          : current.addressSid,
+      bundleSid:
+        input.bundleSid !== undefined
+          ? input.bundleSid.trim() || null
+          : current.bundleSid,
       recordingEnabled:
         input.recordingEnabled !== undefined
           ? Boolean(input.recordingEnabled)
@@ -212,20 +228,28 @@ export class VoiceService {
 
   async purchaseNumber(input: PurchaseInput) {
     const channel = await this.getVoiceChannelOrThrow(input.channelId);
+    const config = (decryptConfigSecrets(channel.config) || {}) as Record<string, unknown>;
     const base = publicBaseUrl();
     const voiceUrl = `${base}/api/webhooks/voice/twilio/voice?channelId=${channel.id}`;
     const statusCallback = `${base}/api/webhooks/voice/twilio/status?channelId=${channel.id}`;
+
+    if (input.phoneNumber.startsWith('+55') && !config.addressSid) {
+      throw new Error(
+        'Para comprar número BR, informe o AddressSid no canal (Telefonia → Editar). Crie o Address no Console Twilio e use o SID que começa com AD.',
+      );
+    }
 
     const purchased = await this.twilio.purchaseNumber(channel.config, {
       phoneNumber: input.phoneNumber,
       voiceUrl,
       statusCallback,
       friendlyName: input.name || `CRM ${input.phoneNumber}`,
+      addressSid: config.addressSid ? String(config.addressSid) : undefined,
+      bundleSid: config.bundleSid ? String(config.bundleSid) : undefined,
     });
 
-    const currentConfig = (decryptConfigSecrets(channel.config) || {}) as Record<string, unknown>;
     const nextConfig = encryptConfigSecrets({
-      ...currentConfig,
+      ...config,
       provider: 'twilio',
       phoneNumber: purchased.phoneNumber,
       phoneNumberSid: purchased.phoneNumberSid,

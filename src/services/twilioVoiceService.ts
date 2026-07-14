@@ -10,6 +10,8 @@ export type TwilioVoiceConfig = {
   twimlAppSid?: string;
   phoneNumber?: string;
   phoneNumberSid?: string;
+  addressSid?: string;
+  bundleSid?: string;
   recordingEnabled?: boolean;
 };
 
@@ -38,6 +40,8 @@ function asConfig(raw: unknown): TwilioVoiceConfig {
     twimlAppSid: decrypted.twimlAppSid ? String(decrypted.twimlAppSid) : undefined,
     phoneNumber: decrypted.phoneNumber ? String(decrypted.phoneNumber) : undefined,
     phoneNumberSid: decrypted.phoneNumberSid ? String(decrypted.phoneNumberSid) : undefined,
+    addressSid: decrypted.addressSid ? String(decrypted.addressSid) : undefined,
+    bundleSid: decrypted.bundleSid ? String(decrypted.bundleSid) : undefined,
     recordingEnabled: Boolean(decrypted.recordingEnabled),
   };
 }
@@ -64,7 +68,14 @@ export class TwilioVoiceService {
     const { client } = this.getClient(configRaw);
     const country = (params.country || 'BR').toUpperCase();
     const limit = Math.min(Math.max(params.limit || 20, 1), 50);
-    const type = params.type || 'local';
+    let type = params.type || 'local';
+
+    // Toll-free não existe para BR na API Twilio (404).
+    if (type === 'tollFree' && country === 'BR') {
+      throw new Error(
+        'A Twilio não oferece números Toll-free no Brasil. Use o tipo Local (ou Móvel, se disponível) com país BR.',
+      );
+    }
 
     const listParams: Record<string, string | number | boolean> = {
       voiceEnabled: true,
@@ -82,12 +93,27 @@ export class TwilioVoiceService {
       capabilities: { voice: boolean; sms: boolean; mms: boolean };
     }> = [];
 
-    if (type === 'mobile') {
-      list = await client.availablePhoneNumbers(country).mobile.list(listParams as any);
-    } else if (type === 'tollFree') {
-      list = await client.availablePhoneNumbers(country).tollFree.list(listParams as any);
-    } else {
-      list = await client.availablePhoneNumbers(country).local.list(listParams as any);
+    try {
+      if (type === 'mobile') {
+        list = await client.availablePhoneNumbers(country).mobile.list(listParams as any);
+      } else if (type === 'tollFree') {
+        list = await client.availablePhoneNumbers(country).tollFree.list(listParams as any);
+      } else {
+        list = await client.availablePhoneNumbers(country).local.list(listParams as any);
+      }
+    } catch (error: any) {
+      const msg = String(error?.message || '');
+      const code = error?.code || error?.status;
+      if (
+        code === 20404 ||
+        msg.includes('was not found') ||
+        msg.includes('404')
+      ) {
+        throw new Error(
+          `Números do tipo "${type}" não estão disponíveis para o país ${country} na Twilio. Tente Local com país BR ou outro país/tipo.`,
+        );
+      }
+      throw new Error(msg || 'Erro ao buscar números na Twilio');
     }
 
     return list.map((item) => ({
@@ -111,24 +137,46 @@ export class TwilioVoiceService {
       voiceUrl: string;
       statusCallback: string;
       friendlyName?: string;
+      addressSid?: string;
+      bundleSid?: string;
     },
   ) {
     const { client, config } = this.getClient(configRaw);
-    const purchased = await client.incomingPhoneNumbers.create({
-      phoneNumber: params.phoneNumber,
-      friendlyName: params.friendlyName || `CRM ${params.phoneNumber}`,
-      voiceUrl: params.voiceUrl,
-      voiceMethod: 'POST',
-      statusCallback: params.statusCallback,
-      statusCallbackMethod: 'POST',
-    });
+    const addressSid = params.addressSid || config.addressSid;
+    const bundleSid = params.bundleSid || config.bundleSid;
 
-    return {
-      phoneNumber: purchased.phoneNumber,
-      phoneNumberSid: purchased.sid,
-      friendlyName: purchased.friendlyName,
-      accountSid: config.accountSid,
-    };
+    try {
+      const purchased = await client.incomingPhoneNumbers.create({
+        phoneNumber: params.phoneNumber,
+        friendlyName: params.friendlyName || `CRM ${params.phoneNumber}`,
+        voiceUrl: params.voiceUrl,
+        voiceMethod: 'POST',
+        statusCallback: params.statusCallback,
+        statusCallbackMethod: 'POST',
+        ...(addressSid ? { addressSid } : {}),
+        ...(bundleSid ? { bundleSid } : {}),
+      });
+
+      return {
+        phoneNumber: purchased.phoneNumber,
+        phoneNumberSid: purchased.sid,
+        friendlyName: purchased.friendlyName,
+        accountSid: config.accountSid,
+      };
+    } catch (error: any) {
+      const msg = String(error?.message || '');
+      if (msg.toLowerCase().includes('addresssid') || msg.toLowerCase().includes('address')) {
+        throw new Error(
+          'A Twilio exige um endereço regulamentar (AddressSid) para números do Brasil. Crie um Address no Console Twilio (Phone Numbers → Regulatory Compliance / Addresses), copie o SID (AD...) e salve no canal em Telefonia → Editar.',
+        );
+      }
+      if (msg.toLowerCase().includes('bundle')) {
+        throw new Error(
+          'A Twilio exige um BundleSid aprovado para este número. Crie/aprove o Regulatory Bundle no Console Twilio e informe o SID (BU...) no canal em Telefonia → Editar.',
+        );
+      }
+      throw new Error(msg || 'Erro ao comprar número na Twilio');
+    }
   }
 
   async releaseNumber(configRaw: unknown, phoneNumberSid: string) {

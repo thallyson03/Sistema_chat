@@ -15,6 +15,8 @@ type VoiceChannel = {
     hasApiKeySecret?: boolean;
     apiKeySid?: string | null;
     twimlAppSid?: string | null;
+    addressSid?: string | null;
+    bundleSid?: string | null;
     recordingEnabled?: boolean;
   };
 };
@@ -36,6 +38,8 @@ type ChannelForm = {
   apiKeySid: string;
   apiKeySecret: string;
   twimlAppSid: string;
+  addressSid: string;
+  bundleSid: string;
   recordingEnabled: boolean;
   sectorId: string;
 };
@@ -47,6 +51,8 @@ const emptyForm = (): ChannelForm => ({
   apiKeySid: '',
   apiKeySecret: '',
   twimlAppSid: '',
+  addressSid: '',
+  bundleSid: '',
   recordingEnabled: false,
   sectorId: '',
 });
@@ -115,6 +121,8 @@ export default function Voice() {
       apiKeySid: channel.config.apiKeySid || '',
       apiKeySecret: '',
       twimlAppSid: channel.config.twimlAppSid || '',
+      addressSid: channel.config.addressSid || '',
+      bundleSid: channel.config.bundleSid || '',
       recordingEnabled: Boolean(channel.config.recordingEnabled),
       sectorId: channel.sector?.id || '',
     });
@@ -151,6 +159,8 @@ export default function Voice() {
           apiKeySid: form.apiKeySid,
           apiKeySecret: form.apiKeySecret || undefined,
           twimlAppSid: form.twimlAppSid,
+          addressSid: form.addressSid,
+          bundleSid: form.bundleSid,
           recordingEnabled: form.recordingEnabled,
           sectorId: form.sectorId || null,
         });
@@ -284,6 +294,9 @@ export default function Voice() {
                   <p className="mt-1 text-[11px] text-on-surface-variant/80">
                     Conta {channel.config.accountSid || '—'} · Softphone{' '}
                     {softphoneReady(channel) ? 'configurado' : 'pendente (API Key + TwiML App)'}
+                    {' · '}
+                    Address{' '}
+                    {channel.config.addressSid ? 'configurado' : 'pendente (necessário p/ BR)'}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -349,7 +362,7 @@ export default function Voice() {
                     >
                       <option value="local">Local</option>
                       <option value="mobile">Móvel</option>
-                      <option value="tollFree">Toll-free</option>
+                      <option value="tollFree">Toll-free (ex.: EUA)</option>
                     </select>
                   </div>
                   <button
@@ -462,6 +475,22 @@ export default function Voice() {
                 value={form.twimlAppSid}
                 onChange={(e) => setForm({ ...form, twimlAppSid: e.target.value })}
               />
+              <input
+                placeholder="Address SID (AD... — obrigatório para BR)"
+                className={inputClass}
+                value={form.addressSid}
+                onChange={(e) => setForm({ ...form, addressSid: e.target.value })}
+              />
+              <input
+                placeholder="Bundle SID (BU... — se a Twilio exigir)"
+                className={inputClass}
+                value={form.bundleSid}
+                onChange={(e) => setForm({ ...form, bundleSid: e.target.value })}
+              />
+              <p className="text-[11px] leading-relaxed text-on-surface-variant">
+                Para números BR: Console Twilio → Regulatory Compliance / Addresses → criar Address →
+                copiar SID (AD...). Se pedir Bundle, use Regulatory Bundles (BU...).
+              </p>
               <select
                 className={inputClass}
                 value={form.sectorId}

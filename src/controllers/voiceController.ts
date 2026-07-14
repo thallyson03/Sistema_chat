@@ -23,6 +23,8 @@ export class VoiceController {
         apiKeySid,
         apiKeySecret,
         twimlAppSid,
+        addressSid,
+        bundleSid,
         recordingEnabled,
         sectorId,
       } = req.body || {};
@@ -40,6 +42,8 @@ export class VoiceController {
         apiKeySid: apiKeySid ? String(apiKeySid).trim() : undefined,
         apiKeySecret: apiKeySecret ? String(apiKeySecret).trim() : undefined,
         twimlAppSid: twimlAppSid ? String(twimlAppSid).trim() : undefined,
+        addressSid: addressSid ? String(addressSid).trim() : undefined,
+        bundleSid: bundleSid ? String(bundleSid).trim() : undefined,
         recordingEnabled: Boolean(recordingEnabled),
         sectorId: sectorId || undefined,
         userId: req.user!.id,
@@ -60,6 +64,8 @@ export class VoiceController {
         apiKeySid,
         apiKeySecret,
         twimlAppSid,
+        addressSid,
+        bundleSid,
         recordingEnabled,
         sectorId,
       } = req.body || {};
@@ -71,6 +77,8 @@ export class VoiceController {
         apiKeySid: apiKeySid !== undefined ? String(apiKeySid) : undefined,
         apiKeySecret: apiKeySecret !== undefined ? String(apiKeySecret) : undefined,
         twimlAppSid: twimlAppSid !== undefined ? String(twimlAppSid) : undefined,
+        addressSid: addressSid !== undefined ? String(addressSid) : undefined,
+        bundleSid: bundleSid !== undefined ? String(bundleSid) : undefined,
         recordingEnabled:
           recordingEnabled !== undefined ? Boolean(recordingEnabled) : undefined,
         sectorId: sectorId !== undefined ? sectorId || null : undefined,
