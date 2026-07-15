@@ -3,6 +3,9 @@ import { authenticateToken, authorizeRoles, AuthRequest } from '../middleware/au
 import prisma from '../config/database';
 import { WhatsAppOfficialService } from '../services/whatsappOfficialService';
 import { getWhatsAppOfficialService } from '../config/whatsappOfficial';
+import { getSocketIO } from './webhookRoutes';
+import { emitConversationDelta } from '../utils/realtimeEvents';
+import { decryptConfigSecrets } from '../utils/fieldEncryption';
 
 const router = Router();
 
@@ -24,7 +27,7 @@ async function getServiceForChannel(channelId?: string | null) {
       throw new Error('Canal não encontrado');
     }
 
-    const config = (channel.config || {}) as any;
+    const config = (decryptConfigSecrets(channel.config) || {}) as any;
     const isOfficial =
       config.provider === 'whatsapp_official' &&
       !!config.token &&
@@ -140,7 +143,7 @@ router.post(
         data: {
           conversationId: conversation.id,
           userId: req.user?.id || null,
-          content: typeof body === 'string' && body.trim().length > 0 ? body.trim() : '',
+          content: typeof body === 'string' && body.trim().length > 0 ? body.trim() : `[Template] ${templateName}`,
           type: 'TEXT',
           status: 'SENT',
           externalId: result.messageId || null,
@@ -153,6 +156,15 @@ router.post(
             kind: 'template',
           },
         },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
       });
 
       await prisma.conversation.update({
@@ -163,11 +175,21 @@ router.post(
         },
       });
 
-      return res.status(201).json({
-        success: true,
-        messageId: createdMessage.id,
-        externalId: result.messageId,
-      });
+      const io = getSocketIO();
+      if (io) {
+        emitConversationDelta(io, 'new_message', {
+          conversationId: conversation.id,
+          channelId: conversation.channelId,
+          messageId: createdMessage.id,
+        });
+        emitConversationDelta(io, 'conversation_updated', {
+          conversationId: conversation.id,
+          channelId: conversation.channelId,
+        });
+      }
+
+      // Mesmo contrato do POST /api/messages (objeto Message completo com `id`)
+      return res.status(201).json(createdMessage);
     } catch (error: any) {
       console.error('[WhatsAppTemplates] ❌ Erro ao enviar template:', error.message);
       return res.status(500).json({

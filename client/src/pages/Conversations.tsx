@@ -1251,8 +1251,19 @@ export default function Conversations() {
         setPendingTemplate(null);
         setMessageInput('');
         setShowEmojiPicker(false);
-        if (response.status === 201 && response.data?.id) {
-          appendMessageToChat(response.data as Message);
+        const created = response.data;
+        if (response.status === 201 && created?.id) {
+          appendMessageToChat(created as Message);
+        } else if (response.status === 201 && created?.messageId) {
+          // Compatibilidade com resposta antiga (messageId sem objeto Message)
+          try {
+            const msgRes = await api.get<Message>(`/api/messages/${created.messageId}`, {
+              params: { conversationId: selectedConversation.id },
+            });
+            appendMessageToChat(msgRes.data);
+          } catch (fetchErr) {
+            console.warn('Template enviado, mas falhou ao anexar no chat:', fetchErr);
+          }
         }
         queueConversationsRefresh(250);
       } catch (error: any) {
