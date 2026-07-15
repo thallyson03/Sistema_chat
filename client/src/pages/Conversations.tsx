@@ -1791,116 +1791,135 @@ export default function Conversations() {
 
       {/* Sidebar Esquerda - Lista de Conversas */}
       <div className="flex w-[min(100%,20rem)] shrink-0 flex-col overflow-hidden border-r border-primary/10 bg-surface-container">
-        <div className="border-b border-primary/10 bg-surface-container-high px-4 py-5">
+        <div
+          className="relative border-b border-primary/10 bg-surface-container-high px-4 py-5"
+          ref={searchPanelRef}
+        >
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="font-headline text-lg font-bold tracking-tight text-primary">Conversas</h2>
-            <button
-              type="button"
-              onClick={() => setShowNewConversationModal(true)}
-              className="active-gradient-emerald flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold text-on-primary shadow-emerald-send transition hover:brightness-110"
-              title="Iniciar nova conversa"
-            >
-              <span className="material-symbols-outlined text-base">add_call</span>
-              Nova
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {primaryStatusFilters.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setStatusFilter(opt.value)}
-                className={`rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors ${
-                  statusFilter === opt.value
-                    ? 'bg-emerald-900/40 text-primary ring-1 ring-primary/20'
-                    : 'text-on-surface-variant hover:bg-surface-container'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-            <div className="relative" ref={searchPanelRef}>
+            <div className="flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setSearchOpen((prev) => !prev)}
-                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+                onClick={() => {
+                  setShowMoreStatusFilters(false);
+                  setSearchOpen((prev) => !prev);
+                }}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
                   searchOpen || listSearch
                     ? 'bg-emerald-900/40 text-primary ring-1 ring-primary/20'
                     : 'text-on-surface-variant hover:bg-surface-container'
                 }`}
                 title="Buscar por nome, telefone ou ticket"
                 aria-label="Buscar conversas"
+                aria-expanded={searchOpen}
               >
-                <span className="material-symbols-outlined text-lg">search</span>
+                <span className="material-symbols-outlined text-xl">search</span>
               </button>
-              {searchOpen && (
-                <div className="absolute left-0 top-full z-30 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-primary/15 bg-surface-container-high p-2 shadow-forest-glow backdrop-blur-xl">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined shrink-0 text-base text-primary/70">
-                      search
-                    </span>
-                    <input
-                      ref={searchInputRef}
-                      type="search"
-                      value={searchDraft}
-                      onChange={(e) => setSearchDraft(e.target.value)}
-                      placeholder="Nome, telefone ou ticket..."
-                      className="min-w-0 flex-1 bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/60"
-                      aria-label="Buscar por texto, número ou ticket"
-                    />
-                    {searchDraft && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSearchDraft('');
-                          setListSearch('');
-                        }}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-primary"
-                        title="Limpar busca"
-                        aria-label="Limpar busca"
-                      >
-                        <span className="material-symbols-outlined text-base">close</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="relative" ref={moreStatusFiltersRef}>
               <button
                 type="button"
-                onClick={() => setShowMoreStatusFilters((prev) => !prev)}
-                className={`rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors ${
-                  secondaryStatusFilters.some((opt) => opt.value === statusFilter)
-                    ? 'bg-emerald-900/40 text-primary ring-1 ring-primary/20'
-                    : 'text-on-surface-variant hover:bg-surface-container'
-                }`}
-                title="Mais filtros"
+                onClick={() => setShowNewConversationModal(true)}
+                className="active-gradient-emerald flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold text-on-primary shadow-emerald-send transition hover:brightness-110"
+                title="Iniciar nova conversa"
               >
-                ...
+                <span className="material-symbols-outlined text-base">add_call</span>
+                Nova
               </button>
-              {showMoreStatusFilters && (
-                <div className="absolute right-0 z-30 mt-2 min-w-[220px] rounded-xl border border-primary/15 bg-surface-container-high p-1 shadow-forest-glow backdrop-blur-xl">
-                  {secondaryStatusFilters.map((opt) => (
+            </div>
+          </div>
+          <div className="relative min-h-[2.5rem]">
+            <div className="flex flex-wrap items-center gap-2">
+              {primaryStatusFilters.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setStatusFilter(opt.value)}
+                  className={`rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                    statusFilter === opt.value
+                      ? 'bg-emerald-900/40 text-primary ring-1 ring-primary/20'
+                      : 'text-on-surface-variant hover:bg-surface-container'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <div className="relative" ref={moreStatusFiltersRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowMoreStatusFilters((prev) => !prev)}
+                  className={`rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                    secondaryStatusFilters.some((opt) => opt.value === statusFilter)
+                      ? 'bg-emerald-900/40 text-primary ring-1 ring-primary/20'
+                      : 'text-on-surface-variant hover:bg-surface-container'
+                  }`}
+                  title="Mais filtros"
+                >
+                  ...
+                </button>
+                {showMoreStatusFilters && (
+                  <div className="absolute right-0 z-30 mt-2 min-w-[220px] rounded-xl border border-primary/15 bg-surface-container-high p-1 shadow-forest-glow backdrop-blur-xl">
+                    {secondaryStatusFilters.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setStatusFilter(opt.value);
+                          setShowMoreStatusFilters(false);
+                        }}
+                        className={`w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                          statusFilter === opt.value
+                            ? 'bg-emerald-900/40 text-primary'
+                            : 'text-on-surface-variant hover:bg-surface-container'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {searchOpen && (
+              <div className="absolute inset-x-0 top-0 z-40 rounded-xl border border-primary/15 bg-surface-container-high p-2 shadow-forest-glow backdrop-blur-xl">
+                <div className="flex min-h-[2.25rem] items-center gap-1.5">
+                  <span className="material-symbols-outlined shrink-0 text-base text-primary/70">
+                    search
+                  </span>
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    value={searchDraft}
+                    onChange={(e) => setSearchDraft(e.target.value)}
+                    placeholder="Nome, telefone ou ticket..."
+                    className="min-w-0 flex-1 bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/60"
+                    aria-label="Buscar por texto, número ou ticket"
+                  />
+                  {searchDraft ? (
                     <button
-                      key={opt.value}
                       type="button"
                       onClick={() => {
-                        setStatusFilter(opt.value);
-                        setShowMoreStatusFilters(false);
+                        setSearchDraft('');
+                        setListSearch('');
                       }}
-                      className={`w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors ${
-                        statusFilter === opt.value
-                          ? 'bg-emerald-900/40 text-primary'
-                          : 'text-on-surface-variant hover:bg-surface-container'
-                      }`}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-primary"
+                      title="Limpar busca"
+                      aria-label="Limpar busca"
                     >
-                      {opt.label}
+                      <span className="material-symbols-outlined text-base">close</span>
                     </button>
-                  ))}
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setSearchOpen(false)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-primary"
+                      title="Fechar busca"
+                      aria-label="Fechar busca"
+                    >
+                      <span className="material-symbols-outlined text-base">close</span>
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
