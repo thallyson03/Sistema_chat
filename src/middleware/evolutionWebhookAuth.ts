@@ -6,15 +6,22 @@ function allowInsecureWebhooks(): boolean {
   return flag === '1' || flag === 'true' || flag === 'yes';
 }
 
+/** Segredo que o CRM exige no header do webhook (mesma ordem do middleware). */
+export function resolveEvolutionWebhookSecret(): string {
+  return (
+    process.env.EVOLUTION_WEBHOOK_SECRET ||
+    process.env.EVOLUTION_API_KEY ||
+    process.env.EVOLUTION_GO_API_KEY ||
+    ''
+  ).trim();
+}
+
 export function validateEvolutionWebhook(
   req: Request,
   res: Response,
   next: NextFunction,
 ) {
-  const secret =
-    process.env.EVOLUTION_WEBHOOK_SECRET ||
-    process.env.EVOLUTION_API_KEY ||
-    process.env.EVOLUTION_GO_API_KEY;
+  const secret = resolveEvolutionWebhookSecret();
 
   if (!secret) {
     if (allowInsecureWebhooks()) {

@@ -33,6 +33,9 @@ export interface CreateChannelData {
 
 export class ChannelService {
   private static readonly SECRET_MASK = '***';
+  /** Evita reaplicar setWebhook em todo poll de status (canais já ACTIVE). */
+  private static readonly webhookReappliedAt = new Map<string, number>();
+  private static readonly WEBHOOK_REAPPLY_TTL_MS = 6 * 60 * 60 * 1000;
   private static readonly SECRET_CONFIG_KEYS = new Set([
     'token',
     'appSecret',
@@ -199,6 +202,13 @@ export class ChannelService {
   ): Promise<void> {
     const webhookUrl = this.getWebhookUrl(channelConfig);
     const baileysApi = getBaileysApi({ config: channelConfig });
+    const authToken =
+      decryptField(instanceToken)?.trim() ||
+      resolveBaileysApiKey({
+        config: channelConfig,
+        evolutionInstanceToken: instanceToken,
+      }) ||
+      '';
     if (!webhookUrl) {
       console.warn('[ChannelService] ⚠️ NGROK_URL ou APP_URL não configurado. Webhook não será configurado.');
       console.warn('[ChannelService] Configure NGROK_URL no .env para ambiente de desenvolvimento');
@@ -209,18 +219,18 @@ export class ChannelService {
       console.log('[ChannelService] ============================================');
       console.log('[ChannelService] 📡 CONFIGURANDO WEBHOOK');
       console.log('[ChannelService] Instância:', instanceId);
-      console.log('[ChannelService] Token da Instância:', instanceToken ? `${instanceToken.substring(0, 10)}...` : 'NÃO ENCONTRADO');
+      console.log('[ChannelService] Token da Instância:', authToken ? `${authToken.substring(0, 10)}...` : 'NÃO ENCONTRADO');
       console.log('[ChannelService] URL do Webhook:', webhookUrl);
       console.log('[ChannelService] Usando ngrok:', !!process.env.NGROK_URL);
       console.log('[ChannelService] ============================================');
 
-      if (!instanceToken) {
+      if (!authToken) {
         throw new Error('Token da instância não encontrado. Aguarde a instância conectar primeiro.');
       }
 
       // Verificar webhook atual (se possível)
       try {
-        const currentWebhook = await baileysApi.getWebhook(instanceId, instanceToken);
+        const currentWebhook = await baileysApi.getWebhook(instanceId, authToken);
         if (currentWebhook) {
           console.log('[ChannelService] ℹ️ Webhook atual encontrado:', JSON.stringify(currentWebhook, null, 2).substring(0, 500));
         }
@@ -229,7 +239,7 @@ export class ChannelService {
       }
 
       // Configurar novo webhook - usar token da instância ao invés da API key
-      const result = await baileysApi.setWebhook(instanceId, webhookUrl, instanceToken);
+      const result = await baileysApi.setWebhook(instanceId, webhookUrl, authToken);
       
       console.log('[ChannelService] ============================================');
       console.log('[ChannelService] ✅ WEBHOOK CONFIGURADO COM SUCESSO!');
@@ -897,6 +907,26 @@ export class ChannelService {
       }
 
       if (isConnected) {
+        // Reaplica webhook com headers.apikey (UI da Evolution não expõe o campo).
+        const webhookToken =
+          evolutionStatus.token || instanceToken || channel.evolutionInstanceToken;
+        const lastReapply = ChannelService.webhookReappliedAt.get(channelId) || 0;
+        if (
+          webhookToken &&
+          Date.now() - lastReapply > ChannelService.WEBHOOK_REAPPLY_TTL_MS
+        ) {
+          ChannelService.webhookReappliedAt.set(channelId, Date.now());
+          void this.configureWebhook(
+            channel.evolutionInstanceId!,
+            webhookToken,
+            channel.config,
+          ).catch((webhookError: any) => {
+            console.error(
+              '[ChannelService] ⚠️ Erro ao reaplicar webhook (canal ACTIVE):',
+              webhookError?.message,
+            );
+          });
+        }
         return { status: 'ACTIVE' };
       }
 

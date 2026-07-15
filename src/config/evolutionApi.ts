@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { providerResilienceService } from '../services/providerResilienceService';
+import { resolveEvolutionWebhookSecret } from '../middleware/evolutionWebhookAuth';
 import { EVOLUTION_WEBHOOK_EVENTS } from '../utils/evolutionWebhook';
 
 class EvolutionApiClient {
@@ -692,14 +693,18 @@ class EvolutionApiClient {
 
   async setWebhook(instanceName: string, webhookUrl: string, apiKey?: string) {
     try {
+      const webhookAuthSecret = resolveEvolutionWebhookSecret();
+
       console.log('[EvolutionAPI] 📡 Configurando webhook:', {
         instanceName,
         webhookUrl,
         hasApiKey: !!apiKey,
+        hasOutgoingAuthHeader: !!webhookAuthSecret,
         endpoint: `/webhook/set/${instanceName}`,
       });
 
-      // Formato correto conforme teste direto - a API requer "instance" e "webhook" no payload
+      // Formato correto conforme teste direto - a API requer "instance" e "webhook" no payload.
+      // headers.apikey: a UI do Manager não expõe esse campo; o CRM valida o mesmo secret.
       const webhookConfig = {
         instance: instanceName,
         webhook: {
@@ -707,6 +712,9 @@ class EvolutionApiClient {
           url: webhookUrl,
           webhookByEvents: false, // Se true, cada evento vai para um sub-caminho da URL
           events: [...EVOLUTION_WEBHOOK_EVENTS],
+          ...(webhookAuthSecret
+            ? { headers: { apikey: webhookAuthSecret } }
+            : {}),
         },
       };
 
@@ -717,6 +725,7 @@ class EvolutionApiClient {
           url: webhookConfig.webhook.url,
           webhookByEvents: webhookConfig.webhook.webhookByEvents,
           events: webhookConfig.webhook.events,
+          hasOutgoingAuthHeader: !!webhookAuthSecret,
         },
       }, null, 2));
       console.log('[EvolutionAPI] Endpoint completo:', `${this.baseURL}/webhook/set/${instanceName}`);
