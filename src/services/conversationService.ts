@@ -250,12 +250,20 @@ export class ConversationService {
     }
 
     if (filters.search) {
-      andConditions.push({
-        OR: [
+      const raw = filters.search.trim();
+      if (raw) {
+        const digits = raw.replace(/\D/g, '');
+        const protocolCandidate = raw.replace(/^#/, '').trim();
+        const protocolPadded =
+          /^\d+$/.test(protocolCandidate) && protocolCandidate.length <= 8
+            ? protocolCandidate.padStart(4, '0')
+            : null;
+
+        const searchOr: Record<string, unknown>[] = [
           {
             contact: {
               name: {
-                contains: filters.search,
+                contains: raw,
                 mode: 'insensitive',
               },
             },
@@ -263,12 +271,62 @@ export class ConversationService {
           {
             contact: {
               phone: {
-                contains: filters.search,
+                contains: raw,
               },
             },
           },
-        ],
-      });
+          {
+            contact: {
+              email: {
+                contains: raw,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            ticket: {
+              is: {
+                protocol: {
+                  contains: protocolCandidate,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          },
+          {
+            ticket: {
+              is: {
+                title: {
+                  contains: raw,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          },
+        ];
+
+        if (digits.length >= 3) {
+          searchOr.push({
+            contact: {
+              phone: {
+                contains: digits,
+              },
+            },
+          });
+        }
+
+        if (protocolPadded && protocolPadded !== protocolCandidate) {
+          searchOr.push({
+            ticket: {
+              is: {
+                protocol: protocolPadded,
+              },
+            },
+          });
+        }
+
+        andConditions.push({ OR: searchOr });
+      }
     }
 
     // HOTFIX Prisma 5.22:

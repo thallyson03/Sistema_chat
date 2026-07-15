@@ -265,6 +265,9 @@ export default function Conversations() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showMoreStatusFilters, setShowMoreStatusFilters] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchDraft, setSearchDraft] = useState('');
+  const [listSearch, setListSearch] = useState('');
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferSectorStep, setTransferSectorStep] = useState<
     | null
@@ -308,7 +311,11 @@ export default function Conversations() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const moreStatusFiltersRef = useRef<HTMLDivElement>(null);
+  const dialerInputRef = useRef<HTMLInputElement>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const statusFilterRef = useRef<string>('ALL');
+  const listSearchRef = useRef('');
   const fetchConversationsRef = useRef<(filterOverride?: string) => Promise<void>>(async () => {});
   const conversationsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [currentUser, setCurrentUser] = useState<any | null>(null);
@@ -413,11 +420,39 @@ export default function Conversations() {
       ) {
         setShowMoreStatusFilters(false);
       }
+      if (
+        searchOpen &&
+        !listSearch &&
+        !searchDraft &&
+        searchPanelRef.current &&
+        !searchPanelRef.current.contains(event.target as Node)
+      ) {
+        setSearchOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showMoreStatusFilters]);
+  }, [showMoreStatusFilters, searchOpen, listSearch, searchDraft]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setListSearch(searchDraft.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft]);
+
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!showNewConversationModal) return undefined;
+    const timer = window.setTimeout(() => dialerInputRef.current?.focus(), 50);
+    return () => window.clearTimeout(timer);
+  }, [showNewConversationModal]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -427,6 +462,10 @@ export default function Conversations() {
   useEffect(() => {
     statusFilterRef.current = statusFilter;
   }, [statusFilter]);
+
+  useEffect(() => {
+    listSearchRef.current = listSearch;
+  }, [listSearch]);
 
   useEffect(() => {
     if (!showTransferModal) {
@@ -773,7 +812,7 @@ export default function Conversations() {
   useEffect(() => {
     // Recarregar conversas quando o filtro mudar
     fetchConversations(statusFilter);
-  }, [statusFilter]);
+  }, [statusFilter, listSearch]);
 
   const fetchConversations = async (filterOverride?: string) => {
     try {
@@ -783,6 +822,10 @@ export default function Conversations() {
         params.append('inBot', 'true');
       } else if (effectiveFilter !== 'ALL') {
         params.append('status', effectiveFilter);
+      }
+      const search = listSearchRef.current.trim();
+      if (search) {
+        params.append('search', search);
       }
 
       const response = await api.get(`/api/conversations?${params.toString()}`);
@@ -992,6 +1035,62 @@ export default function Conversations() {
   const handleClear = () => {
     setPhoneNumber('');
   };
+
+  const sanitizeDialerInput = (value: string) => {
+    let next = value.replace(/[^\d+]/g, '');
+    const hasPlus = next.includes('+');
+    next = next.replace(/\+/g, '');
+    if (hasPlus || value.trimStart().startsWith('+')) {
+      next = `+${next}`;
+    }
+    return next.slice(0, 20);
+  };
+
+  useEffect(() => {
+    if (!showNewConversationModal) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (loadingNewConversation) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowNewConversationModal(false);
+        setPhoneNumber('');
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        const digits = phoneNumber.replace(/\D/g, '');
+        if (digits.length < 10) return;
+        event.preventDefault();
+        void handleStartNewConversation();
+        return;
+      }
+
+      // Teclas do teclado físico (mesmo com foco nos botões do discador)
+      if (event.key === 'Backspace') {
+        if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return;
+        event.preventDefault();
+        handleBackspace();
+        return;
+      }
+
+      if (event.key === 'Delete') {
+        event.preventDefault();
+        handleClear();
+        return;
+      }
+
+      if (/^[0-9]$/.test(event.key) || event.key === '+') {
+        if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return;
+        event.preventDefault();
+        handleNumberKeyPress(event.key);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showNewConversationModal, loadingNewConversation, phoneNumber]);
 
   const fetchMessages = async (
     conversationId: string,
@@ -1720,6 +1819,53 @@ export default function Conversations() {
                 {opt.label}
               </button>
             ))}
+            <div className="relative" ref={searchPanelRef}>
+              <button
+                type="button"
+                onClick={() => setSearchOpen((prev) => !prev)}
+                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+                  searchOpen || listSearch
+                    ? 'bg-emerald-900/40 text-primary ring-1 ring-primary/20'
+                    : 'text-on-surface-variant hover:bg-surface-container'
+                }`}
+                title="Buscar por nome, telefone ou ticket"
+                aria-label="Buscar conversas"
+              >
+                <span className="material-symbols-outlined text-lg">search</span>
+              </button>
+              {searchOpen && (
+                <div className="absolute left-0 top-full z-30 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-primary/15 bg-surface-container-high p-2 shadow-forest-glow backdrop-blur-xl">
+                  <div className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined shrink-0 text-base text-primary/70">
+                      search
+                    </span>
+                    <input
+                      ref={searchInputRef}
+                      type="search"
+                      value={searchDraft}
+                      onChange={(e) => setSearchDraft(e.target.value)}
+                      placeholder="Nome, telefone ou ticket..."
+                      className="min-w-0 flex-1 bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/60"
+                      aria-label="Buscar por texto, número ou ticket"
+                    />
+                    {searchDraft && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchDraft('');
+                          setListSearch('');
+                        }}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-primary"
+                        title="Limpar busca"
+                        aria-label="Limpar busca"
+                      >
+                        <span className="material-symbols-outlined text-base">close</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="relative" ref={moreStatusFiltersRef}>
               <button
                 type="button"
@@ -1763,7 +1909,11 @@ export default function Conversations() {
             !!conv.lastMessage || !!conv.lastCustomerMessageAt || !!conv.lastAgentMessageAt
           ).length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-on-surface-variant">
-              <p>Nenhuma conversa encontrada.</p>
+              <p>
+                {listSearch
+                  ? `Nenhuma conversa para “${listSearch}”.`
+                  : 'Nenhuma conversa encontrada.'}
+              </p>
             </div>
           ) : (
             <motion.div
@@ -3691,9 +3841,18 @@ export default function Conversations() {
               Iniciar nova conversa
             </h3>
 
-            <div className="mb-5 flex min-h-[52px] items-center justify-center rounded-lg bg-surface-container-lowest px-4 py-5 text-center font-mono text-2xl font-semibold tracking-widest text-on-surface">
-              {phoneNumber || 'Digite o número...'}
-            </div>
+            <input
+              ref={dialerInputRef}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(sanitizeDialerInput(e.target.value))}
+              disabled={loadingNewConversation}
+              placeholder="Digite o número..."
+              aria-label="Número de telefone"
+              className="mb-5 flex min-h-[52px] w-full items-center justify-center rounded-lg border-0 bg-surface-container-lowest px-4 py-5 text-center font-mono text-2xl font-semibold tracking-widest text-on-surface outline-none ring-1 ring-transparent placeholder:tracking-normal placeholder:text-on-surface-variant/50 focus:ring-primary/30 disabled:opacity-60"
+            />
 
             <div className="mb-5 grid grid-cols-3 gap-2.5">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', '⌫'].map((key) => (
@@ -3706,6 +3865,7 @@ export default function Conversations() {
                     } else {
                       handleNumberKeyPress(key);
                     }
+                    dialerInputRef.current?.focus();
                   }}
                   disabled={loadingNewConversation}
                   className={`rounded-lg border-2 p-5 text-xl font-semibold transition ${
