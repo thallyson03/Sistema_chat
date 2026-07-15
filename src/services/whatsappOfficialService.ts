@@ -710,5 +710,114 @@ export class WhatsAppOfficialService {
       throw error;
     }
   }
+
+  /** Número de exibição E.164 sem símbolos (ex.: 5511999999999) para filtrar analytics. */
+  async getDisplayPhoneNumberDigits(): Promise<string | null> {
+    try {
+      const response = await this.client.get(`/${this.phoneNumberId}`, {
+        params: { fields: 'display_phone_number,verified_name' },
+        timeout: Math.min(Number(process.env.META_TIMEOUT_MS || 12000), 10_000),
+      });
+      const raw = String(response.data?.display_phone_number || '').replace(/\D/g, '');
+      return raw.length >= 8 ? raw : null;
+    } catch (error: any) {
+      console.warn('[WhatsAppOfficial] display_phone_number indisponível:', error?.message);
+      return null;
+    }
+  }
+
+  /**
+   * Analytics de mensagens da WABA (sent/delivered) — Business Management API.
+   * @see https://developers.facebook.com/docs/whatsapp/business-management-api/analytics
+   */
+  async getWabaMessageAnalytics(params: {
+    startUnix: number;
+    endUnix: number;
+    granularity?: 'HALF_HOUR' | 'DAY' | 'MONTH';
+    phoneNumberDigits?: string | null;
+  }): Promise<{
+    sent: number;
+    delivered: number;
+    granularity: string;
+    phoneNumbers: string[];
+    dataPoints: number;
+  }> {
+    const granularity = params.granularity || 'DAY';
+    const phonePart = params.phoneNumberDigits
+      ? `.phone_numbers([${params.phoneNumberDigits}])`
+      : '';
+    const fields = `analytics.start(${params.startUnix}).end(${params.endUnix}).granularity(${granularity})${phonePart}`;
+
+    const response = await this.client.get(`/${this.businessAccountId}`, {
+      params: { fields },
+      timeout: Number(process.env.META_ANALYTICS_TIMEOUT_MS || 20000),
+    });
+
+    const analytics = response.data?.analytics || {};
+    const points: Array<{ sent?: number; delivered?: number }> = Array.isArray(analytics.data_points)
+      ? analytics.data_points
+      : [];
+
+    let sent = 0;
+    let delivered = 0;
+    for (const point of points) {
+      sent += Number(point.sent) || 0;
+      delivered += Number(point.delivered) || 0;
+    }
+
+    return {
+      sent,
+      delivered,
+      granularity: String(analytics.granularity || granularity),
+      phoneNumbers: Array.isArray(analytics.phone_numbers)
+        ? analytics.phone_numbers.map((n: unknown) => String(n))
+        : [],
+      dataPoints: points.length,
+    };
+  }
+
+  /**
+   * Conversation analytics (volume de conversas cobráveis) — opcional no dashboard híbrido.
+   */
+  async getWabaConversationAnalytics(params: {
+    startUnix: number;
+    endUnix: number;
+    granularity?: 'HALF_HOUR' | 'DAILY' | 'MONTHLY';
+  }): Promise<{
+    conversation: number;
+    cost: number | null;
+    dataPoints: number;
+  }> {
+    const granularity = params.granularity || 'DAILY';
+    const fields = `conversation_analytics.start(${params.startUnix}).end(${params.endUnix}).granularity(${granularity})`;
+
+    const response = await this.client.get(`/${this.businessAccountId}`, {
+      params: { fields },
+      timeout: Number(process.env.META_ANALYTICS_TIMEOUT_MS || 20000),
+    });
+
+    const raw = response.data?.conversation_analytics;
+    const series = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
+    const points = series.flatMap((s: any) =>
+      Array.isArray(s?.data_points) ? s.data_points : Array.isArray(s) ? s : [],
+    );
+
+    let conversation = 0;
+    let cost = 0;
+    let hasCost = false;
+    for (const point of points) {
+      conversation += Number(point?.conversation ?? point?.conversations ?? 0) || 0;
+      if (point?.cost != null || point?.amount != null) {
+        hasCost = true;
+        cost += Number(point.cost ?? point.amount) || 0;
+      }
+    }
+
+    return {
+      conversation,
+      cost: hasCost ? cost : null,
+      dataPoints: points.length,
+    };
+  }
 }
 

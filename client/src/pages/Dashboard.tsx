@@ -74,6 +74,53 @@ type ConversationDashboardMetrics = {
   };
 };
 
+type MetaDeliveryInternal = {
+  pending: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  outboundTotal: number;
+  deliveryRatePercent: number | null;
+  readRatePercent: number | null;
+  failureRatePercent: number | null;
+};
+
+type MetaDeliveryChannel = {
+  channelId: string;
+  channelName: string;
+  phoneNumberId: string | null;
+  businessAccountId: string | null;
+  internal: MetaDeliveryInternal;
+  meta: {
+    available: boolean;
+    error: string | null;
+    displayPhoneNumber: string | null;
+    sent: number | null;
+    delivered: number | null;
+    deliveryRatePercent: number | null;
+    conversations: number | null;
+    conversationCost: number | null;
+  };
+};
+
+type MetaDeliveryMetricsPayload = {
+  periodDays: number;
+  periodStart: string;
+  channels: MetaDeliveryChannel[];
+  totals: {
+    internal: MetaDeliveryInternal;
+    meta: {
+      channelsWithInsights: number;
+      sent: number | null;
+      delivered: number | null;
+      deliveryRatePercent: number | null;
+      conversations: number | null;
+      conversationCost: number | null;
+    };
+  };
+};
+
 type PipelineDashboardMetrics = {
   periodDays: number;
   periodStart: string;
@@ -228,6 +275,8 @@ export default function Dashboard() {
   const [pipelineOptions, setPipelineOptions] = useState<{ id: string; name: string }[]>([]);
   const [pipelineMetrics, setPipelineMetrics] = useState<PipelineDashboardMetrics | null>(null);
   const [pipelineMetricsLoading, setPipelineMetricsLoading] = useState(true);
+  const [metaDelivery, setMetaDelivery] = useState<MetaDeliveryMetricsPayload | null>(null);
+  const [metaDeliveryLoading, setMetaDeliveryLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -270,6 +319,31 @@ export default function Dashboard() {
         if (!cancelled) setConvMetrics(null);
       } finally {
         if (!cancelled) setConvMetricsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [globalDays, globalChannelId, globalSectorId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const params: Record<string, string> = { days: String(globalDays) };
+        if (globalChannelId) params.channelId = globalChannelId;
+        if (globalSectorId) params.sectorId = globalSectorId;
+        setMetaDeliveryLoading(true);
+        const res = await api.get<MetaDeliveryMetricsPayload>(
+          '/api/conversations/dashboard-meta-delivery-metrics',
+          { params },
+        );
+        if (!cancelled) setMetaDelivery(res.data);
+      } catch (e) {
+        console.error('[Dashboard] Falha ao carregar métricas Meta/entrega:', e);
+        if (!cancelled) setMetaDelivery(null);
+      } finally {
+        if (!cancelled) setMetaDeliveryLoading(false);
       }
     })();
     return () => {
@@ -373,7 +447,7 @@ export default function Dashboard() {
           <div className="mb-3">
             <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Filtros globais</h2>
             <p className="mt-1 text-xs text-[#8b9490]">
-              Os filtros abaixo valem para conversas, operação, pipeline, pesquisa e resumo externo.
+              Os filtros abaixo valem para conversas, entrega WhatsApp/Meta, operação, pipeline e pesquisa.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
@@ -500,6 +574,187 @@ export default function Dashboard() {
             </div>
           ) : (
             <p className="text-sm text-[#6b7280]">Não foi possível carregar as métricas de conversas.</p>
+          )}
+        </section>
+
+        <section className="mt-10 border-t border-[#252b28] pt-10">
+          <div className="mb-4">
+            <h2 className="font-headline text-lg font-bold text-white sm:text-xl">
+              WhatsApp Official — entrega por número
+            </h2>
+            <p className="mt-1 max-w-3xl text-xs text-[#8b9490]">
+              Visão híbrida: status do CRM (webhook sent/delivered/read/failed) + Insights da Meta (volume
+              WABA). Cada card é um canal Official / número.
+            </p>
+          </div>
+
+          {metaDeliveryLoading ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[1, 2].map((i) => (
+                <div key={i} className={`h-48 animate-pulse rounded-xl border ${neon.card}`} />
+              ))}
+            </div>
+          ) : !metaDelivery ? (
+            <p className="text-sm text-[#6b7280]">Não foi possível carregar as métricas de entrega.</p>
+          ) : metaDelivery.channels.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">
+              Nenhum canal WhatsApp Official no filtro atual. Cadastre um canal com provider Meta para ver
+              estas métricas.
+            </p>
+          ) : (
+            <>
+              <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                <RefStatCard
+                  title="CRM ENVIADAS+"
+                  value={
+                    metaDelivery.totals.internal.sent +
+                    metaDelivery.totals.internal.delivered +
+                    metaDelivery.totals.internal.read
+                  }
+                  trend={
+                    metaDelivery.totals.internal.deliveryRatePercent != null
+                      ? `${metaDelivery.totals.internal.deliveryRatePercent}% entr.`
+                      : '—'
+                  }
+                  icon="📤"
+                  barActive
+                />
+                <RefStatCard
+                  title="CRM ENTREGUES"
+                  value={
+                    metaDelivery.totals.internal.delivered + metaDelivery.totals.internal.read
+                  }
+                  trend="+0%"
+                  icon="📬"
+                  barActive={
+                    metaDelivery.totals.internal.delivered + metaDelivery.totals.internal.read > 0
+                  }
+                />
+                <RefStatCard
+                  title="CRM LIDAS"
+                  value={metaDelivery.totals.internal.read}
+                  trend={
+                    metaDelivery.totals.internal.readRatePercent != null
+                      ? `${metaDelivery.totals.internal.readRatePercent}%`
+                      : '—'
+                  }
+                  icon="👁"
+                  barActive={metaDelivery.totals.internal.read > 0}
+                />
+                <RefStatCard
+                  title="CRM ERROS"
+                  value={metaDelivery.totals.internal.failed}
+                  trend={
+                    metaDelivery.totals.internal.failureRatePercent != null
+                      ? `${metaDelivery.totals.internal.failureRatePercent}%`
+                      : '—'
+                  }
+                  icon="⚠"
+                  barActive={metaDelivery.totals.internal.failed > 0}
+                />
+                <RefStatCard
+                  title="META ENVIADAS"
+                  value={metaDelivery.totals.meta.sent ?? 0}
+                  trend={
+                    metaDelivery.totals.meta.deliveryRatePercent != null
+                      ? `${metaDelivery.totals.meta.deliveryRatePercent}% entr.`
+                      : '—'
+                  }
+                  icon="◉"
+                  barActive={(metaDelivery.totals.meta.sent ?? 0) > 0}
+                />
+                <RefStatCard
+                  title="META ENTREGUES"
+                  value={metaDelivery.totals.meta.delivered ?? 0}
+                  trend={
+                    metaDelivery.totals.meta.conversations != null
+                      ? `${metaDelivery.totals.meta.conversations} conv.`
+                      : '—'
+                  }
+                  icon="◎"
+                  barActive={(metaDelivery.totals.meta.delivered ?? 0) > 0}
+                />
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {metaDelivery.channels.map((ch) => (
+                  <div key={ch.channelId} className={`rounded-xl border p-4 ${neon.card}`}>
+                    <div className="mb-3 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="truncate font-headline text-sm font-bold text-white">
+                          {ch.channelName}
+                        </h3>
+                        <p className="mt-0.5 truncate text-[11px] text-[#8b9490]">
+                          {ch.meta.displayPhoneNumber
+                            ? `+${ch.meta.displayPhoneNumber}`
+                            : ch.phoneNumberId
+                              ? `ID ${ch.phoneNumberId}`
+                              : 'Sem número'}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                          ch.meta.available
+                            ? 'bg-[#14532d]/50 text-[#86efac]'
+                            : 'bg-[#3f3f46]/40 text-[#a1a1aa]'
+                        }`}
+                      >
+                        {ch.meta.available ? 'Meta OK' : 'Só CRM'}
+                      </span>
+                    </div>
+
+                    <div className="mb-3 grid grid-cols-4 gap-2 text-center">
+                      <div>
+                        <p className="text-[10px] uppercase text-[#8b9490]">Enviadas+</p>
+                        <p className="font-headline text-lg font-bold text-[#4ade80]">
+                          {ch.internal.sent + ch.internal.delivered + ch.internal.read}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-[#8b9490]">Entregues</p>
+                        <p className="font-headline text-lg font-bold text-white">
+                          {ch.internal.delivered + ch.internal.read}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-[#8b9490]">Lidas</p>
+                        <p className="font-headline text-lg font-bold text-white">{ch.internal.read}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-[#8b9490]">Erros</p>
+                        <p className="font-headline text-lg font-bold text-[#f87171]">
+                          {ch.internal.failed}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-[#2a322c] bg-[#141816] px-3 py-2 text-[11px] text-[#9ca3a0]">
+                      {ch.meta.available ? (
+                        <p>
+                          Meta Insights: <span className="text-[#86efac]">{ch.meta.sent ?? 0}</span>{' '}
+                          enviadas /{' '}
+                          <span className="text-[#86efac]">{ch.meta.delivered ?? 0}</span> entregues
+                          {ch.meta.deliveryRatePercent != null
+                            ? ` (${ch.meta.deliveryRatePercent}%)`
+                            : ''}
+                          {ch.meta.conversations != null
+                            ? ` · ${ch.meta.conversations} conversas cobráveis`
+                            : ''}
+                          {ch.meta.conversationCost != null
+                            ? ` · custo ${formatCurrency(ch.meta.conversationCost)}`
+                            : ''}
+                        </p>
+                      ) : (
+                        <p>
+                          Insights Meta indisponível
+                          {ch.meta.error ? `: ${ch.meta.error}` : '.'} Exibindo só métricas do CRM.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </section>
 

@@ -24,6 +24,10 @@ router.get(
   '/dashboard-performance',
   conversationController.getDashboardPerformance.bind(conversationController),
 );
+router.get(
+  '/dashboard-meta-delivery-metrics',
+  conversationController.getDashboardMetaDeliveryMetrics.bind(conversationController),
+);
 router.get('/unread-count', conversationController.getUnreadCount.bind(conversationController));
 router.get(
   '/:id',

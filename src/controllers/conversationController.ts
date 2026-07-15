@@ -5,6 +5,7 @@ import { getBaileysApi, resolveBaileysApiKey } from '../utils/channelWhatsAppPro
 import { ConversationService } from '../services/conversationService';
 import { SatisfactionSurveyService } from '../services/satisfactionSurveyService';
 import { DashboardPerformanceService } from '../services/dashboardPerformanceService';
+import { metaDeliveryMetricsService } from '../services/metaDeliveryMetricsService';
 import { hybridCacheService } from '../services/hybridCacheService';
 import { getSocketIO } from '../routes/webhookRoutes';
 import { emitConversationDelta } from '../utils/realtimeEvents';
@@ -475,6 +476,38 @@ export class ConversationController {
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro ao carregar performance do dashboard' });
+    }
+  }
+
+  /**
+   * Métricas híbridas WhatsApp Official por canal/número:
+   * - internas (Message.status via webhook)
+   * - Insights Meta (WABA analytics / conversation_analytics)
+   * Query: `days` (1–366), `channelId`, `sectorId`.
+   */
+  async getDashboardMetaDeliveryMetrics(req: AuthRequest, res: Response) {
+    try {
+      const cacheKey = this.buildMetricsCacheKey('conversation:meta-delivery', req);
+      const days = parseInt(String(req.query.days || '30'), 10);
+      const channelId =
+        typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
+      const sectorId =
+        typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
+      const ttlMs = Math.max(
+        this.getMetricsTtlMs(),
+        Number(process.env.META_DELIVERY_METRICS_CACHE_TTL_MS) || 120_000,
+      );
+      const data = await hybridCacheService.getOrSet(cacheKey, ttlMs, () =>
+        metaDeliveryMetricsService.getHybridMetrics(days, req.user, {
+          channelId,
+          sectorId,
+        }),
+      );
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({
+        error: error.message || 'Erro ao carregar métricas de entrega WhatsApp/Meta',
+      });
     }
   }
 
