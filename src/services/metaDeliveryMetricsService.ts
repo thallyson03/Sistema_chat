@@ -4,6 +4,11 @@ import { decryptConfigSecrets, decryptField } from '../utils/fieldEncryption';
 import { buildChannelVisibilityWhere } from '../utils/channelAccess';
 import { AccessViewer } from '../utils/accessControl';
 import { WhatsAppOfficialService } from './whatsappOfficialService';
+import {
+  buildSqlDateOr,
+  continuousWindowFromDates,
+  startDateFromDays,
+} from '../utils/dashboardDateFilter';
 
 type InternalStatusCounts = {
   pending: number;
@@ -36,14 +41,6 @@ export type ChannelDeliveryMetrics = {
   internal: InternalStatusCounts;
   meta: MetaInsightsBlock;
 };
-
-function startDateFromDays(days: number): Date {
-  const d = Math.min(Math.max(Math.floor(days) || 30, 1), 366);
-  const start = new Date();
-  start.setDate(start.getDate() - d);
-  start.setHours(0, 0, 0, 0);
-  return start;
-}
 
 function rate(numerator: number, denominator: number): number | null {
   if (!denominator || denominator <= 0) return null;
@@ -106,11 +103,18 @@ export class MetaDeliveryMetricsService {
   async getHybridMetrics(
     days: number,
     viewer?: AccessViewer,
-    filters?: { channelId?: string; sectorId?: string },
+    filters?: {
+      channelId?: string;
+      sectorId?: string;
+      assignedToId?: string;
+      dates?: string[];
+    },
   ) {
+    const selectedDates = Array.isArray(filters?.dates) ? filters!.dates! : [];
     const periodDays = Math.min(Math.max(Math.floor(days) || 30, 1), 366);
-    const periodStart = startDateFromDays(periodDays);
-    const periodEnd = new Date();
+    const continuous = continuousWindowFromDates(selectedDates);
+    const periodStart = continuous?.start ?? startDateFromDays(periodDays);
+    const periodEnd = continuous?.end ?? new Date();
     const startUnix = Math.floor(periodStart.getTime() / 1000);
     const endUnix = Math.floor(periodEnd.getTime() / 1000);
 
@@ -146,7 +150,13 @@ export class MetaDeliveryMetricsService {
           String(decrypted.token || '').trim() ||
           '';
 
-        const internal = await this.aggregateInternalForChannel(channel.id, periodStart, filters?.sectorId);
+        const internal = await this.aggregateInternalForChannel(
+          channel.id,
+          periodStart,
+          selectedDates,
+          filters?.sectorId,
+          filters?.assignedToId,
+        );
         const meta = await this.fetchMetaInsightsForChannel({
           token,
           phoneNumberId,
@@ -208,9 +218,10 @@ export class MetaDeliveryMetricsService {
     }
 
     return {
-      periodDays,
+      periodDays: selectedDates.length || periodDays,
       periodStart: periodStart.toISOString(),
       periodEnd: periodEnd.toISOString(),
+      selectedDates: selectedDates.length ? selectedDates : null,
       sources: {
         internal: 'Message.status via webhook Meta (outbound CRM)',
         meta: 'Graph WABA analytics + conversation_analytics',
@@ -232,6 +243,8 @@ export class MetaDeliveryMetricsService {
       filters: {
         channelId: filters?.channelId ?? null,
         sectorId: filters?.sectorId ?? null,
+        assignedToId: filters?.assignedToId ?? null,
+        dates: selectedDates.length ? selectedDates : null,
       },
     };
   }
@@ -239,19 +252,28 @@ export class MetaDeliveryMetricsService {
   private async aggregateInternalForChannel(
     channelId: string,
     periodStart: Date,
+    selectedDates: string[],
     sectorId?: string,
+    assignedToId?: string,
   ): Promise<InternalStatusCounts> {
     const sectorClause = sectorId
       ? Prisma.sql`AND c."sectorId" = ${sectorId}`
       : Prisma.empty;
+    const assigneeClause = assignedToId
+      ? Prisma.sql`AND c."assignedToId" = ${assignedToId}`
+      : Prisma.empty;
+    const dateClause = selectedDates.length
+      ? buildSqlDateOr('m."createdAt"', selectedDates)
+      : Prisma.sql`AND m."createdAt" >= ${periodStart}`;
 
     const rows = await prisma.$queryRaw<{ status: string; count: number }[]>`
       SELECT m.status::text AS status, COUNT(*)::int AS count
       FROM "Message" m
       INNER JOIN "Conversation" c ON c.id = m."conversationId"
       WHERE c."channelId" = ${channelId}
-        AND m."createdAt" >= ${periodStart}
+        ${dateClause}
         ${sectorClause}
+        ${assigneeClause}
         AND (
           m."userId" IS NOT NULL
           OR (

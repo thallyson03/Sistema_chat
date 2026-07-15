@@ -280,11 +280,14 @@ export class DealController {
       const days = req.query.days ? Number(req.query.days) : 30;
       const pipelineId = (req.query.pipelineId as string) || undefined;
       const assignedToId = (req.query.assignedToId as string) || undefined;
+      const { parseDashboardDates } = await import('../utils/dashboardDateFilter');
+      const dates = parseDashboardDates(req.query.dates);
 
       const metrics = await pipelineDashboardService.getDashboardMetrics(req.user, {
         days,
         pipelineId,
         assignedToId,
+        dates,
       });
       res.json(metrics);
     } catch (error: any) {

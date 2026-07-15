@@ -9,6 +9,7 @@ import { metaDeliveryMetricsService } from '../services/metaDeliveryMetricsServi
 import { hybridCacheService } from '../services/hybridCacheService';
 import { getSocketIO } from '../routes/webhookRoutes';
 import { emitConversationDelta } from '../utils/realtimeEvents';
+import { parseDashboardDates, parseOptionalId } from '../utils/dashboardDateFilter';
 
 const conversationService = new ConversationService();
 const satisfactionSurveyService = new SatisfactionSurveyService();
@@ -27,6 +28,15 @@ export class ConversationController {
       1000,
       Number(process.env.DASHBOARD_CACHE_TTL_MS) || 15_000,
     );
+  }
+
+  private parseDashboardQueryFilters(req: AuthRequest) {
+    return {
+      channelId: parseOptionalId(req.query.channelId),
+      sectorId: parseOptionalId(req.query.sectorId),
+      assignedToId: parseOptionalId(req.query.assignedToId),
+      dates: parseDashboardDates(req.query.dates),
+    };
   }
 
   private buildMetricsCacheKey(prefix: string, req: AuthRequest): string {
@@ -413,6 +423,7 @@ export class ConversationController {
       }
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
+      const { assignedToId, dates } = this.parseDashboardQueryFilters(req);
       const data = await hybridCacheService.getOrSet(
         cacheKey,
         this.getMetricsTtlMs(),
@@ -421,6 +432,8 @@ export class ConversationController {
             days,
             channelId,
             sectorId,
+            assignedToId,
+            dates,
           }),
       );
       res.json(data);
@@ -439,6 +452,7 @@ export class ConversationController {
       const days = parseInt(String(req.query.days || '30'), 10);
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
+      const { assignedToId, dates } = this.parseDashboardQueryFilters(req);
       const data = await hybridCacheService.getOrSet(
         cacheKey,
         this.getMetricsTtlMs(),
@@ -446,6 +460,8 @@ export class ConversationController {
           satisfactionSurveyService.getDashboardStats(days, req.user, {
             channelId,
             sectorId,
+            assignedToId,
+            dates,
           }),
       );
       res.json(data);
@@ -464,6 +480,7 @@ export class ConversationController {
       const days = parseInt(String(req.query.days || '30'), 10);
       const channelId = typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId = typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
+      const { assignedToId, dates } = this.parseDashboardQueryFilters(req);
       const data = await hybridCacheService.getOrSet(
         cacheKey,
         this.getMetricsTtlMs(),
@@ -471,6 +488,8 @@ export class ConversationController {
           dashboardPerformanceService.getInsights(days, req.user, {
             channelId,
             sectorId,
+            assignedToId,
+            dates,
           }),
       );
       res.json(data);
@@ -493,6 +512,7 @@ export class ConversationController {
         typeof req.query.channelId === 'string' ? req.query.channelId.trim() || undefined : undefined;
       const sectorId =
         typeof req.query.sectorId === 'string' ? req.query.sectorId.trim() || undefined : undefined;
+      const { assignedToId, dates } = this.parseDashboardQueryFilters(req);
       const ttlMs = Math.max(
         this.getMetricsTtlMs(),
         Number(process.env.META_DELIVERY_METRICS_CACHE_TTL_MS) || 120_000,
@@ -501,6 +521,8 @@ export class ConversationController {
         metaDeliveryMetricsService.getHybridMetrics(days, req.user, {
           channelId,
           sectorId,
+          assignedToId,
+          dates,
         }),
       );
       res.json(data);

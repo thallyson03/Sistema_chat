@@ -9,6 +9,7 @@ import {
   sanitizeConversationForApi,
   sanitizeConversationsForApi,
 } from '../utils/channelSanitizer';
+import { prismaDateOrFilter, startDateFromDays } from '../utils/dashboardDateFilter';
 
 export interface ConversationFilters {
   channelId?: string;
@@ -1025,10 +1026,17 @@ export class ConversationService {
   /**
    * Métricas de conversas para o dashboard (inclui bot e fila), com filtros opcionais.
    * `days`: apenas conversas criadas nos últimos N dias (omitir ou 0 = todo o período).
+   * `dates`: dias específicos (YYYY-MM-DD); tem prioridade sobre `days`.
    */
   async getDashboardConversationMetrics(
     viewer?: ConversationViewer,
-    filters?: { channelId?: string; sectorId?: string; days?: number },
+    filters?: {
+      channelId?: string;
+      sectorId?: string;
+      days?: number;
+      assignedToId?: string;
+      dates?: string[];
+    },
   ) {
     const visibilityWhere = await this.buildVisibilityWhere(viewer);
     const ownershipWhere =
@@ -1038,22 +1046,23 @@ export class ConversationService {
           : { id: '__no_access__' }
         : {};
 
+    const selectedDates = Array.isArray(filters?.dates) ? filters!.dates! : [];
     const days = filters?.days;
-    const hasDays = typeof days === 'number' && Number.isFinite(days) && days > 0;
-    const createdGte = hasDays
-      ? (() => {
-          const d = new Date();
-          d.setDate(d.getDate() - Math.floor(days as number));
-          d.setHours(0, 0, 0, 0);
-          return d;
-        })()
-      : null;
+    const hasDays =
+      selectedDates.length === 0 &&
+      typeof days === 'number' &&
+      Number.isFinite(days) &&
+      days > 0;
+    const createdGte = hasDays ? startDateFromDays(days as number) : null;
+    const dateOr = prismaDateOrFilter('createdAt', selectedDates);
 
     const baseAnd: object[] = [
       visibilityWhere,
       ownershipWhere,
       ...(filters?.channelId ? [{ channelId: filters.channelId }] : []),
       ...(filters?.sectorId ? [{ sectorId: filters.sectorId }] : []),
+      ...(filters?.assignedToId ? [{ assignedToId: filters.assignedToId }] : []),
+      ...(dateOr ? [dateOr] : []),
       ...(createdGte ? [{ createdAt: { gte: createdGte } }] : []),
     ];
 
@@ -1119,7 +1128,9 @@ export class ConversationService {
       filters: {
         channelId: filters?.channelId ?? null,
         sectorId: filters?.sectorId ?? null,
+        assignedToId: filters?.assignedToId ?? null,
         days: hasDays ? Math.floor(days as number) : null,
+        dates: selectedDates.length ? selectedDates : null,
       },
     };
   }

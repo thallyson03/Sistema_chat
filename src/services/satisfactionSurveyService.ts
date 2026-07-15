@@ -1,5 +1,10 @@
 import prisma from '../config/database';
 import {
+  continuousWindowFromDates,
+  prismaDateOrFilter,
+  startDateFromDays,
+} from '../utils/dashboardDateFilter';
+import {
   getBaileysApi,
   isBaileysWhatsAppChannel,
   resolveBaileysApiKey,
@@ -343,32 +348,48 @@ export class SatisfactionSurveyService {
   async getDashboardStats(
     rawDays: number,
     viewer?: { id: string; role: string },
-    filters?: { channelId?: string; sectorId?: string },
+    filters?: {
+      channelId?: string;
+      sectorId?: string;
+      assignedToId?: string;
+      dates?: string[];
+    },
   ) {
+    const selectedDates = Array.isArray(filters?.dates) ? filters!.dates! : [];
     const days = Math.min(Math.max(Math.floor(Number(rawDays)) || 30, 1), 366);
-    const start = new Date();
-    start.setDate(start.getDate() - days);
-    start.setHours(0, 0, 0, 0);
+    const continuous = continuousWindowFromDates(selectedDates);
+    const start = continuous?.start ?? startDateFromDays(days);
+    const createdAtDateOr = prismaDateOrFilter('createdAt', selectedDates);
+    const updatedAtDateOr = prismaDateOrFilter('updatedAt', selectedDates);
 
     const isAdmin = viewer?.role === 'ADMIN';
-    const ownScope =
-      !isAdmin && viewer?.id
-        ? { sentByUserId: viewer.id }
-        : !isAdmin
-          ? { sentByUserId: '__no_access__' }
-          : {};
+    const userFilterId = filters?.assignedToId || (!isAdmin && viewer?.id ? viewer.id : undefined);
+    const ownScope = userFilterId
+      ? { sentByUserId: userFilterId }
+      : !isAdmin
+        ? { sentByUserId: '__no_access__' }
+        : {};
 
     const conversationScope = {
       ...(filters?.channelId ? { channelId: filters.channelId } : {}),
       ...(filters?.sectorId ? { sectorId: filters.sectorId } : {}),
+      ...(filters?.assignedToId ? { assignedToId: filters.assignedToId } : {}),
     };
+    const conversationFilter =
+      Object.keys(conversationScope).length > 0
+        ? { conversation: { is: conversationScope } }
+        : {};
 
     const [sentInPeriod, pendingTotal, distributionRows, recentRows] = await Promise.all([
       prisma.satisfactionSurveyDispatch.count({
-        where: { ...ownScope, createdAt: { gte: start }, ...(Object.keys(conversationScope).length ? { conversation: { is: conversationScope } } : {}) },
+        where: {
+          ...ownScope,
+          ...conversationFilter,
+          ...(createdAtDateOr || { createdAt: { gte: start } }),
+        },
       }),
       prisma.satisfactionSurveyDispatch.count({
-        where: { ...ownScope, status: 'PENDING', ...(Object.keys(conversationScope).length ? { conversation: { is: conversationScope } } : {}) },
+        where: { ...ownScope, status: 'PENDING', ...conversationFilter },
       }),
       prisma.satisfactionSurveyDispatch.groupBy({
         by: ['score'],
@@ -376,8 +397,8 @@ export class SatisfactionSurveyService {
           ...ownScope,
           status: 'COMPLETED',
           score: { not: null },
-          updatedAt: { gte: start },
-          ...(Object.keys(conversationScope).length ? { conversation: { is: conversationScope } } : {}),
+          ...conversationFilter,
+          ...(updatedAtDateOr || { updatedAt: { gte: start } }),
         },
         _count: { id: true },
       }),
@@ -386,7 +407,8 @@ export class SatisfactionSurveyService {
           ...ownScope,
           status: 'COMPLETED',
           score: { not: null },
-          ...(Object.keys(conversationScope).length ? { conversation: { is: conversationScope } } : {}),
+          ...conversationFilter,
+          ...(updatedAtDateOr || { updatedAt: { gte: start } }),
         },
         orderBy: { updatedAt: 'desc' },
         take: 20,
@@ -433,8 +455,9 @@ export class SatisfactionSurveyService {
     }));
 
     return {
-      periodDays: days,
+      periodDays: selectedDates.length ? selectedDates.length : days,
       periodStart: start.toISOString(),
+      selectedDates: selectedDates.length ? selectedDates : null,
       summary: {
         sentInPeriod,
         completedInPeriod,

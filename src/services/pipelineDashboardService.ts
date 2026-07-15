@@ -1,11 +1,17 @@
 import { DealStatus, Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { AccessViewer, canAccessPipeline, getUserPipelineIds } from '../utils/accessControl';
+import {
+  continuousWindowFromDates,
+  prismaDateOrFilter,
+  startDateFromDays,
+} from '../utils/dashboardDateFilter';
 
 export interface PipelineDashboardFilters {
   days?: number;
   pipelineId?: string;
   assignedToId?: string;
+  dates?: string[];
 }
 
 function parseDays(raw: number | undefined): number {
@@ -14,17 +20,20 @@ function parseDays(raw: number | undefined): number {
   return Math.min(365, Math.max(1, Math.floor(n)));
 }
 
-function periodStart(days: number): Date {
-  const start = new Date();
-  start.setDate(start.getDate() - days);
-  start.setHours(0, 0, 0, 0);
-  return start;
-}
-
 function toNumber(value: unknown): number {
   if (value == null) return 0;
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function periodFilter(
+  field: 'createdAt' | 'closedAt' | 'updatedAt',
+  dates: string[],
+  start: Date,
+): Prisma.DealWhereInput {
+  const dateOr = prismaDateOrFilter(field, dates);
+  if (dateOr) return dateOr as Prisma.DealWhereInput;
+  return { [field]: { gte: start } } as Prisma.DealWhereInput;
 }
 
 export class PipelineDashboardService {
@@ -58,8 +67,10 @@ export class PipelineDashboardService {
   }
 
   async getDashboardMetrics(viewer: AccessViewer, filters: PipelineDashboardFilters = {}) {
+    const selectedDates = Array.isArray(filters.dates) ? filters.dates : [];
     const days = parseDays(filters.days);
-    const start = periodStart(days);
+    const continuous = continuousWindowFromDates(selectedDates);
+    const start = continuous?.start ?? startDateFromDays(days);
     const scopeWhere = await this.buildScopeWhere(viewer, filters);
 
     if (scopeWhere === null) {
@@ -75,6 +86,9 @@ export class PipelineDashboardService {
 
     const staleCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const now = new Date();
+    const createdInPeriod = periodFilter('createdAt', selectedDates, start);
+    const closedInPeriodFilter = periodFilter('closedAt', selectedDates, start);
+    const updatedInPeriod = periodFilter('updatedAt', selectedDates, start);
 
     const openWhere: Prisma.DealWhereInput = {
       AND: [baseWhere, { status: DealStatus.OPEN }],
@@ -112,26 +126,26 @@ export class PipelineDashboardService {
         },
       }),
       prisma.deal.count({
-        where: { AND: [baseWhere, { createdAt: { gte: start } }] },
+        where: { AND: [baseWhere, createdInPeriod] },
       }),
       prisma.deal.count({
         where: {
-          AND: [baseWhere, { status: DealStatus.WON, closedAt: { gte: start } }],
+          AND: [baseWhere, { status: DealStatus.WON }, closedInPeriodFilter],
         },
       }),
       prisma.deal.count({
         where: {
-          AND: [baseWhere, { status: DealStatus.LOST, closedAt: { gte: start } }],
+          AND: [baseWhere, { status: DealStatus.LOST }, closedInPeriodFilter],
         },
       }),
       prisma.deal.count({
         where: {
-          AND: [baseWhere, { status: DealStatus.ABANDONED, updatedAt: { gte: start } }],
+          AND: [baseWhere, { status: DealStatus.ABANDONED }, updatedInPeriod],
         },
       }),
       prisma.deal.aggregate({
         where: {
-          AND: [baseWhere, { status: DealStatus.WON, closedAt: { gte: start } }],
+          AND: [baseWhere, { status: DealStatus.WON }, closedInPeriodFilter],
         },
         _sum: { value: true },
       }),
@@ -139,14 +153,15 @@ export class PipelineDashboardService {
         where: {
           AND: [
             baseWhere,
-            { status: DealStatus.WON, closedAt: { gte: start, not: null } },
+            { status: DealStatus.WON, closedAt: { not: null } },
+            closedInPeriodFilter,
           ],
         },
         select: { createdAt: true, closedAt: true },
       }),
       prisma.deal.findMany({
         where: {
-          AND: [baseWhere, { status: DealStatus.WON, closedAt: { gte: start } }],
+          AND: [baseWhere, { status: DealStatus.WON }, closedInPeriodFilter],
         },
         select: {
           value: true,
@@ -284,11 +299,13 @@ export class PipelineDashboardService {
     const stageFunnel = [...stageMap.values()].sort((a, b) => a.order - b.order);
 
     return {
-      periodDays: days,
+      periodDays: selectedDates.length || days,
       periodStart: start.toISOString(),
+      selectedDates: selectedDates.length ? selectedDates : null,
       filters: {
         pipelineId: filters.pipelineId || null,
         assignedToId: filters.assignedToId || null,
+        dates: selectedDates.length ? selectedDates : null,
       },
       summary: {
         openCount: openDeals.length,

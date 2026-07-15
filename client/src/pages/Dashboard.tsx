@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
 import { motion } from 'framer-motion';
@@ -257,6 +257,142 @@ function ExternalLinkIcon({ className }: { className?: string }) {
   );
 }
 
+function toIsoDateLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function MultiDateCalendar({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (dates: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), 1);
+  });
+  const panelRef = useRef<HTMLDivElement>(null);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const year = monthCursor.getFullYear();
+  const month = monthCursor.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthLabel = monthCursor.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+  const toggleDay = (day: number) => {
+    const iso = toIsoDateLocal(new Date(year, month, day));
+    if (selectedSet.has(iso)) {
+      onChange(selected.filter((d) => d !== iso));
+    } else {
+      onChange([...selected, iso].sort());
+    }
+  };
+
+  const label =
+    selected.length === 0
+      ? 'Selecionar datas'
+      : selected.length === 1
+        ? selected[0].split('-').reverse().join('/')
+        : `${selected.length} datas`;
+
+  return (
+    <div className="relative" ref={panelRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex min-w-[170px] items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
+      >
+        <span className="truncate">{label}</span>
+        <span className="material-symbols-outlined text-base text-[#86efac]">calendar_month</span>
+      </button>
+      {open && (
+        <div className={`absolute left-0 z-40 mt-2 w-[280px] rounded-xl border p-3 shadow-lg ${neon.panel}`}>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              className="rounded-md px-2 py-1 text-[#9ca3a0] hover:bg-[#1a1f1c] hover:text-white"
+              onClick={() => setMonthCursor(new Date(year, month - 1, 1))}
+              aria-label="Mês anterior"
+            >
+              ‹
+            </button>
+            <p className="text-xs font-semibold capitalize text-white">{monthLabel}</p>
+            <button
+              type="button"
+              className="rounded-md px-2 py-1 text-[#9ca3a0] hover:bg-[#1a1f1c] hover:text-white"
+              onClick={() => setMonthCursor(new Date(year, month + 1, 1))}
+              aria-label="Próximo mês"
+            >
+              ›
+            </button>
+          </div>
+          <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-[#8b9490]">
+            {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((w, i) => (
+              <span key={`${w}-${i}`}>{w}</span>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: firstWeekday }).map((_, i) => (
+              <span key={`pad-${i}`} />
+            ))}
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+              const iso = toIsoDateLocal(new Date(year, month, day));
+              const active = selectedSet.has(iso);
+              return (
+                <button
+                  key={iso}
+                  type="button"
+                  onClick={() => toggleDay(day)}
+                  className={`h-8 rounded-md text-xs font-medium transition ${
+                    active
+                      ? 'bg-[#22c55e] text-[#052e16]'
+                      : 'text-[#d1fae5] hover:bg-[#22c55e]/15'
+                  }`}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#252b28] pt-2">
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-[#8b9490] hover:text-white"
+              onClick={() => onChange([])}
+            >
+              Limpar
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-[#22c55e] px-2.5 py-1 text-[11px] font-bold text-[#052e16]"
+              onClick={() => setOpen(false)}
+            >
+              Aplicar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [surveyStats, setSurveyStats] = useState<SatisfactionStatsResponse | null>(null);
   const [perfStats, setPerfStats] = useState<DashboardPerformancePayload | null>(null);
@@ -270,30 +406,55 @@ export default function Dashboard() {
   const [globalChannelId, setGlobalChannelId] = useState('');
   const [globalSectorId, setGlobalSectorId] = useState('');
   const [globalPipelineId, setGlobalPipelineId] = useState('');
+  const [globalUserId, setGlobalUserId] = useState('');
+  const [globalDates, setGlobalDates] = useState<string[]>([]);
   const [channelOptions, setChannelOptions] = useState<{ id: string; name: string }[]>([]);
   const [sectorOptions, setSectorOptions] = useState<{ id: string; name: string }[]>([]);
   const [pipelineOptions, setPipelineOptions] = useState<{ id: string; name: string }[]>([]);
+  const [userOptions, setUserOptions] = useState<{ id: string; name: string }[]>([]);
   const [pipelineMetrics, setPipelineMetrics] = useState<PipelineDashboardMetrics | null>(null);
   const [pipelineMetricsLoading, setPipelineMetricsLoading] = useState(true);
   const [metaDelivery, setMetaDelivery] = useState<MetaDeliveryMetricsPayload | null>(null);
   const [metaDeliveryLoading, setMetaDeliveryLoading] = useState(true);
 
+  const datesParam = useMemo(() => globalDates.join(','), [globalDates]);
+
+  const appendCommonParams = (params: Record<string, string>) => {
+    if (globalChannelId) params.channelId = globalChannelId;
+    if (globalSectorId) params.sectorId = globalSectorId;
+    if (globalUserId) params.assignedToId = globalUserId;
+    if (datesParam) params.dates = datesParam;
+    return params;
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [chRes, secRes, pipeRes] = await Promise.all([
+        const [chRes, secRes, pipeRes, usersRes, meRes] = await Promise.all([
           api.get<{ id: string; name: string }[]>('/api/channels'),
           api.get<{ id: string; name: string }[]>('/api/sectors?includeInactive=true'),
           api.get<{ id: string; name: string }[]>('/api/pipelines'),
+          api.get<{ id: string; name: string }[]>('/api/users').catch(() => ({ data: [] as { id: string; name: string }[] })),
+          api.get<{ id: string; name: string }>('/api/auth/me').catch(() => ({ data: null })),
         ]);
         if (!cancelled) {
           setChannelOptions(Array.isArray(chRes.data) ? chRes.data : []);
           setSectorOptions(Array.isArray(secRes.data) ? secRes.data : []);
           setPipelineOptions(Array.isArray(pipeRes.data) ? pipeRes.data : []);
+          const users = Array.isArray(usersRes.data) ? usersRes.data : [];
+          if (users.length > 0) {
+            setUserOptions(
+              users
+                .map((u) => ({ id: u.id, name: u.name }))
+                .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+            );
+          } else if (meRes.data?.id) {
+            setUserOptions([{ id: meRes.data.id, name: meRes.data.name || 'Eu' }]);
+          }
         }
       } catch (e) {
-        console.error('[Dashboard] Falha ao carregar canais/setores para filtros:', e);
+        console.error('[Dashboard] Falha ao carregar canais/setores/usuários para filtros:', e);
       }
     })();
     return () => {
@@ -305,10 +466,7 @@ export default function Dashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const params: Record<string, string> = {};
-        params.days = String(globalDays);
-        if (globalChannelId) params.channelId = globalChannelId;
-        if (globalSectorId) params.sectorId = globalSectorId;
+        const params = appendCommonParams({ days: String(globalDays) });
         setConvMetricsLoading(true);
         const res = await api.get<ConversationDashboardMetrics>('/api/conversations/dashboard-conversation-metrics', {
           params,
@@ -324,15 +482,13 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [globalDays, globalChannelId, globalSectorId]);
+  }, [globalDays, globalChannelId, globalSectorId, globalUserId, datesParam]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const params: Record<string, string> = { days: String(globalDays) };
-        if (globalChannelId) params.channelId = globalChannelId;
-        if (globalSectorId) params.sectorId = globalSectorId;
+        const params = appendCommonParams({ days: String(globalDays) });
         setMetaDeliveryLoading(true);
         const res = await api.get<MetaDeliveryMetricsPayload>(
           '/api/conversations/dashboard-meta-delivery-metrics',
@@ -349,7 +505,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [globalDays, globalChannelId, globalSectorId]);
+  }, [globalDays, globalChannelId, globalSectorId, globalUserId, datesParam]);
 
   useEffect(() => {
     let cancelled = false;
@@ -357,6 +513,8 @@ export default function Dashboard() {
       try {
         const params: Record<string, string> = { days: String(globalDays) };
         if (globalPipelineId) params.pipelineId = globalPipelineId;
+        if (globalUserId) params.assignedToId = globalUserId;
+        if (datesParam) params.dates = datesParam;
         setPipelineMetricsLoading(true);
         const res = await api.get<PipelineDashboardMetrics>('/api/pipelines/dashboard-metrics', { params });
         if (!cancelled) setPipelineMetrics(res.data);
@@ -370,16 +528,14 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [globalDays, globalPipelineId]);
+  }, [globalDays, globalPipelineId, globalUserId, datesParam]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setPeriodLoading(true);
       try {
-        const commonParams: Record<string, string> = { days: String(globalDays) };
-        if (globalChannelId) commonParams.channelId = globalChannelId;
-        if (globalSectorId) commonParams.sectorId = globalSectorId;
+        const commonParams = appendCommonParams({ days: String(globalDays) });
         const surveyRes = await api.get<SatisfactionStatsResponse>('/api/conversations/satisfaction-survey-stats', {
           params: commonParams,
         });
@@ -406,7 +562,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [globalDays, globalChannelId, globalSectorId]);
+  }, [globalDays, globalChannelId, globalSectorId, globalUserId, datesParam]);
 
   const periodBlockLoading = periodLoading;
 
@@ -448,6 +604,7 @@ export default function Dashboard() {
             <h2 className="font-headline text-lg font-bold text-white sm:text-xl">Filtros globais</h2>
             <p className="mt-1 text-xs text-[#8b9490]">
               Os filtros abaixo valem para conversas, entrega WhatsApp/Meta, operação, pipeline e pesquisa.
+              Datas do calendário têm prioridade sobre o período rápido.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
@@ -455,13 +612,23 @@ export default function Dashboard() {
               <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">Período</label>
               <select
                 value={String(globalDays)}
-                onChange={(e) => setGlobalDays(Number(e.target.value))}
-                className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
+                onChange={(e) => {
+                  setGlobalDates([]);
+                  setGlobalDays(Number(e.target.value));
+                }}
+                disabled={globalDates.length > 0}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50 disabled:opacity-50`}
               >
                 <option value="7">7 dias</option>
                 <option value="30">30 dias</option>
                 <option value="90">90 dias</option>
               </select>
+            </div>
+            <div className="flex min-w-[170px] flex-col gap-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">
+                Calendário
+              </label>
+              <MultiDateCalendar selected={globalDates} onChange={setGlobalDates} />
             </div>
             <div className="flex min-w-[170px] flex-col gap-1">
               <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">Canal</label>
@@ -494,6 +661,21 @@ export default function Dashboard() {
               </select>
             </div>
             <div className="flex min-w-[170px] flex-col gap-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">Usuário</label>
+              <select
+                value={globalUserId}
+                onChange={(e) => setGlobalUserId(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium text-[#e8ece9] outline-none ${neon.card} focus:border-[#4ade80]/50`}
+              >
+                <option value="">Todos</option>
+                {userOptions.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex min-w-[170px] flex-col gap-1">
               <label className="text-[10px] font-semibold uppercase tracking-wide text-[#8b9490]">Pipeline</label>
               <select
                 value={globalPipelineId}
@@ -509,6 +691,21 @@ export default function Dashboard() {
               </select>
             </div>
           </div>
+          {globalDates.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {globalDates.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setGlobalDates((prev) => prev.filter((x) => x !== d))}
+                  className="rounded-full bg-[#14532d]/50 px-2.5 py-1 text-[10px] font-semibold text-[#86efac] hover:bg-[#14532d]/80"
+                  title="Remover data"
+                >
+                  {d.split('-').reverse().join('/')} ×
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="mt-10 border-t border-[#252b28] pt-10">
