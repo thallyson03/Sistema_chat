@@ -55,6 +55,16 @@ export default function CallContactButton({
 
   const startCall = async (channelId: string) => {
     setCalling(true);
+    const selectedChannel = channels.find((ch) => ch.id === channelId);
+    window.dispatchEvent(
+      new CustomEvent('crm:voice-call-started', {
+        detail: {
+          phone,
+          channelId,
+          channelName: selectedChannel?.name,
+        },
+      }),
+    );
     try {
       await api.post('/api/voice/calls', {
         channelId,
@@ -64,7 +74,6 @@ export default function CallContactButton({
         dealId: dealId || undefined,
       });
       setOpen(false);
-      alert('Chamada iniciada via Twilio.');
     } catch (err: any) {
       alert(err.response?.data?.error || 'Erro ao iniciar chamada');
     } finally {
