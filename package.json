@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client:wait\"",
-    "dev:server": "nodemon --exec ts-node src/server.ts",
+    "dev:server": "ts-node --transpile-only src/server.ts",
     "dev:client:wait": "wait-on tcp:3007 && npm run dev:client",
     "dev:client": "cd client && npm run dev",
     "build": "tsc && cd client && npm run build",

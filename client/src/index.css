@@ -226,3 +226,47 @@
     color: #e5e7eb;
   }
 }
+
+/* Login — balão saindo da boca do robô (origem = rosto, não o braço) */
+@keyframes login-bubble-from-mouth {
+  0% {
+    opacity: 0;
+    /* Esquerda + levemente abaixo = direção da boca no visor */
+    transform: translate(-88px, 6px) scale(0.08);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(6px, -6px) scale(1.08);
+  }
+  16% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  68% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  80% {
+    opacity: 0;
+    transform: translate(-82px, 4px) scale(0.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-88px, 6px) scale(0.08);
+  }
+}
+
+.login-bubble-pop {
+  /* Ponta do balão (canto inferior esquerdo) aponta para a boca */
+  transform-origin: 8% 92%;
+  animation: login-bubble-from-mouth 6.5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-bubble-pop {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

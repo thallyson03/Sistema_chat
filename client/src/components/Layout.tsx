@@ -193,12 +193,12 @@ export default function Layout() {
             <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-400 shadow-lg ring-1 ring-white/10">
               <img
                 src="/ceape-bot.png"
-                alt="Ceape chat"
+                alt="LA Crm"
                 className="h-full w-full object-cover"
               />
             </div>
             <div>
-              <h2 className="font-headline text-lg font-bold text-primary">Ceape chat</h2>
+              <h2 className="font-headline text-lg font-bold text-primary">LA Crm</h2>
               <p className="text-[11px] font-medium text-primary/70">Atendimento e performance</p>
             </div>
           </div>
